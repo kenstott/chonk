@@ -1578,11 +1578,24 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
             for batch_start in range(0, len(pending), batch_size):
                 batch = pending[batch_start:batch_start + batch_size]
                 results_batch = await _aio.gather(*[_eval_one_safe(r) for r in batch], return_exceptions=True)
+                batch_items = [item for item in results_batch if isinstance(item, dict)]
                 with open(ckpt_f, "a") as f:
-                    for item in results_batch:
-                        if isinstance(item, dict):
-                            done[item["id"]] = item
-                            f.write(json.dumps(item) + "\n")
+                    for item in batch_items:
+                        done[item["id"]] = item
+                        f.write(json.dumps(item) + "\n")
+                if batch_items and run_db.exists():
+                    import duckdb as _ddb
+                    con = _ddb.connect(str(run_db))
+                    for item in batch_items:
+                        con.execute(
+                            "INSERT OR REPLACE INTO eval_scores VALUES (?,?,?,?,?,?)",
+                            [
+                                item.get("id"), item.get("question_type"),
+                                item.get("answer_correctness"), item.get("rouge_score"),
+                                item.get("coverage_score"), item.get("faithfulness"),
+                            ],
+                        )
+                    con.close()
                 completed = min(batch_start + batch_size, len(pending))
                 print(f"  {completed}/{len(pending)} evaluated", flush=True)
                 await _aio.sleep(3)   # pace between batches to avoid TPM burst
@@ -1652,11 +1665,13 @@ def cmd_bench_report(args: argparse.Namespace) -> None:
                     "SELECT question_type, answer_correctness, rouge_score, coverage_score, faithfulness "
                     "FROM eval_scores"
                 ).fetchall()
+                total_results = con.execute("SELECT COUNT(*) FROM results").fetchone()[0]
                 con.close()
             except Exception:
                 continue
             if not rows:
                 continue
+            n_eval = len(rows)
             by_type: dict[str, dict] = {}
             import numpy as _np
             for qtype, ac, rouge, cov, faith in rows:
@@ -1674,7 +1689,8 @@ def cmd_bench_report(args: argparse.Namespace) -> None:
                     "faithfulness":       float(_np.mean(lists["faith"])) if lists["faith"] else float("nan"),
                 }
             scores = [v["answer_correctness"] for v in data.values() if v["answer_correctness"] == v["answer_correctness"]]
-            run_results[rn] = {"scores_by_type": data, "avg_acc": float(sum(scores)/len(scores)) if scores else float("nan")}
+            run_results[rn] = {"scores_by_type": data, "avg_acc": float(sum(scores)/len(scores)) if scores else float("nan"),
+                               "n_eval": n_eval, "n_total": total_results}
 
     # Legacy fallback: bench_eval_*.json for runs not yet in run DBs
     for p in sorted(results_dir.glob("bench_eval_*.json")):
@@ -1711,7 +1727,10 @@ def cmd_bench_report(args: argparse.Namespace) -> None:
         vals  = [v for v in [fact, rsn, summ, crea] if v == v]
         avg   = sum(vals) / len(vals) if vals else float("nan")
         fmt   = lambda v: f"{v:.3f}" if v == v else "  —  "  # noqa: E731
-        print(f"  {run_name:<28}  {fmt(fact):>7}  {fmt(rsn):>7}  {fmt(summ):>7}  {fmt(crea):>9}  {fmt(avg):>7}")
+        n_eval = info.get("n_eval", 0)
+        n_total = info.get("n_total", 0)
+        partial = f" ({n_eval}/{n_total})" if n_total and n_eval < n_total else ""
+        print(f"  {run_name:<28}  {fmt(fact):>7}  {fmt(rsn):>7}  {fmt(summ):>7}  {fmt(crea):>9}  {fmt(avg):>7}{partial}")
 
     # Leaderboard (their metric, gpt-4o-mini generator + judge)
     # Qwen2.5-14B appendix numbers from paper (Table 7, RAG w/ rerank)
