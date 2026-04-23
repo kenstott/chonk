@@ -1329,6 +1329,7 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
     import numpy as np
 
     out_dir     = Path(args.out_dir)
+    data_dir    = out_dir / "data"
     results_dir = out_dir / "results"
     repo_dir    = out_dir / "GraphRAG-Benchmark"
     run_name    = getattr(args, "run_name", "contextual")
