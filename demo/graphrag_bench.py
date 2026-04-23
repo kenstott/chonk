@@ -748,6 +748,11 @@ def _init_run_db(db_path: Path) -> None:
 
 def _write_results_to_db(db_path: Path, results: list[dict]) -> None:
     import duckdb, json as _json
+    # Deduplicate by id (last write wins — handles checkpoint resume duplicates)
+    seen: dict[str, dict] = {}
+    for r in results:
+        seen[r.get("id")] = r
+    results = list(seen.values())
     con = duckdb.connect(str(db_path))
     con.execute("DELETE FROM results")
     for r in results:
