@@ -413,10 +413,9 @@ class TestEdgarWithDocumentLoader:
             name="acme_10k_2024",
             doc_type="edgar",
         )
-        sections = {c.section for c in chunks if c.section}
-        # Should have at least Item 1A and Item 9A sections
-        assert any("1A" in (s or "") for s in sections)
-        assert any("9A" in (s or "") for s in sections)
+        sections = [" > ".join(c.section) for c in chunks if c.section]
+        assert any("1A" in s for s in sections)
+        assert any("9A" in s for s in sections)
 
     def test_embedding_content_includes_doc_name(self):
         from chunkymonkey import DocumentLoader
@@ -449,7 +448,7 @@ class TestEdgarWithDocumentLoader:
         sectioned = [c for c in chunks if c.section]
         assert len(sectioned) > 0
         for c in sectioned:
-            assert c.section in c.embedding_content
+            assert " > ".join(c.section) in c.embedding_content
 
     def test_naive_and_contextual_differ(self):
         from chunkymonkey import DocumentLoader

@@ -68,13 +68,14 @@ class DocumentChunk:
     """
     document_name: str
     content: str
-    section: Optional[str] = None
+    section: list[str] = field(default_factory=list)
     chunk_index: int = 0
     source_offset: Optional[int] = None
     source_length: Optional[int] = None
     embedding_content: Optional[str] = None
     chunk_type: str = "document"
     breadcrumb: Optional[str] = None
+    paragraph_continuation: bool = False
 
 
 @dataclass

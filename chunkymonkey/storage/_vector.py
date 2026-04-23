@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 from typing import TYPE_CHECKING
 
@@ -31,6 +32,21 @@ if TYPE_CHECKING:
     from .._pool import ThreadLocalDuckDB  # only for type hints
 
 logger = logging.getLogger(__name__)
+
+
+def _deserialize_section(value) -> list[str]:
+    if not value:
+        return []
+    if isinstance(value, list):
+        return value
+    try:
+        parsed = json.loads(value)
+        if isinstance(parsed, list):
+            return parsed
+    except (ValueError, TypeError):
+        pass
+    return [value]
+
 
 _MISSING_DEPS_MSG = (
     "duckdb and numpy are required for storage. "
@@ -125,10 +141,12 @@ class DuckDBVectorBackend:
                 if hasattr(chunk, "chunk_type") and hasattr(chunk.chunk_type, "value")
                 else getattr(chunk, "chunk_type", "document") or "document"
             )
+            raw_section = getattr(chunk, "section", []) or []
+            section_str = json.dumps(raw_section) if isinstance(raw_section, list) else raw_section
             records.append((
                 chunk_id,
                 chunk.document_name,
-                getattr(chunk, "section", None),
+                section_str,
                 chunk.chunk_index,
                 chunk.content,
                 getattr(chunk, "breadcrumb", None),
@@ -203,7 +221,7 @@ class DuckDBVectorBackend:
                 chunk = DocumentChunk(
                     document_name=doc_name,
                     content=content,
-                    section=section,
+                    section=_deserialize_section(section),
                     chunk_index=chunk_idx,
                     source_offset=source_offset,
                     source_length=source_length,
@@ -303,7 +321,7 @@ class DuckDBVectorBackend:
             chunk = DocumentChunk(
                 document_name=doc_name,
                 content=displayed,
-                section=section,
+                section=_deserialize_section(section),
                 chunk_index=chunk_idx,
                 source_offset=source_offset,
                 source_length=source_length,
@@ -341,7 +359,7 @@ class DuckDBVectorBackend:
             DocumentChunk(
                 document_name=row[0],
                 content=row[1],
-                section=row[2],
+                section=_deserialize_section(row[2]),
                 chunk_index=row[3],
                 source_offset=row[4],
                 source_length=row[5],

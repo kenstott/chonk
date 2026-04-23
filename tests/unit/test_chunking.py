@@ -229,7 +229,7 @@ class TestChunkDocument:
         content = "# Top\n\nIntro.\n\n## Sub\n\nDetail."
         chunks = chunk_document("doc.md", content, min_chunk_size=5000, max_chunk_size=10000)
         assert len(chunks) == 1
-        assert chunks[0].section == "Top"
+        assert chunks[0].section == ["Top"]
         assert chunks[0].breadcrumb == "[doc.md > Top]"
         assert "[doc.md > Top]" in chunks[0].embedding_content
 
@@ -238,7 +238,7 @@ class TestChunkDocument:
         chunks = chunk_document("doc.md", content, min_chunk_size=5000, max_chunk_size=10000)
         # All in one chunk; LCA of ["Parent","Child A"] and ["Parent","Child B"] = ["Parent"]
         assert len(chunks) == 1
-        assert chunks[0].section == "Parent"
+        assert chunks[0].section == ["Parent"]
         assert chunks[0].breadcrumb == "[doc.md > Parent]"
         assert "[doc.md > Parent]" in chunks[0].embedding_content
 
@@ -268,13 +268,12 @@ class TestChunkDocument:
         assert "[LIST:start]" in markers
 
     def test_para_continuation_markers(self):
-        # Long prose with sentence boundaries
         sentences = " ".join(f"This is sentence number {i}." for i in range(40))
         chunks = chunk_document("doc.md", sentences, min_chunk_size=100, max_chunk_size=200)
-        para_chunks = [c for c in chunks if "[PARA:" in c.content]
-        assert len(para_chunks) >= 2
-        markers = {m for c in para_chunks for m in ["[PARA:start]", "[PARA:cont]", "[PARA:end]"] if m in c.content}
-        assert "[PARA:start]" in markers
+        assert len(chunks) >= 2
+        cont_chunks = [c for c in chunks if c.paragraph_continuation]
+        assert len(cont_chunks) >= 1
+        assert not chunks[0].paragraph_continuation
 
     def test_empty_content_returns_no_chunks(self):
         chunks = chunk_document("empty.txt", "", min_chunk_size=100, max_chunk_size=1000)
@@ -291,6 +290,208 @@ class TestChunkDocument:
         content = "[Sheet: Sheet1]\n\nData row 1.\n\n[Sheet: Sheet2]\n\nData row 2."
         chunks = chunk_document("book.xlsx", content, min_chunk_size=5000, max_chunk_size=10000)
         assert len(chunks) >= 2
+
+    def test_headerless_doc_respects_max_chunk_size(self):
+        # Regression: a large document with no headers must be split at paragraph
+        # and sentence boundaries — not returned as a single 225 k-char chunk.
+        # Each paragraph is ~400 chars of sentence-terminated prose; total ~40 k chars.
+        para = "The quick brown fox jumped over the lazy dog. " * 9  # ~414 chars
+        content = "\n\n".join([para] * 100)  # ~41 k chars, no headers
+        chunks = chunk_document(
+            "novel", content,
+            min_chunk_size=400, max_chunk_size=1200,
+            include_breadcrumb=True, include_doc_name=False,
+            promote_headings=False,
+        )
+        assert len(chunks) > 1, "headerless doc must produce multiple chunks"
+        assert all(
+            len(c.content) <= 1200 * 1.15
+            for c in chunks
+        ), "every chunk must respect max_chunk_size (with overflow margin)"
+
+    def test_headerless_doc_no_paragraph_breaks_respects_max(self):
+        # Regression: a large document with no \n\n and no \n must still be split
+        # at sentence boundaries up to max_chunk_size.
+        sentence = "The fox ran quickly across the field. "
+        content = sentence * 3000  # ~111 k chars, no newlines, only sentence ends
+        chunks = chunk_document(
+            "novel", content,
+            min_chunk_size=400, max_chunk_size=1200,
+            include_breadcrumb=False, include_doc_name=False,
+            promote_headings=False,
+        )
+        assert len(chunks) > 1, "document with no newlines must produce multiple chunks"
+        assert all(
+            len(c.content) <= 1200 * 1.15
+            for c in chunks
+        ), "every chunk must respect max_chunk_size"
+
+    def test_headerless_doc_no_sentence_boundaries_respects_max(self):
+        # Regression: a large document with no \n\n, no \n, and no .?! must still
+        # be split at word boundaries up to max_chunk_size — not returned as one
+        # monolithic chunk.
+        content = "word " * 45164  # ~225 k chars, no newlines, no sentence punctuation
+        chunks = chunk_document(
+            "novel", content,
+            min_chunk_size=400, max_chunk_size=1200,
+            include_breadcrumb=False, include_doc_name=False,
+            promote_headings=False,
+        )
+        assert len(chunks) > 1, "document with no sentence boundaries must produce multiple chunks"
+        assert all(
+            len(c.content) <= 1200 * 1.15
+            for c in chunks
+        ), "every chunk must respect max_chunk_size"
+
+    def test_emit_splits_tiny_tail_folded_into_next_chunk(self):
+        # Regression: when Rule 3 fires and _split_at_sentences produces a last
+        # piece below min_chunk_size, that tail must NOT be emitted as a standalone
+        # tiny chunk.  It should be held in current_chunk and merged with the next
+        # paragraph so the result respects min_chunk_size (except for the final
+        # last-chunk exception, Rule 6).
+        #
+        # Setup:
+        #   filler_para: ~500 chars, forces Rule 3 flush before big_para.
+        #   big_para: 19 x 75-char sentences = 1463 chars > hard_max(1380).
+        #     _split_at_sentences splits it into 2 pieces: ~1156 chars and ~307 chars.
+        #     The last piece (307 chars) is well below min_chunk_size=400.
+        #   next_para: ~400 chars — should absorb the tiny tail.
+        #
+        # Bug behaviour: the 307-char tail is emitted as its own non-final chunk.
+        # Fixed behaviour: the tail is folded into current_chunk and merges with
+        #   next_para, so no non-final chunk is below min_chunk_size.
+        min_size = 400
+        max_size = 1200
+        # hard_max = int(1200 * 1.15) = 1380
+
+        long_sentence = "The patient presented with severe symptoms requiring immediate medical care. "
+        # 19 repetitions = 1463 chars > hard_max(1380), last split piece ≈ 307 chars
+        big_para = long_sentence * 19
+
+        filler_para = "X " * 250   # ~500 chars — flushed before big_para arrives
+        next_para   = "Y " * 200   # ~400 chars — should absorb the tiny tail
+
+        content = f"{filler_para}\n\n{big_para}\n\n{next_para}"
+
+        chunks = chunk_document(
+            "doc", content,
+            min_chunk_size=min_size, max_chunk_size=max_size,
+            include_breadcrumb=False, include_doc_name=False,
+        )
+
+        # The bug produces a tiny standalone chunk for the short tail sentence.
+        # After the fix, no non-final chunk should be below min_chunk_size.
+        non_final = chunks[:-1]
+        tiny = [c for c in non_final if len(c.content) < min_size]
+        assert tiny == [], (
+            f"Non-final chunks below min_chunk_size={min_size} found: "
+            + str([(i, len(c.content), repr(c.content[:80])) for i, c in enumerate(chunks) if c in tiny])
+        )
+
+
+# =============================================================================
+# overlap_chars
+# =============================================================================
+
+class TestOverlapChars:
+    def _compute_overlap_tail(self, prev_content: str, overlap_chars: int) -> str:
+        """Mirror the word-boundary trimming used in chunk_document."""
+        if len(prev_content) <= overlap_chars:
+            return prev_content
+        tail = prev_content[-overlap_chars:]
+        # if the cut is mid-word (char before cut and first char of tail are
+        # both non-space), advance to the start of the next word
+        if (not prev_content[-(overlap_chars + 1): -(overlap_chars)].isspace()
+                and not tail[0].isspace()):
+            space_pos = tail.find(" ")
+            if space_pos != -1:
+                tail = tail[space_pos + 1:]
+        return tail
+
+    def test_overlap_prepended_to_second_chunk(self):
+        # Two clearly distinct paragraphs that will land in separate chunks.
+        # min=10 ensures the first paragraph flushes at the heading boundary.
+        content = (
+            "# Alpha\n\n"
+            "The quick brown fox jumps over the lazy dog.\n\n"
+            "# Beta\n\n"
+            "Pack my box with five dozen liquor jugs."
+        )
+        chunks = chunk_document(
+            "doc.md", content,
+            min_chunk_size=10, max_chunk_size=5000,
+            overlap_chars=20,
+        )
+        assert len(chunks) >= 2
+        tail = self._compute_overlap_tail(chunks[0].content, 20)
+        assert chunks[1].content.startswith(tail)
+
+    def test_overlap_only_on_content_not_embedding(self):
+        content = (
+            "# Alpha\n\n"
+            "The quick brown fox jumps over the lazy dog.\n\n"
+            "# Beta\n\n"
+            "Pack my box with five dozen liquor jugs."
+        )
+        chunks = chunk_document(
+            "doc.md", content,
+            min_chunk_size=10, max_chunk_size=5000,
+            overlap_chars=20,
+        )
+        assert len(chunks) >= 2
+        # embedding_content should NOT start with the overlap tail
+        # (it starts with the breadcrumb)
+        assert chunks[1].embedding_content.startswith("[")
+
+    def test_overlap_zero_default_unchanged(self):
+        content = (
+            "# Alpha\n\n"
+            "The quick brown fox jumps over the lazy dog.\n\n"
+            "# Beta\n\n"
+            "Pack my box with five dozen liquor jugs."
+        )
+        chunks_no_overlap = chunk_document(
+            "doc.md", content, min_chunk_size=10, max_chunk_size=5000,
+        )
+        chunks_explicit_zero = chunk_document(
+            "doc.md", content, min_chunk_size=10, max_chunk_size=5000,
+            overlap_chars=0,
+        )
+        assert [c.content for c in chunks_no_overlap] == [c.content for c in chunks_explicit_zero]
+
+    def test_first_chunk_has_no_overlap(self):
+        content = (
+            "# Alpha\n\n"
+            "The quick brown fox jumps over the lazy dog.\n\n"
+            "# Beta\n\n"
+            "Pack my box with five dozen liquor jugs."
+        )
+        chunks_with_overlap = chunk_document(
+            "doc.md", content,
+            min_chunk_size=10, max_chunk_size=5000,
+            overlap_chars=30,
+        )
+        chunks_no_overlap = chunk_document(
+            "doc.md", content,
+            min_chunk_size=10, max_chunk_size=5000,
+            overlap_chars=0,
+        )
+        # First chunk is never prefixed — it must be identical regardless of overlap_chars
+        assert chunks_with_overlap[0].content == chunks_no_overlap[0].content
+
+    def test_chunk_indices_unchanged_with_overlap(self):
+        content = (
+            "# Alpha\n\n"
+            "The quick brown fox jumps over the lazy dog.\n\n"
+            "# Beta\n\n"
+            "Pack my box with five dozen liquor jugs."
+        )
+        chunks = chunk_document(
+            "doc.md", content,
+            min_chunk_size=10, max_chunk_size=5000,
+            overlap_chars=20,
+        )
+        assert [c.chunk_index for c in chunks] == list(range(len(chunks)))
 
 
 # =============================================================================

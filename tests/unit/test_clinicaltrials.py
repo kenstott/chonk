@@ -270,10 +270,9 @@ class TestClinicalTrialsWithDocumentLoader:
 
     def test_chunks_have_section_breadcrumbs(self):
         chunks = self._make_chunks()
-        sections = {c.section for c in chunks if c.section}
+        sections = [" > ".join(c.section) for c in chunks if c.section]
         assert len(sections) > 0
-        # Should contain eligibility and outcome sections
-        assert any("Eligibility" in (s or "") for s in sections)
+        assert any("Eligibility" in s for s in sections)
 
     def test_embedding_content_includes_doc_name(self):
         chunks = self._make_chunks(nct_id="NCT77665544")
@@ -286,7 +285,7 @@ class TestClinicalTrialsWithDocumentLoader:
         sectioned = [c for c in chunks if c.section]
         assert len(sectioned) > 0
         for c in sectioned:
-            assert c.section in c.embedding_content
+            assert " > ".join(c.section) in c.embedding_content
 
     def test_boilerplate_chunks_disambiguated_by_doc_name(self):
         """Two trials with identical exclusion criteria get different embedding_content."""
@@ -347,7 +346,7 @@ class TestClinicalTrialsWithDocumentLoader:
         loader = DocumentLoader(min_chunk_size=400, max_chunk_size=400, context_strategy="prefix")
         chunks = loader.load_text(md, name=doc_name)
 
-        elig_chunks = [c for c in chunks if "Eligibility" in (c.section or "")]
+        elig_chunks = [c for c in chunks if any("Eligibility" in s for s in c.section)]
         assert len(elig_chunks) >= 2, (
             "Long eligibility section should split into ≥2 chunks; "
             f"got {len(elig_chunks)}"
@@ -369,9 +368,9 @@ class TestClinicalTrialsWithDocumentLoader:
         loader = DocumentLoader(min_chunk_size=400, max_chunk_size=400, context_strategy="prefix")
         chunks = loader.load_text(md, name=doc_name)
 
-        elig_chunks = [c for c in chunks if "Eligibility" in (c.section or "")]
+        elig_chunks = [c for c in chunks if any("Eligibility" in s for s in c.section)]
         for c in elig_chunks:
-            assert c.section is not None
+            assert c.section
             assert c.embedding_content is not None
             assert doc_name in c.embedding_content
 

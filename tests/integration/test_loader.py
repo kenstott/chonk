@@ -138,7 +138,7 @@ class TestCustomExtractor:
 
         f = tmp_path / "test.fake"
         f.write_bytes(b"raw")
-        loader = DocumentLoader(extra_extractors=[FakeExtractor()])
+        loader = DocumentLoader(extra_extractors=[FakeExtractor()], context_strategy=None)
         chunks = loader.load_bytes(b"raw", "test.fake", doc_type="fake")
         assert chunks[0].content == "fake content extracted"
 
@@ -150,7 +150,7 @@ class TestCustomExtractor:
             def extract(self, data, source_path=None):
                 return "override extracted"
 
-        loader = DocumentLoader(extra_extractors=[OverrideHtmlExtractor()])
+        loader = DocumentLoader(extra_extractors=[OverrideHtmlExtractor()], context_strategy=None)
         chunks = loader.load_bytes(b"<h1>ignored</h1>", "page.html", doc_type="html")
         assert chunks[0].content == "override extracted"
 

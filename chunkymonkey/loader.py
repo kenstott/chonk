@@ -48,6 +48,7 @@ class DocumentLoader:
         max_chunk_size: int = 1500,
         overflow_margin: float = 0.15,
         context_strategy: str | None = "prefix",
+        include_doc_name: bool = True,
         extra_transports: list | None = None,
         extra_extractors: list | None = None,
     ):
@@ -62,6 +63,10 @@ class DocumentLoader:
                 breadcrumb at the start of every chunk's content and sets
                 embedding_content = content.  None produces naive chunks with no
                 breadcrumb and embedding_content = None.
+            include_doc_name: Include the document name as the first breadcrumb
+                element (default True).  Set False when all chunks share a single
+                corpus document name that adds no signal (e.g. one "Medical" doc
+                containing many unrelated articles).
             extra_transports: Additional transport backends checked before defaults.
             extra_extractors: Additional extractor backends checked before defaults.
         """
@@ -69,6 +74,7 @@ class DocumentLoader:
         self.max_chunk_size = max_chunk_size
         self.overflow_margin = overflow_margin
         self.context_strategy = context_strategy
+        self.include_doc_name = include_doc_name
         self._extra_transports = extra_transports or []
         self._extra_extractors = extra_extractors or []
 
@@ -135,6 +141,7 @@ class DocumentLoader:
             doc_name, text,
             self.min_chunk_size, self.max_chunk_size, self.overflow_margin,
             include_breadcrumb=(self.context_strategy is not None),
+            include_doc_name=self.include_doc_name,
         )
         return self._enrich(chunks)
 
@@ -168,6 +175,7 @@ class DocumentLoader:
             name, text,
             self.min_chunk_size, self.max_chunk_size, self.overflow_margin,
             include_breadcrumb=(self.context_strategy is not None),
+            include_doc_name=self.include_doc_name,
         )
         return self._enrich(chunks)
 
@@ -211,6 +219,7 @@ class DocumentLoader:
             name, text,
             self.min_chunk_size, self.max_chunk_size, self.overflow_margin,
             include_breadcrumb=(self.context_strategy is not None),
+            include_doc_name=self.include_doc_name,
         )
         return self._enrich(chunks)
 
@@ -284,6 +293,7 @@ class DocumentLoader:
             name, text,
             self.min_chunk_size, self.max_chunk_size, self.overflow_margin,
             include_breadcrumb=(self.context_strategy is not None),
+            include_doc_name=self.include_doc_name,
         )
         return self._enrich(chunks)
 

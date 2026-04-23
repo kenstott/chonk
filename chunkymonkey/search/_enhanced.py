@@ -23,8 +23,7 @@ supporting incremental ablation benchmarking.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from ..models import DocumentChunk, ScoredChunk
 
@@ -76,6 +75,17 @@ class EnhancedSearch:
         structural_expansion: bool = True,
         entity_expansion: bool = True,
         cluster_expansion: bool = True,
+        entity_embedding_expansion: bool = False,
+        entity_embeddings=None,
+        entity_embedding_ids: list[str] | None = None,
+        ner_fn: Callable[[str], list[str]] | None = None,
+        embed_fn: Callable[[list[str]], "np.ndarray"] | None = None,
+        entity_embedding_top_k: int = 10,
+        entity_ref_expansion: bool = False,
+        entity_ref_expansion_k: int = 20,
+        entity_ref_expansion_per_k: int | None = None,
+        entity_ref_expansion_min_sim: float | None = None,
+        query_ner_fn: Callable[[str], list[str]] | None = None,
     ):
         self._store = store
         self._entity_index = entity_index
@@ -90,6 +100,18 @@ class EnhancedSearch:
         self._structural = structural_expansion
         self._entity = entity_expansion
         self._cluster = cluster_expansion
+        self._entity_embed = entity_embedding_expansion
+        self._entity_embeddings = entity_embeddings
+        self._entity_embedding_ids = entity_embedding_ids
+        self._ner_fn = ner_fn
+        self._embed_fn = embed_fn
+        self._entity_embed_top_k = entity_embedding_top_k
+        self._entity_ref_expansion = entity_ref_expansion
+        self._entity_ref_expansion_k = entity_ref_expansion_k
+        self._entity_ref_expansion_per_k = entity_ref_expansion_per_k
+        self._entity_ref_expansion_min_sim = entity_ref_expansion_min_sim
+        self._query_ner_fn = query_ner_fn
+        self.last_expansion_stats: dict | None = None
 
     # ------------------------------------------------------------------
     # Public interface
@@ -100,6 +122,7 @@ class EnhancedSearch:
         query_embedding,
         k: int = 5,
         query_text: str | None = None,
+        query_entities: list[str] | None = None,
     ) -> list[ScoredChunk]:
         """Assemble a top-k cohort using all enabled expansion dimensions.
 
@@ -194,9 +217,129 @@ class EnhancedSearch:
                                 )
                                 cluster_count += 1
 
-        # ------ Step 5: Score and select top-k ------------------------------
+        # ------ Step 5: Entity embedding ANN expansion ----------------------
+        if (
+            self._entity_embed
+            and self._entity_embeddings is not None
+            and self._entity_embedding_ids is not None
+            and self._entity_index is not None
+            and query_text
+            and self._ner_fn is not None
+            and self._embed_fn is not None
+        ):
+            import numpy as np
+            query_ents = self._ner_fn(query_text)
+            if query_ents:
+                q_ent_vecs = self._embed_fn(query_ents)  # (n_query_ents, dim)
+                scores = q_ent_vecs @ self._entity_embeddings.T  # (n_query_ents, n_entities)
+                max_scores = scores.max(axis=0)  # (n_entities,)
+                top_indices = np.argsort(-max_scores)[: self._entity_embed_top_k]
+                for idx in top_indices:
+                    eid = self._entity_embedding_ids[int(idx)]
+                    for linked_chunk_id, _ in self._entity_index.get_chunks_for_entity(
+                        eid, top_n=2
+                    ):
+                        if linked_chunk_id not in pool:
+                            chunk = self._fetch_chunk(linked_chunk_id)
+                            if chunk is not None:
+                                pool[linked_chunk_id] = ScoredChunk(
+                                    chunk_id=linked_chunk_id,
+                                    chunk=chunk,
+                                    score=0.0,
+                                    provenance="entity_adjacent",
+                                    linked_by=eid,
+                                )
+
+        # ------ Step 6: Score and select top-k ------------------------------
         candidates = list(pool.values())
-        return self._select_cohort(candidates, query_embedding, k)
+        results = self._select_cohort(candidates, query_embedding, k)
+
+        # ------ Step 7: Entity-ref expansion (adaptive post-selection) ------
+        self.last_expansion_stats = None
+        if self._entity_ref_expansion:
+            ents = query_entities
+            if ents is None and self._query_ner_fn is not None and query_text:
+                ents = self._query_ner_fn(query_text)
+            if ents:
+                results = self._entity_ref_expand(results, pool, query_embedding, ents, k, query_text)
+
+        return results
+
+    # ------------------------------------------------------------------
+    # Entity-ref expansion
+    # ------------------------------------------------------------------
+
+    def _entity_ref_expand(
+        self,
+        results: list[ScoredChunk],
+        existing_pool: dict[str, ScoredChunk],
+        query_embedding,
+        query_entities: list[str],
+        k: int,
+        query_text: str | None,
+    ) -> list[ScoredChunk]:
+        """Post-selection: if query entities are absent from top-k, expand via semantic search."""
+        result_text = " ".join((sc.chunk.content or "") for sc in results).lower()
+        missing = [e for e in query_entities if e.lower() not in result_text]
+
+        if not missing:
+            self.last_expansion_stats = {"invoked": False, "missing_entities": []}
+            return results
+
+        new_pool = dict(existing_pool)
+        found_entities: list[str] = []
+
+        if self._embed_fn is not None:
+            # Semantic: per-entity vector search
+            if self._entity_ref_expansion_per_k is not None:
+                per_k = self._entity_ref_expansion_per_k
+            else:
+                per_k = max(3, self._entity_ref_expansion_k // max(len(missing), 1))
+            min_sim = self._entity_ref_expansion_min_sim
+            entity_vecs = self._embed_fn(missing)
+            for i, entity in enumerate(missing):
+                hits = self._store.search(entity_vecs[i], limit=per_k, query_text=None)
+                for chunk_id, score, chunk in hits:
+                    if min_sim is not None and score < min_sim:
+                        continue
+                    if chunk_id not in new_pool:
+                        new_pool[chunk_id] = ScoredChunk(
+                            chunk_id=chunk_id, chunk=chunk, score=score,
+                            provenance="entity_ref_expansion",
+                        )
+                    if entity not in found_entities:
+                        found_entities.append(entity)
+        else:
+            # Literal fallback
+            expanded_seeds = self._store.search(
+                query_embedding, limit=self._entity_ref_expansion_k, query_text=query_text
+            )
+            for chunk_id, score, chunk in expanded_seeds:
+                if chunk_id in new_pool:
+                    continue
+                chunk_text = (chunk.content or "").lower()
+                matched = [e for e in missing if e.lower() in chunk_text]
+                if matched:
+                    new_pool[chunk_id] = ScoredChunk(
+                        chunk_id=chunk_id, chunk=chunk, score=score,
+                        provenance="entity_ref_expansion",
+                    )
+                    for e in matched:
+                        if e not in found_entities:
+                            found_entities.append(e)
+
+        self.last_expansion_stats = {
+            "invoked": True,
+            "missing_entities": missing,
+            "found_entities": found_entities,
+            "unresolved_entities": [e for e in missing if e not in found_entities],
+            "new_chunks_added": len(new_pool) - len(existing_pool),
+        }
+
+        if not found_entities:
+            return results
+
+        return self._select_cohort(list(new_pool.values()), query_embedding, k)
 
     # ------------------------------------------------------------------
     # Structural expansion

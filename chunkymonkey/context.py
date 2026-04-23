@@ -39,7 +39,7 @@ from __future__ import annotations
 import dataclasses
 from .models import DocumentChunk
 
-_STRATEGIES = ("prefix", "inline")
+_STRATEGIES = ("prefix", "inline", "breadcrumb")
 
 
 def enrich_chunk(chunk: DocumentChunk, strategy: str = "prefix") -> DocumentChunk:
@@ -77,30 +77,20 @@ def enrich_chunk(chunk: DocumentChunk, strategy: str = "prefix") -> DocumentChun
             f"Choose one of: {_STRATEGIES}"
         )
 
-    doc_name = chunk.document_name or ""
-    section = chunk.section
+    # Use the breadcrumb already built by chunk_document (respects include_doc_name
+    # and max_breadcrumb_chars).  Fall back to rebuilding from fields only if missing.
+    crumb = chunk.breadcrumb
+    if not crumb:
+        section_parts = chunk.section if isinstance(chunk.section, list) else (
+            [chunk.section] if chunk.section else []
+        )
+        parts = [chunk.document_name] + section_parts if chunk.document_name else section_parts
+        crumb = f"[{' > '.join(parts)}]" if parts else None
 
-    if strategy == "prefix":
-        if doc_name and section:
-            embedding_content = (
-                f"Document: {doc_name}\nSection: {section}\n\n{chunk.content}"
-            )
-        elif doc_name:
-            embedding_content = f"Document: {doc_name}\n\n{chunk.content}"
-        elif section:
-            embedding_content = f"Section: {section}\n\n{chunk.content}"
-        else:
-            embedding_content = chunk.content
-
-    else:  # inline
-        if doc_name and section:
-            embedding_content = f"[{doc_name} > {section}] {chunk.content}"
-        elif doc_name:
-            embedding_content = f"[{doc_name}] {chunk.content}"
-        elif section:
-            embedding_content = f"[{section}] {chunk.content}"
-        else:
-            embedding_content = chunk.content
+    if crumb:
+        embedding_content = f"{crumb}\n\n{chunk.content}"
+    else:
+        embedding_content = chunk.content
 
     return dataclasses.replace(chunk, embedding_content=embedding_content)
 

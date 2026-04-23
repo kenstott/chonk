@@ -161,13 +161,13 @@ class TestDirectoryCrawler:
 
     def test_crawl_single_file(self, tmp_path):
         f = tmp_path / "doc.md"
-        f.write_text("# Hello")
+        f.write_text("# Hello\n\nHello world content.")
         c = DirectoryCrawler()
         result = c.crawl(str(f))
         assert result == [str(f)]
 
     def test_crawl_directory(self, tmp_path):
-        (tmp_path / "a.md").write_text("# A")
+        (tmp_path / "a.md").write_text("# A\n\nSection A content.")
         (tmp_path / "b.txt").write_text("B content")
         (tmp_path / "c.png").write_bytes(b"\x89PNG")
         c = DirectoryCrawler()
@@ -200,7 +200,7 @@ class TestDirectoryCrawler:
         assert "nested.md" not in names
 
     def test_crawl_custom_extensions(self, tmp_path):
-        (tmp_path / "doc.md").write_text("# Hello")
+        (tmp_path / "doc.md").write_text("# Hello\n\nHello world content.")
         (tmp_path / "data.csv").write_text("a,b,c")
         (tmp_path / "other.log").write_text("log entry")
         c = DirectoryCrawler(extensions=[".md"])
@@ -211,7 +211,7 @@ class TestDirectoryCrawler:
 
     def test_crawl_max_files(self, tmp_path):
         for i in range(10):
-            (tmp_path / f"doc{i}.md").write_text(f"# Doc {i}")
+            (tmp_path / f"doc{i}.md").write_text(f"# Doc {i}\\n\\nDoc {i} content.")
         c = DirectoryCrawler(max_files=3)
         result = c.crawl(str(tmp_path))
         assert len(result) <= 3
@@ -245,7 +245,7 @@ class TestDirectoryCrawler:
 
     def test_crawl_file_uri_scheme(self, tmp_path):
         f = tmp_path / "doc.md"
-        f.write_text("# Hello")
+        f.write_text("# Hello\n\nHello world content.")
         c = DirectoryCrawler()
         result = c.crawl(f"file://{f}")
         assert str(f) in result
@@ -267,7 +267,7 @@ class TestDocumentLoaderCrawl:
         assert "doc2" in doc_names
 
     def test_load_directory_with_extensions_filter(self, tmp_path):
-        (tmp_path / "doc.md").write_text("# Markdown doc")
+        (tmp_path / "doc.md").write_text("# Markdown doc\n\nMarkdown content here.")
         (tmp_path / "doc.txt").write_text("Text doc")
         loader = DocumentLoader()
         chunks = loader.load_directory(str(tmp_path), extensions=[".md"])
@@ -278,7 +278,7 @@ class TestDocumentLoaderCrawl:
         assert not txt_chunks
 
     def test_load_directory_with_custom_crawler(self, tmp_path):
-        (tmp_path / "custom.md").write_text("# Custom crawl")
+        (tmp_path / "custom.md").write_text("# Custom crawl\n\nCustom crawl content.")
 
         class FixedCrawler:
             def can_handle(self, uri): return True
@@ -320,7 +320,7 @@ class TestDocumentLoaderCrawl:
 
     def test_load_crawl_skips_failed_uris(self, tmp_path):
         good = tmp_path / "good.md"
-        good.write_text("# Good document")
+        good.write_text("# Good document\n\nGood document content.")
 
         class MixedCrawler:
             def can_handle(self, uri): return True
@@ -344,7 +344,7 @@ class TestDocumentLoaderCrawl:
             assert chunks == []
 
     def test_load_crawl_auto_selects_dir_crawler_for_local(self, tmp_path):
-        (tmp_path / "auto.md").write_text("# Auto-detected")
+        (tmp_path / "auto.md").write_text("# Auto-detected\n\nAuto-detected content.")
         loader = DocumentLoader()
         chunks = loader.load_crawl(str(tmp_path))
         assert any(c.document_name == "auto" for c in chunks)

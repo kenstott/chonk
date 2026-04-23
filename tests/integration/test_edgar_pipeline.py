@@ -224,11 +224,11 @@ class TestEdgarDocumentLoader:
 
     def test_sections_include_item_1a(self):
         chunks = self._load(_AAPL_HTML, "aapl_10k_2024")
-        assert any("1A" in (c.section or "") for c in chunks)
+        assert any("1A" in part for c in chunks for part in c.section)
 
     def test_sections_include_item_9a(self):
         chunks = self._load(_AAPL_HTML, "aapl_10k_2024")
-        assert any("9A" in (c.section or "") for c in chunks)
+        assert any("9A" in part for c in chunks for part in c.section)
 
     def test_no_chunk_contains_financial_table_data(self):
         chunks = self._load(_AAPL_HTML, "aapl_10k_2024")
@@ -248,7 +248,7 @@ class TestEdgarDocumentLoader:
         sectioned = [c for c in chunks if c.section]
         assert len(sectioned) > 0
         for c in sectioned:
-            assert c.section in c.embedding_content
+            assert " > ".join(c.section) in c.embedding_content
 
     def test_naive_has_no_prefix(self):
         chunks = self._load(_AAPL_HTML, "aapl_10k_2024", strategy=None)
@@ -263,8 +263,8 @@ class TestEdgarDocumentLoader:
         aapl_chunks = self._load(_AAPL_HTML, "aapl_10k_2024", strategy="prefix")
         msft_chunks = self._load(_MSFT_HTML, "msft_10k_2024", strategy="prefix")
 
-        aapl_9a = [c for c in aapl_chunks if "9A" in (c.section or "")]
-        msft_9a = [c for c in msft_chunks if "9A" in (c.section or "")]
+        aapl_9a = [c for c in aapl_chunks if any("9A" in p for p in c.section)]
+        msft_9a = [c for c in msft_chunks if any("9A" in p for p in c.section)]
 
         assert len(aapl_9a) > 0
         assert len(msft_9a) > 0
@@ -279,8 +279,8 @@ class TestEdgarDocumentLoader:
         aapl_chunks = self._load(_AAPL_HTML, "aapl_10k_2024", strategy=None)
         msft_chunks = self._load(_MSFT_HTML, "msft_10k_2024", strategy=None)
 
-        aapl_contents = {c.content for c in aapl_chunks if "9A" in (c.section or "")}
-        msft_contents = {c.content for c in msft_chunks if "9A" in (c.section or "")}
+        aapl_contents = {c.content for c in aapl_chunks if any("9A" in p for p in c.section)}
+        msft_contents = {c.content for c in msft_chunks if any("9A" in p for p in c.section)}
 
         # At least some overlap in 9A boilerplate between the two filings
         # (controls-and-procedures language is nearly identical across filers)
@@ -482,5 +482,5 @@ class TestEdgarRetrieval:
         ctx_result = self._tfidf_retrieve(query, ctx_chunks, use_embedding=True)[0]
 
         # Both should be from a 9A section
-        assert "9A" in (naive_result.section or "") or "Controls" in (naive_result.section or "")
-        assert "9A" in (ctx_result.section or "") or "Controls" in (ctx_result.section or "")
+        assert any("9A" in p or "Controls" in p for p in naive_result.section)
+        assert any("9A" in p or "Controls" in p for p in ctx_result.section)

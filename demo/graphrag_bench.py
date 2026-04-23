@@ -213,7 +213,7 @@ def cmd_inspect(args: argparse.Namespace) -> None:
         "n_evidence":    len(seen),
         "corpus_source": "repo" if corpus_files else "evidence_reconstruction",
     }
-    (out_dir / "corpus_info.json").write_text(json.dumps(info, indent=2))
+    (out_dir / "corpus_info.json").write_text(json.dumps(info, indent=2), encoding="utf-8")
     print(f"\nSaved corpus_info.json")
 
 
@@ -287,13 +287,55 @@ def _naive_chunks(text: str,
 # Phase 2: Index (chunk + embed + store via chunkymonkey)
 # ─────────────────────────────────────────────────────────────────────────────
 
+def cmd_build_ner(args: argparse.Namespace) -> None:
+    """Run NER on an existing index and persist chunk_entities to DB."""
+    import duckdb
+    data_dir = Path(args.out_dir) / "data"
+    db_path  = data_dir / args.db_name
+    force    = getattr(args, "force", False)
+    if not db_path.exists():
+        raise FileNotFoundError(f"Index DB not found: {db_path}")
+    con = duckdb.connect(str(db_path), read_only=True)
+    n = con.execute("SELECT COUNT(*) FROM chunk_entities").fetchone()[0]
+    con.close()
+    if n > 0 and not force:
+        print(f"chunk_entities already populated ({n:,} rows) — skipping. Use --force to rebuild.")
+    else:
+        with Store(db_path, embedding_dim=EMBED_DIM) as store:
+            entity_index = _build_entity_index_from_store(store)
+        _persist_entity_index(entity_index, db_path)
+
+    # Build entity embeddings if requested or not yet present
+    with_embeddings = getattr(args, "with_embeddings", False)
+    if with_embeddings:
+        import duckdb as _ddb
+        _con = _ddb.connect(str(db_path), read_only=True)
+        try:
+            ne = _con.execute("SELECT COUNT(*) FROM entity_embeddings").fetchone()[0]
+        except Exception:
+            ne = 0
+        _con.close()
+        if ne > 0 and not force:
+            print(f"entity_embeddings already populated ({ne:,} rows) — skipping.")
+        else:
+            from sentence_transformers import SentenceTransformer
+            embed_model = SentenceTransformer(EMBED_MODEL)
+            entity_index = _load_entity_index_from_db(db_path)
+            _build_and_persist_entity_embeddings(entity_index, embed_model, db_path)
+
+
 def cmd_index(args: argparse.Namespace) -> None:
     import numpy as np
     from sentence_transformers import SentenceTransformer
 
     out_dir  = Path(args.out_dir)
     data_dir = out_dir / "data"
-    db_path  = data_dir / DB_FILENAME
+    embed_content_only = getattr(args, "embed_content_only", False)
+    min_chunk = getattr(args, 'min_chunk', MIN_CHUNK) or MIN_CHUNK
+    max_chunk = getattr(args, 'max_chunk', MAX_CHUNK) or MAX_CHUNK
+    size_suffix = f"_{min_chunk}_{max_chunk}" if (min_chunk != MIN_CHUNK or max_chunk != MAX_CHUNK) else ""
+    base = "chunkymonkey_nobc" if embed_content_only else "chunkymonkey"
+    db_path = data_dir / f"{base}{size_suffix}.duckdb"
 
     if db_path.exists() and not args.force:
         with Store(db_path, embedding_dim=EMBED_DIM) as store:
@@ -309,7 +351,7 @@ def cmd_index(args: argparse.Namespace) -> None:
     corpus = _build_corpus(out_dir)
     print(f"Corpus: {len(corpus)} documents")
 
-    print(f"Chunking with header promotion (min={MIN_CHUNK}, max={MAX_CHUNK})...")
+    print(f"Chunking with header promotion (min={min_chunk}, max={max_chunk})...")
     all_chunks = []
     for doc_id, text in corpus:
         is_novel = doc_id.lower().startswith("novel")
@@ -326,12 +368,14 @@ def cmd_index(args: argparse.Namespace) -> None:
                 text,
                 promote_questions=True,
                 promote_short_phrases=True,
+                strip_isolated_letters=True,
             )
         chunks = chunk_document(
             doc_id, promoted,
-            min_chunk_size=MIN_CHUNK,
-            max_chunk_size=MAX_CHUNK,
+            min_chunk_size=min_chunk,
+            max_chunk_size=max_chunk,
             include_breadcrumb=True,
+            include_doc_name=False,
             promote_headings=False,  # already promoted above
         )
         chunks = enrich_chunks(chunks, strategy="prefix")
@@ -344,9 +388,8 @@ def cmd_index(args: argparse.Namespace) -> None:
     print(f"Embedding {len(all_chunks):,} chunks with {EMBED_MODEL}...")
     model = SentenceTransformer(EMBED_MODEL)
 
-    # Use embedding_content (breadcrumb + content) for embedding quality
     texts = [
-        c.embedding_content if c.embedding_content else c.content
+        c.content if embed_content_only else (c.embedding_content if c.embedding_content else c.content)
         for c in all_chunks
     ]
 
@@ -370,6 +413,11 @@ def cmd_index(args: argparse.Namespace) -> None:
 
     print(f"Index complete: {n:,} chunks → {db_path}")
 
+    if getattr(args, "with_ner", False):
+        with Store(db_path, embedding_dim=EMBED_DIM) as store:
+            entity_index = _build_entity_index_from_store(store)
+        _persist_entity_index(entity_index, db_path)
+
 
 def cmd_index_vanilla(args: argparse.Namespace) -> None:
     """Build vanilla RAG index: naive 256-token fixed chunks, no breadcrumbs."""
@@ -379,7 +427,9 @@ def cmd_index_vanilla(args: argparse.Namespace) -> None:
 
     out_dir  = Path(args.out_dir)
     data_dir = out_dir / "data"
-    db_path  = data_dir / VANILLA_DB_FILENAME
+    chunk_tokens = getattr(args, 'chunk_tokens', VANILLA_CHUNK_TOKENS) or VANILLA_CHUNK_TOKENS
+    db_suffix = f"_{chunk_tokens}" if chunk_tokens != VANILLA_CHUNK_TOKENS else ""
+    db_path = data_dir / f"vanilla_rag{db_suffix}.duckdb"
 
     if db_path.exists() and not args.force:
         with Store(db_path, embedding_dim=EMBED_DIM) as store:
@@ -394,11 +444,11 @@ def cmd_index_vanilla(args: argparse.Namespace) -> None:
 
     corpus = _build_corpus(out_dir)
     print(f"Corpus: {len(corpus)} documents")
-    print(f"Naive chunking: {VANILLA_CHUNK_TOKENS}-token chunks, {VANILLA_CHUNK_OVERLAP}-token overlap...")
+    print(f"Naive chunking: {chunk_tokens}-token chunks, {VANILLA_CHUNK_OVERLAP}-token overlap...")
 
     all_chunks: list[DocumentChunk] = []
     for doc_id, text in corpus:
-        for i, chunk_text in enumerate(_naive_chunks(text)):
+        for i, chunk_text in enumerate(_naive_chunks(text, chunk_tokens=chunk_tokens)):
             all_chunks.append(DocumentChunk(
                 document_name=doc_id,
                 chunk_index=i,
@@ -439,8 +489,46 @@ def cmd_index_vanilla(args: argparse.Namespace) -> None:
 # Phase 3: Retrieve + generate
 # ─────────────────────────────────────────────────────────────────────────────
 
+_REFUSAL_PHRASES = (
+    "does not contain", "does not provide", "does not mention",
+    "cannot determine", "cannot answer", "not enough information",
+    "insufficient information", "not mentioned", "no information",
+    "context does not", "not specified", "not stated",
+)
+
+def _format_breadcrumb(crumb: str, style: str = "markdown") -> str:
+    """Convert [doc > sec > subsec] to various heading formats.
+
+    style='markdown': ## doc\\n### sec\\n#### subsec  (default)
+    style='literal':  Document: doc. Section: sec. Subsection: subsec.
+    style='symbol':   original [doc > sec > subsec] unchanged
+    """
+    if style == "symbol":
+        return crumb
+    inner = crumb.strip("[]")
+    parts = [p.strip() for p in inner.split(">") if p.strip()]
+    if not parts:
+        return crumb
+    if style == "literal":
+        labels = ["Document", "Section", "Subsection", "Topic"]
+        return ". ".join(
+            f"{labels[min(i, len(labels)-1)]}: {p}" for i, p in enumerate(parts)
+        ) + "."
+    # markdown (default)
+    levels = ["##", "###", "####", "#####"]
+    return "\n".join(f"{levels[min(i, len(levels)-1)]} {p}" for i, p in enumerate(parts))
+
+
+def _is_refusal(answer: str) -> bool:
+    low = answer.lower()
+    return any(p in low for p in _REFUSAL_PHRASES)
+
+
 def _generate(question: str, context: str, client, model: str = GEN_MODEL,
-              temperature: float = 0.0) -> str:
+              temperature: float = 0.0, retry_hint: str | None = None) -> str:
+    user_content = f"Context:\n{context}\n\nQuestion: {question}"
+    if retry_hint:
+        user_content += f"\n\n{retry_hint}"
     resp = client.chat.completions.create(
         model=model,
         messages=[
@@ -448,8 +536,7 @@ def _generate(question: str, context: str, client, model: str = GEN_MODEL,
              "content": ("Answer the question based only on the provided context. "
                          "If the context does not contain enough information, "
                          "say so rather than making up an answer.")},
-            {"role": "user",
-             "content": f"Context:\n{context}\n\nQuestion: {question}"},
+            {"role": "user", "content": user_content},
         ],
         temperature=temperature,
         max_tokens=500,
@@ -457,11 +544,9 @@ def _generate(question: str, context: str, client, model: str = GEN_MODEL,
     return resp.choices[0].message.content.strip()
 
 
-def _build_enhanced_search(store):
-    """Build EnhancedSearch with SpacyMatcher NER + agglomerative ClusterMap."""
+def _build_entity_index_from_store(store) -> "EntityIndex":
+    """Run NER on all chunks in store and return a populated EntityIndex."""
     from chunkymonkey.ner import SpacyMatcher, EntityIndex
-    from chunkymonkey.cluster import ClusterMap
-    from chunkymonkey.search import EnhancedSearch
     from chunkymonkey.storage._vector import DuckDBVectorBackend
 
     print(f"Building EntityIndex with SpacyMatcher({SPACY_MODEL})...")
@@ -479,17 +564,386 @@ def _build_enhanced_search(store):
 
     entity_index.recompute_scores()
     print(f"  {entity_index.total_chunks():,} chunks, {len(entity_index.entity_ids()):,} entities")
+    return entity_index
 
-    print("  Building ClusterMap...")
-    cluster_map = ClusterMap.build(entity_index)
-    print(f"  {cluster_map.cluster_count():,} clusters across {cluster_map.entity_count():,} entities")
 
-    # Disable structural_expansion: _structural_neighbors scans all chunks per query
+def _persist_entity_index(entity_index, db_path: Path) -> None:
+    """Write entity_index associations to chunk_entities/entities tables."""
+    import duckdb
+
+    print("  Persisting to chunk_entities table...")
+    data = entity_index.to_dict()
+    con = duckdb.connect(str(db_path))
+    con.execute("DELETE FROM chunk_entities")
+    con.execute("DELETE FROM entities")
+    for a in data["associations"]:
+        con.execute(
+            "INSERT OR REPLACE INTO chunk_entities(chunk_id, entity_id, frequency, positions_json, score) VALUES (?,?,?,?,?)",
+            [a["chunk_id"], a["entity_id"], a["frequency"], json.dumps(a["positions"]), a["score"]],
+        )
+        con.execute(
+            "INSERT OR IGNORE INTO entities(id, name, display_name) VALUES (?,?,?)",
+            [a["entity_id"], a["entity_id"], a["entity_id"]],
+        )
+    con.close()
+    print(f"  Persisted {len(data['associations']):,} associations → {db_path}")
+
+
+def _build_and_persist_entity_embeddings(entity_index, embed_model, db_path: Path) -> None:
+    """Embed all unique entity name strings and store in entity_embeddings table."""
+    import duckdb
+    import numpy as np
+
+    entity_ids = list(entity_index.entity_ids())
+    if not entity_ids:
+        return
+    print(f"  Embedding {len(entity_ids):,} unique entity strings...")
+    vecs = embed_model.encode(
+        entity_ids, normalize_embeddings=True, show_progress_bar=False, batch_size=512
+    ).astype("float32")
+    con = duckdb.connect(str(db_path))
+    con.execute(
+        "CREATE TABLE IF NOT EXISTS entity_embeddings "
+        "(entity_id TEXT PRIMARY KEY, embedding FLOAT[])"
+    )
+    con.execute("DELETE FROM entity_embeddings")
+    for eid, vec in zip(entity_ids, vecs):
+        con.execute(
+            "INSERT INTO entity_embeddings(entity_id, embedding) VALUES (?, ?)",
+            [eid, vec.tolist()],
+        )
+    con.close()
+    print(f"  Persisted {len(entity_ids):,} entity embeddings → {db_path}")
+
+
+def cmd_build_community(args: argparse.Namespace) -> None:
+    """Build community index: heading vectors + weighted average + Louvain detection."""
+    import duckdb
+    import numpy as np
+    from sentence_transformers import SentenceTransformer
+    from chunkymonkey.community import CommunityIndex
+
+    data_dir = Path(args.out_dir) / "data"
+    db_path  = data_dir / args.db_name
+    alpha    = getattr(args, "alpha", 0.2)
+    sim_threshold = getattr(args, "sim_threshold", 0.6)
+    force    = getattr(args, "force", False)
+
+    if not db_path.exists():
+        raise FileNotFoundError(f"Index DB not found: {db_path}")
+
+    # Check if already built
+    if not force:
+        con = duckdb.connect(str(db_path), read_only=True)
+        try:
+            n = con.execute("SELECT COUNT(*) FROM chunk_communities").fetchone()[0]
+            con.close()
+            if n > 0:
+                print(f"chunk_communities already populated ({n:,} rows) — skipping. Use --force to rebuild.")
+                return
+        except Exception:
+            con.close()
+
+    print(f"Loading chunks and embeddings from {db_path}...")
+    con_ro = duckdb.connect(str(db_path), read_only=True)
+    rows = con_ro.execute(
+        "SELECT chunk_id, content, breadcrumb, embedding FROM embeddings WHERE embedding IS NOT NULL"
+    ).fetchall()
+    con_ro.close()
+
+    chunk_ids: list[str] = [r[0] for r in rows]
+    chunk_texts: list[str] = [r[1] or "" for r in rows]
+    breadcrumbs: list[str] = [r[2] or "" for r in rows]
+    content_vecs = np.array([r[3] for r in rows], dtype="float32")
+    print(f"  {len(chunk_ids):,} chunks with embeddings")
+
+    # Embed breadcrumbs (heading vectors)
+    heading_vecs = None
+    non_empty_bc = [bc for bc in breadcrumbs if bc.strip()]
+    if non_empty_bc:
+        print(f"  Embedding {len(non_empty_bc):,} non-empty breadcrumbs (α={alpha})...")
+        model = SentenceTransformer(EMBED_MODEL)
+        bc_texts = [bc if bc.strip() else "" for bc in breadcrumbs]
+        all_bc_vecs = model.encode(
+            bc_texts, normalize_embeddings=True, show_progress_bar=False, batch_size=256
+        ).astype("float32")
+        # Zero out empty breadcrumbs so they don't contribute
+        for i, bc in enumerate(breadcrumbs):
+            if not bc.strip():
+                all_bc_vecs[i] = 0.0
+        heading_vecs = all_bc_vecs
+        del model
+    else:
+        print("  No breadcrumbs found — using content vectors only.")
+
+    print(f"  Building community index (sim_threshold={sim_threshold})...")
+    idx = CommunityIndex.build(
+        chunk_ids=chunk_ids,
+        content_vecs=content_vecs,
+        chunk_texts=chunk_texts,
+        heading_vecs=heading_vecs,
+        alpha=alpha,
+        sim_threshold=sim_threshold,
+    )
+    print(f"  {idx.community_count():,} communities across {idx.chunk_count():,} chunks")
+
+    # Persist — retry with backoff if DB is locked by another process
+    import time as _time
+    for _attempt in range(60):
+        try:
+            idx.persist(db_path)
+            print(f"  Persisted → {db_path}")
+            break
+        except Exception as _e:
+            if "lock" in str(_e).lower() or "conflict" in str(_e).lower():
+                print(f"  DB locked, waiting 10s... (attempt {_attempt+1}/60)", flush=True)
+                _time.sleep(10)
+            else:
+                raise
+    else:
+        raise RuntimeError("Could not acquire write lock on DB after 10 minutes.")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Per-run DuckDB helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _run_db_path(data_dir: Path, run_name: str) -> Path:
+    runs_dir = data_dir / "runs"
+    runs_dir.mkdir(exist_ok=True)
+    return runs_dir / f"{run_name}.duckdb"
+
+
+def _init_run_db(db_path: Path) -> None:
+    import duckdb
+    con = duckdb.connect(str(db_path))
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS results (
+            id TEXT PRIMARY KEY,
+            question TEXT,
+            source TEXT,
+            question_type TEXT,
+            context TEXT,
+            evidence TEXT,
+            generated_answer TEXT,
+            gold_answer TEXT,
+            retrieved_chunks TEXT,
+            retrieved_scores TEXT,
+            expansion_stats TEXT,
+            entity_ref_retry TEXT
+        )
+    """)
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS eval_scores (
+            id TEXT PRIMARY KEY,
+            question_type TEXT,
+            answer_correctness REAL,
+            rouge_score REAL,
+            coverage_score REAL,
+            faithfulness REAL
+        )
+    """)
+    con.close()
+
+
+def _write_results_to_db(db_path: Path, results: list[dict]) -> None:
+    import duckdb, json as _json
+    con = duckdb.connect(str(db_path))
+    con.execute("DELETE FROM results")
+    for r in results:
+        con.execute(
+            "INSERT INTO results VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            [
+                r.get("id"), r.get("question"), r.get("source"),
+                r.get("question_type"), r.get("context"),
+                _json.dumps(r.get("evidence")),
+                r.get("generated_answer"), r.get("gold_answer"),
+                _json.dumps(r.get("retrieved_chunks")),
+                _json.dumps(r.get("retrieved_scores")),
+                _json.dumps(r.get("entity_ref_expansion")) if r.get("entity_ref_expansion") else None,
+                _json.dumps(r.get("entity_ref_retry")) if r.get("entity_ref_retry") else None,
+            ],
+        )
+    con.close()
+
+
+def _read_results_from_db(db_path: Path) -> list[dict]:
+    import duckdb, json as _json
+    con = duckdb.connect(str(db_path), read_only=True)
+    rows = con.execute("SELECT * FROM results").fetchall()
+    cols = ["id","question","source","question_type","context","evidence",
+            "generated_answer","gold_answer","retrieved_chunks","retrieved_scores",
+            "expansion_stats","entity_ref_retry"]
+    con.close()
+    records = []
+    for row in rows:
+        r = dict(zip(cols, row))
+        for key in ("evidence","retrieved_chunks","retrieved_scores","expansion_stats","entity_ref_retry"):
+            if r[key]:
+                try: r[key] = _json.loads(r[key])
+                except Exception: pass
+        records.append(r)
+    return records
+
+
+def _load_community_index(db_path: Path):
+    """Load CommunityIndex from DB, return None if not built."""
+    from chunkymonkey.community import CommunityIndex
+    try:
+        import duckdb
+        con = duckdb.connect(str(db_path), read_only=True)
+        n = con.execute("SELECT COUNT(*) FROM chunk_communities").fetchone()[0]
+        con.close()
+        if n == 0:
+            return None
+        print(f"Loading CommunityIndex from DB ({n:,} assignments)...")
+        return CommunityIndex.from_db(db_path)
+    except Exception:
+        return None
+
+
+def _load_entity_embeddings(db_path: Path):
+    """Load entity embeddings matrix and ID list from DB. Returns (matrix, ids) or (None, None)."""
+    import duckdb
+    import numpy as np
+
+    con = duckdb.connect(str(db_path), read_only=True)
+    try:
+        rows = con.execute("SELECT entity_id, embedding FROM entity_embeddings").fetchall()
+    except Exception:
+        con.close()
+        return None, None
+    con.close()
+    if not rows:
+        return None, None
+    ids = [r[0] for r in rows]
+    mat = np.array([r[1] for r in rows], dtype="float32")
+    return mat, ids
+
+
+def _load_entity_index_from_db(db_path: Path) -> "EntityIndex":
+    """Reconstruct EntityIndex from persisted chunk_entities table."""
+    import duckdb
+    from chunkymonkey.ner import EntityIndex
+
+    con = duckdb.connect(str(db_path), read_only=True)
+    rows = con.execute(
+        "SELECT chunk_id, entity_id, frequency, positions_json, score FROM chunk_entities"
+    ).fetchall()
+    total_chunks = con.execute("SELECT COUNT(DISTINCT chunk_id) FROM chunk_entities").fetchone()[0]
+    con.close()
+
+    associations = [
+        {
+            "entity_id": r[1],
+            "chunk_id": r[0],
+            "frequency": r[2],
+            "positions": json.loads(r[3]) if r[3] else [],
+            "score": r[4],
+            "chunk_length": 1,
+        }
+        for r in rows
+    ]
+    return EntityIndex.from_dict({
+        "total_chunks": total_chunks,
+        "score_weights": [0.4, 0.3, 0.3],
+        "associations": associations,
+    })
+
+
+def _build_enhanced_search(store, db_path: Path | None = None, use_ner_x: bool = False, embed_model=None, entity_ref_expansion: bool = False, entity_ref_expansion_k: int = 20, entity_ref_expansion_per_k: int | None = None, entity_ref_expansion_min_sim: float | None = None, use_cluster: bool = False):
+    """Load EnhancedSearch: from pre-built DB tables if available, else rebuild in memory."""
+    import duckdb
+    from chunkymonkey.ner import SpacyMatcher, EntityIndex
+    from chunkymonkey.search import EnhancedSearch
+    from chunkymonkey.storage._vector import DuckDBVectorBackend
+
+    if db_path is not None and db_path.exists():
+        con = duckdb.connect(str(db_path), read_only=True)
+        n = con.execute("SELECT COUNT(*) FROM chunk_entities").fetchone()[0]
+        con.close()
+        if n > 0:
+            print(f"Loading EntityIndex from DB ({n:,} associations)...")
+            entity_index = _load_entity_index_from_db(db_path)
+            print(f"  {entity_index.total_chunks():,} chunks, {len(entity_index.entity_ids()):,} entities")
+
+            cluster_map = None
+            if use_cluster:
+                from chunkymonkey.cluster import ClusterMap
+                print("  Building ClusterMap...")
+                cluster_map = ClusterMap.build(entity_index)
+                print(f"  {cluster_map.cluster_count():,} clusters across {cluster_map.entity_count():,} entities")
+
+            matcher = SpacyMatcher(model=SPACY_MODEL, strip_numeric=True)
+            query_ner_fn = lambda text: [m.display_name for m in matcher.match(text)]
+
+            ner_x_kwargs: dict = {}
+            if use_ner_x and embed_model is not None:
+                mat, ids = _load_entity_embeddings(db_path)
+                if mat is not None:
+                    print(f"  Loaded {len(ids):,} entity embeddings for ner-x expansion.")
+                    ner_x_kwargs = dict(
+                        entity_embedding_expansion=True,
+                        entity_embeddings=mat,
+                        entity_embedding_ids=ids,
+                        ner_fn=lambda text: [m.entity_id for m in matcher.match(text)],
+                        entity_embedding_top_k=10,
+                    )
+                else:
+                    print("  entity_embeddings table empty — ner-x disabled. Run build-ner --with-embeddings first.")
+
+            embed_fn_kwargs: dict = {}
+            if embed_model is not None:
+                embed_fn_kwargs["embed_fn"] = lambda texts: embed_model.encode(
+                    texts, normalize_embeddings=True, show_progress_bar=False
+                )
+
+            return EnhancedSearch(
+                store,
+                entity_index=entity_index,
+                cluster_map=cluster_map,
+                structural_expansion=False,
+                cluster_expansion=use_cluster,
+                query_ner_fn=query_ner_fn,
+                entity_ref_expansion=entity_ref_expansion,
+                entity_ref_expansion_k=entity_ref_expansion_k,
+                entity_ref_expansion_per_k=entity_ref_expansion_per_k,
+                entity_ref_expansion_min_sim=entity_ref_expansion_min_sim,
+                **ner_x_kwargs,
+                **embed_fn_kwargs,
+            )
+
+    print(f"Building EntityIndex with SpacyMatcher({SPACY_MODEL}) (not pre-built, rebuild in memory)...")
+    matcher = SpacyMatcher(model=SPACY_MODEL, strip_numeric=True)
+    entity_index = EntityIndex()
+    all_chunks = store.vector.get_all_chunks()
+    print(f"  Running NER on {len(all_chunks):,} chunks...")
+    for chunk in all_chunks:
+        embed_content = chunk.embedding_content if chunk.embedding_content else chunk.content
+        chunk_id = DuckDBVectorBackend._generate_chunk_id(
+            chunk.document_name, chunk.chunk_index, embed_content
+        )
+        entity_index.run_ner(chunk_id, chunk.content, matcher)
+    entity_index.recompute_scores()
+    print(f"  {entity_index.total_chunks():,} chunks, {len(entity_index.entity_ids()):,} entities")
+    cluster_map = None
+    if use_cluster:
+        from chunkymonkey.cluster import ClusterMap
+        print("  Building ClusterMap...")
+        cluster_map = ClusterMap.build(entity_index)
+        print(f"  {cluster_map.cluster_count():,} clusters across {cluster_map.entity_count():,} entities")
+    query_ner_fn = lambda text: [m.display_name for m in matcher.match(text)]
     return EnhancedSearch(
         store,
         entity_index=entity_index,
         cluster_map=cluster_map,
         structural_expansion=False,
+        cluster_expansion=use_cluster,
+        query_ner_fn=query_ner_fn,
+        entity_ref_expansion=entity_ref_expansion,
+        entity_ref_expansion_k=entity_ref_expansion_k,
+        entity_ref_expansion_per_k=entity_ref_expansion_per_k,
+        entity_ref_expansion_min_sim=entity_ref_expansion_min_sim,
     )
 
 
@@ -511,31 +965,55 @@ def cmd_run(args: argparse.Namespace) -> None:
     _my_pid = os.getpid()
     try:
         _procs = _sp.check_output(
-            ["pgrep", "-f", f"graphrag_bench.py.*--run-name {run_name}"],
+            ["pgrep", "-f", f"graphrag_bench.py.*--run-name {run_name}( |$)"],
             text=True,
         ).split()
         for _pid in _procs:
             _pid = int(_pid)
             if _pid != _my_pid:
-                os.kill(_pid, signal.SIGKILL)
-                print(f"[preflight] killed stale pid {_pid} ({run_name})", flush=True)
+                try:
+                    os.kill(_pid, signal.SIGKILL)
+                    print(f"[preflight] killed stale pid {_pid} ({run_name})", flush=True)
+                except ProcessLookupError:
+                    pass
     except _sp.CalledProcessError:
         pass  # no matching processes
     results_f    = results_dir / f"{run_name}.jsonl"
     ckpt_f       = results_dir / f"{run_name}_checkpoint.jsonl"
     use_vanilla  = getattr(args, "vanilla", False)
-    db_path      = data_dir / (VANILLA_DB_FILENAME if use_vanilla else DB_FILENAME)
-    top_k        = VANILLA_K if use_vanilla else K
-    gen_temperature = VANILLA_TEMPERATURE  # paper: 0.7 for all systems
     use_rerank        = getattr(args, "rerank", False)
     rerank_provider   = getattr(args, "rerank_provider", "local")
     use_enhanced      = getattr(args, "enhanced", False)
+    use_ner_x         = getattr(args, "ner_x", False)
+    use_entity_ref_expansion = getattr(args, "entity_ref_expansion", False)
+    entity_ref_expansion_per_k  = getattr(args, "entity_ref_expansion_per_k", None)
+    entity_ref_expansion_min_sim = getattr(args, "entity_ref_expansion_min_sim", None)
+    use_cluster = getattr(args, "cluster", False)
+    use_entity_ref_retry     = getattr(args, "entity_ref_retry", False)
+    use_breadcrumb_context = getattr(args, "breadcrumb_context", False)
+    breadcrumb_style       = getattr(args, "breadcrumb_style", "markdown")
+    use_community_context  = getattr(args, "community_context", False)
+    community_min_coherence = getattr(args, "community_min_coherence", 0.0)
+    no_breadcrumb_embed    = getattr(args, "no_breadcrumb_embed", False)
+    db_name_override = getattr(args, 'db_name', None)
+    question_ids_file = getattr(args, 'question_ids', None)
+    if db_name_override:
+        db_path = data_dir / db_name_override
+    else:
+        _ctx_db = DB_FILENAME.replace(".duckdb", "_nobc.duckdb") if no_breadcrumb_embed else DB_FILENAME
+        db_path = data_dir / (VANILLA_DB_FILENAME if use_vanilla else _ctx_db)
+    top_k        = VANILLA_K if use_vanilla else K
+    gen_temperature = VANILLA_TEMPERATURE  # paper: 0.7 for all systems
 
     if not db_path.exists():
         print("No index found. Run 'index' first.")
         return
 
     questions = _load_questions(data_dir)
+    if question_ids_file:
+        with open(question_ids_file) as _f:
+            _allowed = set(json.load(_f))
+        questions = [q for q in questions if q.get('id') in _allowed]
     if args.limit:
         questions = questions[:args.limit]
     print(f"Questions: {len(questions)}")
@@ -567,8 +1045,10 @@ def cmd_run(args: argparse.Namespace) -> None:
             q_vecs_cache.unlink()  # stale cache
             cached_ids = None
 
-    if not q_vecs_cache.exists():
+    embed_model = None
+    if not q_vecs_cache.exists() or use_ner_x or use_entity_ref_retry or use_entity_ref_expansion:
         embed_model = SentenceTransformer(EMBED_MODEL)
+    if not q_vecs_cache.exists():
         print(f"Embedding {len(questions)} questions (will cache)...")
         all_texts = [q["question"] for q in questions]
         all_vecs  = embed_model.encode(
@@ -576,7 +1056,7 @@ def cmd_run(args: argparse.Namespace) -> None:
             show_progress_bar=False, batch_size=256,
         ).astype("float32")
         np.save(str(q_vecs_cache), all_vecs)
-        q_ids_cache.write_text(json.dumps(all_ids))
+        q_ids_cache.write_text(json.dumps(all_ids), encoding="utf-8")
         print(f"Cached → {q_vecs_cache}")
 
     # slice to pending indices only
@@ -604,21 +1084,33 @@ def cmd_run(args: argparse.Namespace) -> None:
             print(f"Loading reranker: {RERANK_MODEL}...")
             reranker = CrossEncoder(RERANK_MODEL)
 
+    community_index = _load_community_index(db_path) if use_community_context else None
+    if use_community_context and community_index is None:
+        print("WARNING: --community-context set but no community index found. Run 'build-community' first.")
+
     work_items: list[dict] = []
     with Store(db_path, embedding_dim=EMBED_DIM, read_only=True) as store:
-        enhanced_search = _build_enhanced_search(store) if use_enhanced else None
+        enhanced_search = _build_enhanced_search(
+            store, db_path, use_ner_x=use_ner_x, embed_model=embed_model,
+            entity_ref_expansion=use_entity_ref_expansion,
+            entity_ref_expansion_per_k=entity_ref_expansion_per_k,
+            entity_ref_expansion_min_sim=entity_ref_expansion_min_sim,
+            use_cluster=use_cluster,
+        ) if use_enhanced else None
 
         for j, (i, q) in enumerate(pending):
             qid  = q.get("id", f"q{i}")
             if use_enhanced and enhanced_search is not None:
                 scored = enhanced_search.search(q_vecs[j], k=fetch_k, query_text=q["question"])
                 hits   = [(sc.chunk_id, sc.score, sc.chunk) for sc in scored]
+                expansion_stats = enhanced_search.last_expansion_stats
             else:
                 hits = store.vector.search(
                     q_vecs[j], limit=fetch_k,
                     query_text=q["question"],
                     include_breadcrumbs=False,
                 )
+                expansion_stats = None
             if use_rerank and together_rerank_client is not None:
                 docs   = [chunk.content for _, _, chunk in hits]
                 resp   = together_rerank_client.rerank.create(
@@ -644,17 +1136,44 @@ def cmd_run(args: argparse.Namespace) -> None:
                 hits   = [h for _, h in ranked]
             elif not use_rerank:
                 hits = hits[:top_k]
+            chunk_texts = [chunk.content or "" for _, _, chunk in hits]
+
+            # Collect unique community topic labels for retrieved chunks
+            community_header = ""
+            if community_index is not None:
+                labels = []
+                seen_cids: set = set()
+                for cid, _, _ in hits:
+                    comm_id = community_index.community_id(cid)
+                    if comm_id is not None and comm_id not in seen_cids:
+                        seen_cids.add(comm_id)
+                        lbl = community_index.topic_label(cid, min_coherence=community_min_coherence)
+                        if lbl:
+                            labels.append(lbl)
+                if labels:
+                    community_header = "Topic context: " + "; ".join(dict.fromkeys(labels)) + "\n\n"
+
+            def _fmt_chunk(cid, chunk):
+                text = chunk.content or ""
+                if use_breadcrumb_context and chunk.breadcrumb:
+                    text = f"{_format_breadcrumb(chunk.breadcrumb, style=breadcrumb_style)}\n\n{text}"
+                return text
+
             work_items.append({
-                "_slot":      len(work_items),   # for round-robin endpoint selection
-                "qid":        qid,
-                "question":   q["question"],
-                "source":     q.get("source", q.get("subset", "?")),
-                "qtype":      q.get("question_type", "?"),
-                "context":    "\n\n".join(chunk.content for _, _, chunk in hits),
-                "chunk_ids":  [cid for cid, _, _ in hits],
-                "scores":     [float(sc) for _, sc, _ in hits],
-                "evidence":   q.get("evidence", []),
-                "gold":       str(q.get("answer", "")),
+                "_slot":          len(work_items),
+                "qid":            qid,
+                "question":       q["question"],
+                "source":         q.get("source", q.get("subset", "?")),
+                "qtype":          q.get("question_type", "?"),
+                "context":        community_header + "\n\n".join(
+                    _fmt_chunk(cid, chunk) for cid, _, chunk in hits
+                ),
+                "chunk_ids":      [cid for cid, _, _ in hits],
+                "scores":         [float(sc) for _, sc, _ in hits],
+                "chunk_texts":    chunk_texts,
+                "expansion_stats": expansion_stats,
+                "evidence":       q.get("evidence", []),
+                "gold":           str(q.get("answer", "")),
             })
 
     # Build one client per endpoint (round-robin for parallelism across multiple dedicated endpoints)
@@ -671,12 +1190,17 @@ def cmd_run(args: argparse.Namespace) -> None:
     n_endpoints = len(clients)
     print(f"Generating answers with {args.concurrency} parallel workers across {n_endpoints} endpoint(s)...")
 
+    retry_ner_fn = None
+    if use_entity_ref_retry:
+        from chunkymonkey.ner import SpacyMatcher
+        _retry_matcher = SpacyMatcher(model=SPACY_MODEL, strip_numeric=True)
+        retry_ner_fn = lambda text: [m.display_name for m in _retry_matcher.match(text)]
+
     new_results: list[dict] = []
     ckpt_lock   = threading.Lock()
     done_count  = [len(done_ids)]
 
     def _process(item: dict) -> dict:
-        # round-robin client + model selection by item slot index
         slot   = item["_slot"] % n_endpoints
         client = clients[slot]
         model  = endpoint_ids[slot]
@@ -690,7 +1214,41 @@ def cmd_run(args: argparse.Namespace) -> None:
                     answer = f"[ERROR: {exc}]"
                 else:
                     time.sleep(2 ** attempt)
-        return {
+
+        retry_stats: dict | None = None
+        if use_entity_ref_retry and retry_ner_fn is not None:
+            import numpy as np
+            q_entities = retry_ner_fn(item["question"])
+            uncovered: list[str] = []
+            if q_entities:
+                ent_vecs = embed_model.encode(q_entities, normalize_embeddings=True, show_progress_bar=False)
+                ans_vec  = embed_model.encode([answer], normalize_embeddings=True, show_progress_bar=False)[0]
+                sims     = ent_vecs @ ans_vec  # (n_entities,)
+                uncovered = [e for e, s in zip(q_entities, sims) if s < 0.3]
+            if uncovered:
+                hint = (
+                    f"Your answer does not appear to address the following key concepts from the question: "
+                    f"{', '.join(uncovered)}. "
+                    f"Please re-read the context and provide an answer that directly relates to these concepts."
+                )
+                retry_answer = answer
+                for attempt in range(3):
+                    try:
+                        retry_answer = _generate(item["question"], item["context"], client, model,
+                                                 temperature=gen_temperature, retry_hint=hint)
+                        break
+                    except Exception as exc:
+                        if attempt == 2:
+                            retry_answer = answer
+                        else:
+                            time.sleep(2 ** attempt)
+                retry_stats = {
+                    "invoked": True,
+                    "uncovered_entities": uncovered,
+                }
+                answer = retry_answer
+
+        result = {
             "id":               item["qid"],
             "question":         item["question"],
             "source":           item["source"],
@@ -702,6 +1260,11 @@ def cmd_run(args: argparse.Namespace) -> None:
             "retrieved_chunks": item["chunk_ids"],
             "retrieved_scores": item["scores"],
         }
+        if item.get("expansion_stats") is not None:
+            result["entity_ref_expansion"] = item["expansion_stats"]
+        if retry_stats is not None:
+            result["entity_ref_retry"] = retry_stats
+        return result
 
     with ThreadPoolExecutor(max_workers=args.concurrency) as executor:
         futures = {executor.submit(_process, item): item for item in work_items}
@@ -744,7 +1307,10 @@ def cmd_run(args: argparse.Namespace) -> None:
         for r in all_results:
             f.write(json.dumps(r) + "\n")
 
-    print(f"\nComplete: {len(all_results)} results → {results_f}")
+    run_db = _run_db_path(data_dir, run_name)
+    _init_run_db(run_db)
+    _write_results_to_db(run_db, all_results)
+    print(f"\nComplete: {len(all_results)} results → {results_f} + {run_db}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -770,15 +1336,22 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
     ckpt_f      = results_dir / f"bench_eval_ckpt_{run_name}.jsonl"
     out_f       = results_dir / f"bench_eval_{run_name}.json"
 
-    if not results_f.exists():
+    run_db = _run_db_path(data_dir, run_name)
+    if run_db.exists():
+        records = _read_results_from_db(run_db)
+    elif results_f.exists():
+        records = [json.loads(line) for line in open(results_f)]
+    else:
         print(f"No results found: {results_f}. Run 'run' first.")
         return
     if not repo_dir.exists():
         print(f"Benchmark repo not found at {repo_dir}. Run 'download' first.")
         return
-
-    # Load our results
-    records = [json.loads(line) for line in open(results_f)]
+    question_ids_file = getattr(args, 'question_ids', None)
+    if question_ids_file:
+        with open(question_ids_file) as _f:
+            allowed_ids = set(json.load(_f))
+        records = [r for r in records if r["id"] in allowed_ids]
     if args.limit:
         records = records[:args.limit]
 
@@ -819,6 +1392,10 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
         import httpx
 
         judge_provider = getattr(args, "judge_provider", "openai")
+        _http_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=10.0, read=60.0, write=10.0, pool=5.0),
+            limits=httpx.Limits(max_connections=20, max_keepalive_connections=5),
+        )
         _judge_kwargs = dict(
             model=args.judge,
             temperature=0.0,
@@ -827,7 +1404,8 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
             presence_penalty=0,
             frequency_penalty=0,
             max_retries=3,
-            timeout=30,
+            timeout=60,
+            http_async_client=_http_client,
         )
         if judge_provider == "together":
             llm = ChatOpenAI(
@@ -865,23 +1443,33 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
                 show_progress_bar=False,
             ).astype("float32")
             np.save(str(gt_cache_f), gt_vecs)
-            gt_id_f.write_text(json.dumps(gt_ids))
+            gt_id_f.write_text(json.dumps(gt_ids), encoding="utf-8")
             print(f"  Cached → {gt_cache_f}")
 
-        # Answer embeddings (per run — only pending items)
-        ans_texts  = [r["generated_answer"] for r in pending]
-        print(f"Encoding {len(ans_texts)} generated answers (batched)...")
-        ans_vecs = embed_model.encode(
-            ans_texts, batch_size=32, normalize_embeddings=True,
-            show_progress_bar=False,
-        ).astype("float32")
+        # Answer embeddings (per run — cached)
+        ans_cache_f = out_dir / "data" / f"ans_embeddings_{run_name}.npy"
+        ans_id_f    = out_dir / "data" / f"ans_embedding_ids_{run_name}.json"
+        all_ans_ids   = [r["id"] for r in bench_records]
+        all_ans_texts = [r["generated_answer"] for r in bench_records]
+        if ans_cache_f.exists() and ans_id_f.exists() and json.loads(ans_id_f.read_text()) == all_ans_ids:
+            print(f"Loading cached answer embeddings...")
+            all_ans_vecs = np.load(str(ans_cache_f))
+        else:
+            print(f"Encoding {len(all_ans_texts)} answer texts (batched)...")
+            all_ans_vecs = embed_model.encode(
+                all_ans_texts, batch_size=32, normalize_embeddings=True,
+                show_progress_bar=False,
+            ).astype("float32")
+            np.save(str(ans_cache_f), all_ans_vecs)
+            ans_id_f.write_text(json.dumps(all_ans_ids), encoding="utf-8")
+            print(f"  Cached → {ans_cache_f}")
         del embed_model  # free memory
 
         # Build lookup: text → embedding vector
         emb_lookup: dict[str, np.ndarray] = {}
         for r, vec in zip(bench_records, gt_vecs):
             emb_lookup[r["ground_truth"]] = vec
-        for r, vec in zip(pending, ans_vecs):
+        for r, vec in zip(bench_records, all_ans_vecs):
             emb_lookup[r["generated_answer"]] = vec
 
         class CachedEmbeddings(LCEmbeddings):
@@ -944,12 +1532,22 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
                             break
             return result
 
+        async def _eval_one_safe(r: dict) -> dict:
+            import asyncio as _aio
+            try:
+                return await _aio.wait_for(_eval_one(r), timeout=120)
+            except _aio.TimeoutError:
+                print(f"[eval] {r['id']} timed out after 120s — skipping", flush=True)
+                qtype = r.get("question_type", "?")
+                return {"id": r["id"], "question_type": qtype,
+                        **{k: float("nan") for k in METRIC_CONFIG.get(qtype, ["answer_correctness"])}}
+
         async def _run_all():
             import asyncio as _aio
             batch_size = 10
             for batch_start in range(0, len(pending), batch_size):
                 batch = pending[batch_start:batch_start + batch_size]
-                results_batch = await _aio.gather(*[_eval_one(r) for r in batch], return_exceptions=True)
+                results_batch = await _aio.gather(*[_eval_one_safe(r) for r in batch], return_exceptions=True)
                 with open(ckpt_f, "a") as f:
                     for item in results_batch:
                         if isinstance(item, dict):
@@ -975,8 +1573,31 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
                 agg[key] = float(np.nanmean(vals))
         aggregated[qtype] = agg
 
+    params = {
+        "judge": args.judge,
+        "judge_provider": getattr(args, "judge_provider", "openai"),
+        "run_name": run_name,
+        "n_evaluated": len(done),
+    }
     with open(out_f, "w") as f:
-        json.dump(aggregated, f, indent=2)
+        json.dump({"_params": params, **aggregated}, f, indent=2)
+
+    # Write per-question eval scores to run DB
+    if run_db.exists():
+        import duckdb as _ddb
+        con = _ddb.connect(str(run_db))
+        con.execute("DELETE FROM eval_scores")
+        for item in done.values():
+            con.execute(
+                "INSERT OR REPLACE INTO eval_scores VALUES (?,?,?,?,?,?)",
+                [
+                    item.get("id"), item.get("question_type"),
+                    item.get("answer_correctness"), item.get("rouge_score"),
+                    item.get("coverage_score"), item.get("faithfulness"),
+                ],
+            )
+        con.close()
+
     print(f"\nBench eval complete → {out_f}")
     for qtype, scores in aggregated.items():
         print(f"  {qtype}: " + ", ".join(f"{k}={v:.3f}" for k, v in scores.items()))
@@ -985,23 +1606,62 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
 def cmd_bench_report(args: argparse.Namespace) -> None:
     """Combined matrix: our runs + full leaderboard, scored with benchmark's native metric."""
     out_dir     = Path(args.out_dir)
+    data_dir    = out_dir / "data"
     results_dir = out_dir / "results"
 
-    # Discover all bench_eval_*.json files
+    # Discover run DBs first, fall back to legacy bench_eval_*.json
     run_results: dict[str, dict] = {}
+    runs_dir = data_dir / "runs"
+    if runs_dir.exists():
+        import duckdb as _ddb
+        for run_db in sorted(runs_dir.glob("*.duckdb")):
+            rn = run_db.stem
+            try:
+                con = _ddb.connect(str(run_db), read_only=True)
+                rows = con.execute(
+                    "SELECT question_type, answer_correctness, rouge_score, coverage_score, faithfulness "
+                    "FROM eval_scores"
+                ).fetchall()
+                con.close()
+            except Exception:
+                continue
+            if not rows:
+                continue
+            by_type: dict[str, dict] = {}
+            import numpy as _np
+            for qtype, ac, rouge, cov, faith in rows:
+                if qtype not in by_type:
+                    by_type[qtype] = {"ac":[],"rouge":[],"cov":[],"faith":[]}
+                for val, lst in ((ac,"ac"),(rouge,"rouge"),(cov,"cov"),(faith,"faith")):
+                    if val is not None and val == val:
+                        by_type[qtype][lst].append(val)
+            data = {}
+            for qtype, lists in by_type.items():
+                data[qtype] = {
+                    "answer_correctness": float(_np.mean(lists["ac"])) if lists["ac"] else float("nan"),
+                    "rouge_score":        float(_np.mean(lists["rouge"])) if lists["rouge"] else float("nan"),
+                    "coverage_score":     float(_np.mean(lists["cov"])) if lists["cov"] else float("nan"),
+                    "faithfulness":       float(_np.mean(lists["faith"])) if lists["faith"] else float("nan"),
+                }
+            scores = [v["answer_correctness"] for v in data.values() if v["answer_correctness"] == v["answer_correctness"]]
+            run_results[rn] = {"scores_by_type": data, "avg_acc": float(sum(scores)/len(scores)) if scores else float("nan")}
+
+    # Legacy fallback: bench_eval_*.json for runs not yet in run DBs
     for p in sorted(results_dir.glob("bench_eval_*.json")):
         if "ckpt" in p.stem:
             continue
-        run_name = p.stem.replace("bench_eval_", "")
+        rn = p.stem.replace("bench_eval_", "")
+        if rn in run_results:
+            continue  # already loaded from DB
         data = json.loads(p.read_text())
-        # Compute avg answer_correctness across all question types
         scores = []
-        med_scores, nov_scores = [], []
         for _qtype, metrics in data.items():
+            if _qtype.startswith("_"):
+                continue
             ac = metrics.get("answer_correctness", float("nan"))
-            if ac == ac:  # not nan
+            if ac == ac:
                 scores.append(ac)
-        run_results[run_name] = {"scores_by_type": data, "avg_acc": float(sum(scores)/len(scores)) if scores else float("nan")}
+        run_results[rn] = {"scores_by_type": data, "avg_acc": float(sum(scores)/len(scores)) if scores else float("nan")}
 
     # Load source info to split med/nov
     # For now just print overall (splitting requires per-item source which bench_eval aggregates away)
@@ -1173,12 +1833,28 @@ def _make_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("index", help="Chunk + embed + store corpus via chunkymonkey")
     p.add_argument("--out-dir", default="/tmp/grb", metavar="DIR")
     p.add_argument("--force", action="store_true", help="Delete existing index and reindex")
+    p.add_argument("--embed-content-only", action="store_true",
+                   help="Embed content only (no breadcrumb); stores to chunkymonkey_nobc.duckdb")
+    p.add_argument("--min-chunk", type=int, default=None)
+    p.add_argument("--max-chunk", type=int, default=None)
+    p.add_argument("--with-ner", action="store_true",
+                   help="Run NER + cluster after indexing and persist to DB")
     p.set_defaults(func=cmd_index)
+
+    # build-ner
+    p = sub.add_parser("build-ner", help="Run NER + persist chunk_entities to an existing index DB")
+    p.add_argument("--out-dir", default="/tmp/grb", metavar="DIR")
+    p.add_argument("--db-name", required=True, help="DB filename inside {out_dir}/data/")
+    p.add_argument("--with-embeddings", action="store_true", dest="with_embeddings",
+                   help="Also embed entity strings and store in entity_embeddings table (required for --ner-x)")
+    p.add_argument("--force", action="store_true", help="Rebuild even if tables already populated")
+    p.set_defaults(func=cmd_build_ner)
 
     # index-vanilla
     p = sub.add_parser("index-vanilla", help="Build vanilla RAG index: naive 256-token chunks")
     p.add_argument("--out-dir", default="/tmp/grb", metavar="DIR")
     p.add_argument("--force", action="store_true", help="Delete existing index and reindex")
+    p.add_argument("--chunk-tokens", type=int, default=None)
     p.set_defaults(func=cmd_index_vanilla)
 
     # run
@@ -1200,9 +1876,46 @@ def _make_parser() -> argparse.ArgumentParser:
                    help=f"Reranker: local={RERANK_MODEL}, together={RERANK_MODEL_TOGETHER} (default: local)")
     p.add_argument("--enhanced",      action="store_true",
                    help=f"Use NER+cluster EnhancedSearch (SpacyMatcher/{SPACY_MODEL} + agglomerative clustering)")
+    p.add_argument("--ner-x",         action="store_true", dest="ner_x",
+                   help="Add entity embedding ANN expansion (k=10) on top of NER+cluster; requires --enhanced and pre-built entity_embeddings (build-ner --with-embeddings)")
     p.add_argument("--vanilla",       action="store_true",
                    help=f"Use vanilla RAG index ({VANILLA_CHUNK_TOKENS}-token chunks, k={VANILLA_K})")
+    p.add_argument("--breadcrumb-context", action="store_true",
+                   help="Prepend breadcrumb to each chunk in the generator context window")
+    p.add_argument("--breadcrumb-style", default="markdown",
+                   choices=["markdown", "literal", "symbol"], dest="breadcrumb_style",
+                   help="Breadcrumb format: markdown (## headings), literal (Document: X. Section: Y.), symbol (original [X > Y])")
+    p.add_argument("--no-breadcrumb-embed", action="store_true",
+                   help="Use content-only embedding index (chunkymonkey_nobc.duckdb)")
+    p.add_argument("--db-name", default=None, help="Override DB filename")
+    p.add_argument("--question-ids", default=None, metavar="PATH",
+                   help="JSON file with list of question IDs to use")
+    p.add_argument("--entity-ref-expansion", action="store_true", dest="entity_ref_expansion",
+                   help="Post-selection expansion: if query entities missing from top-k, fetch k=20 and add covering chunks")
+    p.add_argument("--entity-ref-expansion-per-k", type=int, default=None, dest="entity_ref_expansion_per_k",
+                   help="Override per-entity retrieval k in semantic expansion (default: derived from total k / n_missing)")
+    p.add_argument("--entity-ref-expansion-min-sim", type=float, default=None, dest="entity_ref_expansion_min_sim",
+                   help="Min cosine similarity threshold for semantic expansion hits (default: no filter)")
+    p.add_argument("--cluster", action="store_true",
+                   help="Enable cluster expansion (builds ClusterMap; off by default)")
+    p.add_argument("--community-context", action="store_true", dest="community_context",
+                   help="Inject community topic labels into generation prompt (requires build-community first)")
+    p.add_argument("--community-min-coherence", type=float, default=0.0, dest="community_min_coherence",
+                   help="Suppress community labels with intra-community coherence below this threshold (default: 0.0 = no gating)")
+    p.add_argument("--entity-ref-retry", action="store_true", dest="entity_ref_retry",
+                   help="After generation, if answer is a refusal, retry with explicit instruction to attempt a partial answer (max 1 retry)")
     p.set_defaults(func=cmd_run)
+
+    # build-community
+    p = sub.add_parser("build-community", help="Build community index: heading vectors + weighted avg + Louvain detection")
+    p.add_argument("--out-dir", default="/tmp/grb", metavar="DIR")
+    p.add_argument("--db-name", required=True, help="DB filename inside {out_dir}/data/")
+    p.add_argument("--alpha", type=float, default=0.2,
+                   help="Heading weight in weighted average (default: 0.2)")
+    p.add_argument("--sim-threshold", type=float, default=0.6, dest="sim_threshold",
+                   help="Min cosine sim for graph edges (default: 0.6)")
+    p.add_argument("--force", action="store_true", help="Rebuild even if already populated")
+    p.set_defaults(func=cmd_build_community)
 
     # use-endpoints — run benchmark against existing Together dedicated endpoints
     p = sub.add_parser("use-endpoints", help="Run benchmark using existing Together dedicated endpoints")
@@ -1211,7 +1924,7 @@ def _make_parser() -> argparse.ArgumentParser:
     p.add_argument("--out-dir",     default="/tmp/grb", metavar="DIR")
     p.add_argument("--concurrency", type=int, default=20,
                    help="Workers per endpoint (default: 20, total = N * 20)")
-    p.add_argument("--judge",       default="gpt-4.1")
+    p.add_argument("--judge",       default="gpt-4o-mini")
     p.add_argument("--run-name",    default="contextual",
                    help="Output file prefix (default: contextual)")
     p.add_argument("--rerank",      action="store_true",
@@ -1243,6 +1956,8 @@ def _make_parser() -> argparse.ArgumentParser:
     p.add_argument("--judge-provider", default="openai", choices=["openai", "together"],
                    help="API provider for judge (default: openai)")
     p.add_argument("--limit",          type=int, default=None, metavar="N")
+    p.add_argument("--question-ids",   default=None, metavar="PATH",
+                   help="JSON file with list of question IDs to evaluate")
     p.add_argument("--concurrency",    type=int, default=5,
                    help="Parallel workers (default: 5)")
     p.set_defaults(func=cmd_bench_eval)
