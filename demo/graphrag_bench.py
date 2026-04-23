@@ -746,6 +746,27 @@ def _init_run_db(db_path: Path) -> None:
     con.close()
 
 
+def _upsert_results_to_db(db_path: Path, results: list[dict]) -> None:
+    """Insert or replace a batch of results without clearing the table."""
+    import duckdb, json as _json
+    con = duckdb.connect(str(db_path))
+    for r in results:
+        con.execute(
+            "INSERT OR REPLACE INTO results VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            [
+                r.get("id"), r.get("question"), r.get("source"),
+                r.get("question_type"), r.get("context"),
+                _json.dumps(r.get("evidence")),
+                r.get("generated_answer"), r.get("gold_answer"),
+                _json.dumps(r.get("retrieved_chunks")),
+                _json.dumps(r.get("retrieved_scores")),
+                _json.dumps(r.get("entity_ref_expansion")) if r.get("entity_ref_expansion") else None,
+                _json.dumps(r.get("entity_ref_retry")) if r.get("entity_ref_retry") else None,
+            ],
+        )
+    con.close()
+
+
 def _write_results_to_db(db_path: Path, results: list[dict]) -> None:
     import duckdb, json as _json
     # Deduplicate by id (last write wins — handles checkpoint resume duplicates)
@@ -1271,6 +1292,9 @@ def cmd_run(args: argparse.Namespace) -> None:
             result["entity_ref_retry"] = retry_stats
         return result
 
+    run_db = _run_db_path(data_dir, run_name)
+    _init_run_db(run_db)
+
     with ThreadPoolExecutor(max_workers=args.concurrency) as executor:
         futures = {executor.submit(_process, item): item for item in work_items}
         for fut in as_completed(futures):
@@ -1283,9 +1307,11 @@ def cmd_run(args: argparse.Namespace) -> None:
                     print(f"  {total}/{len(questions)}", flush=True)
                 # Checkpoint every 100 completions
                 if len(new_results) % 100 == 0:
+                    batch = new_results[-100:]
                     with open(ckpt_f, "a") as f:
-                        for r in new_results[-100:]:
+                        for r in batch:
                             f.write(json.dumps(r) + "\n")
+                    _upsert_results_to_db(run_db, batch)
                     print(f"  {total}/{len(questions)}  (checkpoint saved)", flush=True)
 
     # Final checkpoint flush + merge
@@ -1312,8 +1338,6 @@ def cmd_run(args: argparse.Namespace) -> None:
         for r in all_results:
             f.write(json.dumps(r) + "\n")
 
-    run_db = _run_db_path(data_dir, run_name)
-    _init_run_db(run_db)
     _write_results_to_db(run_db, all_results)
     print(f"\nComplete: {len(all_results)} results → {results_f} + {run_db}")
 
