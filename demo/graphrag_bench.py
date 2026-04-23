@@ -1402,6 +1402,19 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
             item = json.loads(line)
             done[item["id"]] = item
         print(f"Resuming bench-eval: {len(done)} already done")
+        # Flush checkpoint items to DB immediately so they're visible in report
+        if done and run_db.exists():
+            import duckdb as _ddb
+            con = _ddb.connect(str(run_db))
+            for item in done.values():
+                con.execute(
+                    "INSERT OR REPLACE INTO eval_scores VALUES (?,?,?,?,?,?)",
+                    [item.get("id"), item.get("question_type"),
+                     item.get("answer_correctness"), item.get("rouge_score"),
+                     item.get("coverage_score"), item.get("faithfulness")],
+                )
+            con.close()
+            print(f"  Flushed {len(done)} checkpoint scores to DB")
 
     pending = [r for r in bench_records if r["id"] not in done]
     print(f"Pending: {len(pending)} samples")
