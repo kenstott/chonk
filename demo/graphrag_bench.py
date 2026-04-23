@@ -1670,13 +1670,14 @@ def cmd_bench_report(args: argparse.Namespace) -> None:
     runs_dir = data_dir / "runs"
     if runs_dir.exists():
         import duckdb as _ddb
+        import numpy as _np
         for run_db in sorted(runs_dir.glob("*.duckdb")):
             rn = run_db.stem
             try:
                 con = _ddb.connect(str(run_db), read_only=True)
                 rows = con.execute(
-                    "SELECT question_type, answer_correctness, rouge_score, coverage_score, faithfulness "
-                    "FROM eval_scores"
+                    "SELECT e.question_type, r.source, e.answer_correctness "
+                    "FROM eval_scores e JOIN results r ON e.id = r.id"
                 ).fetchall()
                 total_results = con.execute("SELECT COUNT(*) FROM results").fetchone()[0]
                 con.close()
@@ -1685,65 +1686,61 @@ def cmd_bench_report(args: argparse.Namespace) -> None:
             if not rows:
                 continue
             n_eval = len(rows)
-            by_type: dict[str, dict] = {}
-            import numpy as _np
-            for qtype, ac, rouge, cov, faith in rows:
-                if qtype not in by_type:
-                    by_type[qtype] = {"ac":[],"rouge":[],"cov":[],"faith":[]}
-                for val, lst in ((ac,"ac"),(rouge,"rouge"),(cov,"cov"),(faith,"faith")):
-                    if val is not None and val == val:
-                        by_type[qtype][lst].append(val)
-            data = {}
-            for qtype, lists in by_type.items():
-                data[qtype] = {
-                    "answer_correctness": float(_np.mean(lists["ac"])) if lists["ac"] else float("nan"),
-                    "rouge_score":        float(_np.mean(lists["rouge"])) if lists["rouge"] else float("nan"),
-                    "coverage_score":     float(_np.mean(lists["cov"])) if lists["cov"] else float("nan"),
-                    "faithfulness":       float(_np.mean(lists["faith"])) if lists["faith"] else float("nan"),
-                }
-            scores = [v["answer_correctness"] for v in data.values() if v["answer_correctness"] == v["answer_correctness"]]
-            run_results[rn] = {"scores_by_type": data, "avg_acc": float(sum(scores)/len(scores)) if scores else float("nan"),
-                               "n_eval": n_eval, "n_total": total_results}
+            # by_subset_type[(source, qtype)] -> [ac, ...]
+            by_st: dict[tuple, list] = {}
+            for qtype, source, ac in rows:
+                subset = "Med" if source and "medical" in source.lower() else "Nov"
+                for key in [(subset, qtype), ("All", qtype)]:
+                    if key not in by_st:
+                        by_st[key] = []
+                    if ac is not None and ac == ac:
+                        by_st[key].append(ac)
+            def _mean(lst): return float(_np.mean(lst)) if lst else float("nan")  # noqa
+            scores_st = {k: _mean(v) for k, v in by_st.items()}
+            run_results[rn] = {"scores_st": scores_st, "n_eval": n_eval, "n_total": total_results}
 
-    # Legacy fallback: bench_eval_*.json for runs not yet in run DBs
-    for p in sorted(results_dir.glob("bench_eval_*.json")):
-        if "ckpt" in p.stem:
-            continue
-        rn = p.stem.replace("bench_eval_", "")
-        if rn in run_results:
-            continue  # already loaded from DB
-        data = json.loads(p.read_text())
-        scores = []
-        for _qtype, metrics in data.items():
-            if _qtype.startswith("_"):
-                continue
-            ac = metrics.get("answer_correctness", float("nan"))
-            if ac == ac:
-                scores.append(ac)
-        run_results[rn] = {"scores_by_type": data, "avg_acc": float(sum(scores)/len(scores)) if scores else float("nan")}
+    # Legacy fallback: bench_eval_*.json — no source breakdown available, skip
+    # (These files only have aggregated per-type scores, no per-question source field)
 
-    # Load source info to split med/nov
-    # For now just print overall (splitting requires per-item source which bench_eval aggregates away)
-    QUESTION_TYPES = ["Fact Retrieval", "Complex Reasoning", "Contextual Summarize", "Creative Generation"]
+    QTYPES = [
+        ("Fact Retrieval",       "Fact"),
+        ("Complex Reasoning",    "Rsn"),
+        ("Contextual Summarize", "Summ"),
+        ("Creative Generation",  "Crea"),
+    ]
+    SUBSETS = ["Med", "Nov", "All"]
 
-    print("\n── Benchmark Eval Results (answer_correctness, benchmark native metric) ──\n")
-    header = f"  {'Run':<28}  {'Fact':>7}  {'Reason':>7}  {'Summ':>7}  {'Creative':>9}  {'Avg':>7}"
+    print("\n── Benchmark Eval Results (answer_correctness) ──\n")
+    # Header: Run | Med-Fact Med-Rsn Med-Summ Med-Crea Med | Nov-Fact ... Nov | All-Fact ... All
+    col_w = 6
+    run_w = 42
+    hdr_parts = []
+    for subset in SUBSETS:
+        for _, short in QTYPES:
+            hdr_parts.append(f"{subset[:1]}-{short:>4}")
+        hdr_parts.append(f"  {subset:>3}")
+    header = f"  {'Run':<{run_w}}  " + "  ".join(hdr_parts)
     print(header)
     print("  " + "-" * (len(header) - 2))
 
-    for run_name, info in run_results.items():
-        d = info["scores_by_type"]
-        fact  = d.get("Fact Retrieval",       {}).get("answer_correctness", float("nan"))
-        rsn   = d.get("Complex Reasoning",    {}).get("answer_correctness", float("nan"))
-        summ  = d.get("Contextual Summarize", {}).get("answer_correctness", float("nan"))
-        crea  = d.get("Creative Generation",  {}).get("answer_correctness", float("nan"))
-        vals  = [v for v in [fact, rsn, summ, crea] if v == v]
-        avg   = sum(vals) / len(vals) if vals else float("nan")
-        fmt   = lambda v: f"{v:.3f}" if v == v else "  —  "  # noqa: E731
+    fmt = lambda v: f"{v:.3f}" if v == v else "  — "  # noqa: E731
+
+    def composite(scores_st, subset):
+        vals = [scores_st.get((subset, qt), float("nan")) for qt, _ in QTYPES]
+        valid = [v for v in vals if v == v]
+        return sum(valid) / len(valid) if valid else float("nan")
+
+    for run_name, info in sorted(run_results.items()):
+        st = info.get("scores_st", {})
         n_eval = info.get("n_eval", 0)
         n_total = info.get("n_total", 0)
         partial = f" ({n_eval}/{n_total})" if n_total and n_eval < n_total else ""
-        print(f"  {run_name:<28}  {fmt(fact):>7}  {fmt(rsn):>7}  {fmt(summ):>7}  {fmt(crea):>9}  {fmt(avg):>7}{partial}")
+        parts = []
+        for subset in SUBSETS:
+            for qt, _ in QTYPES:
+                parts.append(f"{fmt(st.get((subset, qt), float('nan'))):>6}")
+            parts.append(f"  {fmt(composite(st, subset)):>5}")
+        print(f"  {run_name:<{run_w}}  " + "  ".join(parts) + partial)
 
     # Leaderboard (their metric, gpt-4o-mini generator + judge)
     # Qwen2.5-14B appendix numbers from paper (Table 7, RAG w/ rerank)
