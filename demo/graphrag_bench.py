@@ -628,6 +628,7 @@ def cmd_build_community(args: argparse.Namespace) -> None:
     alpha    = getattr(args, "alpha", 0.2)
     sim_threshold = getattr(args, "sim_threshold", 0.6)
     force    = getattr(args, "force", False)
+    label_strategy = getattr(args, "community_label_strategy", "ner_embedding")
 
     if not db_path.exists():
         raise FileNotFoundError(f"Index DB not found: {db_path}")
@@ -676,7 +677,7 @@ def cmd_build_community(args: argparse.Namespace) -> None:
     else:
         print("  No breadcrumbs found — using content vectors only.")
 
-    print(f"  Building community index (sim_threshold={sim_threshold})...")
+    print(f"  Building community index (sim_threshold={sim_threshold}, label_strategy={label_strategy})...")
     idx = CommunityIndex.build(
         chunk_ids=chunk_ids,
         content_vecs=content_vecs,
@@ -684,6 +685,8 @@ def cmd_build_community(args: argparse.Namespace) -> None:
         heading_vecs=heading_vecs,
         alpha=alpha,
         sim_threshold=sim_threshold,
+        label_strategy=label_strategy,
+        db_path=db_path if label_strategy == "ner_embedding" else None,
     )
     print(f"  {idx.community_count():,} communities across {idx.chunk_count():,} chunks")
 
@@ -1073,6 +1076,8 @@ def cmd_run(args: argparse.Namespace) -> None:
     no_breadcrumb_embed    = getattr(args, "no_breadcrumb_embed", False)
     redundancy_threshold   = getattr(args, "redundancy_threshold", None)
     lane_entity_min_sim    = getattr(args, "lane_entity_min_sim", None)
+    concentration_threshold = getattr(args, "concentration_threshold", None)
+    query_complexity_threshold = getattr(args, "query_complexity_threshold", 2)
     db_name_override = getattr(args, 'db_name', None)
     question_ids_file = getattr(args, 'question_ids', None)
     if db_name_override:
@@ -1127,7 +1132,7 @@ def cmd_run(args: argparse.Namespace) -> None:
             cached_ids = None
 
     embed_model = None
-    if not q_vecs_cache.exists() or use_ner_x or use_entity_ref_retry or use_entity_ref_expansion:
+    if not q_vecs_cache.exists() or use_ner_x or use_entity_ref_retry or use_entity_ref_expansion or concentration_threshold is not None:
         embed_model = SentenceTransformer(EMBED_MODEL)
     if not q_vecs_cache.exists():
         print(f"Embedding {len(questions)} questions (will cache)...")
@@ -1169,6 +1174,30 @@ def cmd_run(args: argparse.Namespace) -> None:
     if use_community_context and community_index is None:
         print("WARNING: --community-context set but no community index found. Run 'build-community' first.")
 
+    # ── Complexity / concentration helpers ────────────────────────────────────
+    _complexity_matcher = None
+    _CONJUNCTION_WORDS = frozenset(["and", "or", "vs", "versus", "between"])
+
+    def _query_complexity(question: str) -> int:
+        """Return complexity score = entity_count + clause_signal_count."""
+        entity_count = 0
+        if _complexity_matcher is not None:
+            entity_count = len(_complexity_matcher.match(question))
+        tokens = re.sub(r"[^\w\s?]", " ", question.lower()).split()
+        clause_signals = (
+            question.count("?")
+            + question.count(",")
+            + sum(1 for t in tokens if t in _CONJUNCTION_WORDS)
+        )
+        return entity_count + clause_signals
+
+    needs_ner_for_complexity = use_community_context and query_complexity_threshold > 0
+    needs_ner_for_concentration = concentration_threshold is not None and not use_enhanced
+    if needs_ner_for_complexity or needs_ner_for_concentration:
+        from chonk.ner import SpacyMatcher
+        _complexity_matcher = SpacyMatcher(model=SPACY_MODEL, strip_numeric=True)
+        print(f"Loaded SpacyMatcher for query complexity / concentration gating.")
+
     work_items: list[dict] = []
     with Store(db_path, embedding_dim=EMBED_DIM, read_only=True) as store:
         enhanced_search = _build_enhanced_search(
@@ -1179,6 +1208,19 @@ def cmd_run(args: argparse.Namespace) -> None:
             use_cluster=use_cluster,
             lane_entity_min_sim=lane_entity_min_sim,
         ) if use_enhanced else None
+
+        # Build concentration fallback search (entity ref expansion) if gating is enabled
+        # and entity_ref_expansion is not already always-on.
+        _conc_search = None
+        if concentration_threshold is not None and not use_entity_ref_expansion:
+            _conc_search = _build_enhanced_search(
+                store, db_path, use_ner_x=False, embed_model=embed_model,
+                entity_ref_expansion=True,
+                entity_ref_expansion_per_k=entity_ref_expansion_per_k,
+                entity_ref_expansion_min_sim=entity_ref_expansion_min_sim,
+                use_cluster=False,
+                lane_entity_min_sim=lane_entity_min_sim,
+            )
 
         for j, (i, q) in enumerate(pending):
             qid  = q.get("id", f"q{i}")
@@ -1193,6 +1235,19 @@ def cmd_run(args: argparse.Namespace) -> None:
                     include_breadcrumbs=False,
                 )
                 expansion_stats = None
+
+            # ── Enhancement #1: Retrieval Concentration Gating ────────────────
+            if _conc_search is not None:
+                src_counts: dict[str, int] = defaultdict(int)
+                for _, _, _chunk in hits:
+                    src_counts[_chunk.document_name] += 1
+                _k_hits = len(hits)
+                if _k_hits > 0:
+                    _max_frac = max(src_counts.values()) / _k_hits
+                    if _max_frac >= concentration_threshold:
+                        scored_conc = _conc_search.search(q_vecs[j], k=fetch_k, query_text=q["question"])
+                        hits = [(sc.chunk_id, sc.score, sc.chunk) for sc in scored_conc]
+                        expansion_stats = _conc_search.last_expansion_stats
             if use_rerank and together_rerank_client is not None:
                 docs   = [chunk.content for _, _, chunk in hits]
                 resp   = together_rerank_client.rerank.create(
@@ -1222,9 +1277,16 @@ def cmd_run(args: argparse.Namespace) -> None:
                 hits = _prune_redundant(hits, store.vector._conn, redundancy_threshold)
             chunk_texts = [chunk.content or "" for _, _, chunk in hits]
 
+            # ── Enhancement #3: Query Complexity Routing ──────────────────────
+            _inject_community = community_index is not None
+            if _inject_community and query_complexity_threshold > 0:
+                _score = _query_complexity(q["question"])
+                if _score < query_complexity_threshold:
+                    _inject_community = False
+
             # Collect unique community topic labels for retrieved chunks
             community_header = ""
-            if community_index is not None:
+            if _inject_community:
                 labels = []
                 seen_cids: set = set()
                 for cid, _, _ in hits:
@@ -1518,8 +1580,8 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
             seed=42,
             presence_penalty=0,
             frequency_penalty=0,
-            max_retries=3,
-            timeout=60,
+            max_retries=0,
+            timeout=90,
             http_async_client=_http_client,
         )
         if judge_provider == "together":
@@ -1608,6 +1670,30 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
         }
 
         semaphore = asyncio.Semaphore(args.concurrency)
+        eval_rpm: int | None = getattr(args, "eval_rpm", None)
+
+        # Token-bucket throttle: at most eval_rpm tokens per 60s window.
+        _rpm_tokens   = [float(eval_rpm or 0)]
+        _rpm_last_ts  = [time.monotonic()]
+        _rpm_lock     = asyncio.Lock()
+
+        async def _acquire_rpm_token():
+            if not eval_rpm:
+                return
+            async with _rpm_lock:
+                import asyncio as _aio
+                now = time.monotonic()
+                elapsed = now - _rpm_last_ts[0]
+                _rpm_tokens[0] = min(float(eval_rpm), _rpm_tokens[0] + elapsed * (eval_rpm / 60.0))
+                _rpm_last_ts[0] = now
+                if _rpm_tokens[0] < 1.0:
+                    wait = (1.0 - _rpm_tokens[0]) / (eval_rpm / 60.0)
+                    print(f"[eval] RPM throttle: sleeping {wait:.1f}s", flush=True)
+                    await _aio.sleep(wait)
+                    _rpm_tokens[0] = 0.0
+                    _rpm_last_ts[0] = time.monotonic()
+                else:
+                    _rpm_tokens[0] -= 1.0
 
         async def _eval_one(r: dict) -> dict:
             import asyncio as _aio
@@ -1617,6 +1703,7 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
             async with semaphore:
                 for attempt in range(5):
                     try:
+                        await _acquire_rpm_token()
                         tasks = {}
                         if "rouge_score" in metrics:
                             tasks["rouge_score"] = compute_rouge_score(r["generated_answer"], r["ground_truth"])
@@ -1637,10 +1724,20 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
                             if isinstance(val, BaseException):
                                 print(f"[eval] {r['id']} {key} exception: {type(val).__name__}: {val}", flush=True)
                             result[key] = float(val) if isinstance(val, (int, float)) else float("nan")
+                        # Retry if all non-rouge metrics are NaN (transient API failure)
+                        nan_metrics = [k for k in tasks if k != "rouge_score" and result.get(k) != result.get(k)]
+                        if nan_metrics and attempt < 4:
+                            print(f"[eval] {r['id']} all LLM metrics NaN, retrying (attempt {attempt+1}/5)", flush=True)
+                            await _aio.sleep(5 * (attempt + 1))
+                            continue
                         break
                     except Exception as e:
-                        if "429" in str(e) or "rate_limit" in str(e).lower():
-                            await _aio.sleep(10 * (2 ** attempt))
+                        is_rate = "429" in str(e) or "rate_limit" in str(e).lower() or "RateLimit" in type(e).__name__
+                        print(f"[eval] {r['id']} attempt {attempt+1}/5 {'rate-limit' if is_rate else 'error'}: {e}", flush=True)
+                        if is_rate:
+                            delay = 15 * (2 ** attempt)
+                            print(f"[eval] backing off {delay}s", flush=True)
+                            await _aio.sleep(delay)
                         else:
                             for key in METRIC_CONFIG.get(qtype, ["answer_correctness"]):
                                 result.setdefault(key, float("nan"))
@@ -1650,16 +1747,16 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
         async def _eval_one_safe(r: dict) -> dict:
             import asyncio as _aio
             try:
-                return await _aio.wait_for(_eval_one(r), timeout=120)
+                return await _aio.wait_for(_eval_one(r), timeout=300)
             except _aio.TimeoutError:
-                print(f"[eval] {r['id']} timed out after 120s — skipping", flush=True)
+                print(f"[eval] {r['id']} timed out after 300s — skipping", flush=True)
                 qtype = r.get("question_type", "?")
                 return {"id": r["id"], "question_type": qtype,
                         **{k: float("nan") for k in METRIC_CONFIG.get(qtype, ["answer_correctness"])}}
 
         async def _run_all():
             import asyncio as _aio
-            batch_size = 10
+            batch_size = getattr(args, "eval_batch_size", 10)
             for batch_start in range(0, len(pending), batch_size):
                 batch = pending[batch_start:batch_start + batch_size]
                 results_batch = await _aio.gather(*[_eval_one_safe(r) for r in batch], return_exceptions=True)
@@ -1736,6 +1833,8 @@ def cmd_bench_report(args: argparse.Namespace) -> None:
     results_dir = out_dir / "results"
 
     # Discover run DBs first, fall back to legacy bench_eval_*.json
+    run_filter:  str | None = getattr(args, "filter", None)
+    run_exclude: str | None = getattr(args, "exclude", None)
     run_results: dict[str, dict] = {}
     runs_dir = data_dir / "runs"
     if runs_dir.exists():
@@ -1743,6 +1842,10 @@ def cmd_bench_report(args: argparse.Namespace) -> None:
         import numpy as _np
         for run_db in sorted(runs_dir.glob("*.duckdb")):
             rn = run_db.stem
+            if run_filter and run_filter not in rn:
+                continue
+            if run_exclude and run_exclude in rn:
+                continue
             try:
                 con = _ddb.connect(str(run_db), read_only=True)
                 rows = con.execute(
@@ -1756,6 +1859,7 @@ def cmd_bench_report(args: argparse.Namespace) -> None:
             if not rows:
                 continue
             n_eval = len(rows)
+            n_nan = sum(1 for _, _, ac in rows if ac is None or ac != ac)
             # by_subset_type[(source, qtype)] -> [ac, ...]
             by_st: dict[tuple, list] = {}
             for qtype, source, ac in rows:
@@ -1767,10 +1871,40 @@ def cmd_bench_report(args: argparse.Namespace) -> None:
                         by_st[key].append(ac)
             def _mean(lst): return float(_np.mean(lst)) if lst else float("nan")  # noqa
             scores_st = {k: _mean(v) for k, v in by_st.items()}
-            run_results[rn] = {"scores_st": scores_st, "n_eval": n_eval, "n_total": total_results}
+            run_results[rn] = {"scores_st": scores_st, "n_eval": n_eval, "n_total": total_results, "n_nan": n_nan}
 
-    # Legacy fallback: bench_eval_*.json — no source breakdown available, skip
-    # (These files only have aggregated per-type scores, no per-question source field)
+    # Legacy bench_eval_*.json — no Med/Nov split, but load All-level scores for comparison
+    import json as _json
+    QTYPE_MAP = {
+        "Fact Retrieval": "Fact", "Complex Reasoning": "Rsn",
+        "Contextual Summarize": "Summ", "Creative Generation": "Crea",
+    }
+    for jf in sorted((results_dir).glob("bench_eval_*.json")):
+        rn = jf.stem[len("bench_eval_"):]
+        if rn in run_results:
+            continue  # already loaded from DuckDB
+        if run_filter and run_filter not in rn:
+            continue
+        if run_exclude and run_exclude in rn:
+            continue
+        try:
+            data = _json.loads(jf.read_text())
+        except Exception:
+            continue
+        params = data.get("_params", {})
+        n_eval = params.get("n_evaluated", 0)
+        scores_st: dict = {}
+        type_scores = []
+        for long, short in QTYPE_MAP.items():
+            ac = data.get(long, {}).get("answer_correctness")
+            if ac is not None:
+                scores_st[("All", long)] = ac
+                type_scores.append(ac)
+        if type_scores:
+            import numpy as _np2
+            scores_st[("All", "All")] = float(_np2.mean(type_scores))
+        if scores_st:
+            run_results[rn] = {"scores_st": scores_st, "n_eval": n_eval, "n_total": n_eval, "legacy": True}
 
     QTYPES = [
         ("Fact Retrieval",       "Fact"),
@@ -1796,6 +1930,11 @@ def cmd_bench_report(args: argparse.Namespace) -> None:
     fmt = lambda v: f"{v:.3f}" if v == v else "  — "  # noqa: E731
 
     def composite(scores_st, subset):
+        if subset == "All":
+            med = composite(scores_st, "Med")
+            nov = composite(scores_st, "Nov")
+            valid = [v for v in [med, nov] if v == v]
+            return sum(valid) / len(valid) if valid else float("nan")
         vals = [scores_st.get((subset, qt), float("nan")) for qt, _ in QTYPES]
         valid = [v for v in vals if v == v]
         return sum(valid) / len(valid) if valid else float("nan")
@@ -1804,7 +1943,9 @@ def cmd_bench_report(args: argparse.Namespace) -> None:
         st = info.get("scores_st", {})
         n_eval = info.get("n_eval", 0)
         n_total = info.get("n_total", 0)
-        partial = f" ({n_eval}/{n_total})" if n_total and n_eval < n_total else ""
+        n_nan = info.get("n_nan", 0)
+        nan_str = f", {n_nan} NaN" if n_nan else ""
+        partial = f" ({n_eval}/{n_total}{nan_str})" if n_total and (n_eval < n_total or n_nan) else (f" ({n_nan} NaN)" if n_nan else "")
         parts = []
         for subset in SUBSETS:
             for qt, _ in QTYPES:
@@ -1812,10 +1953,10 @@ def cmd_bench_report(args: argparse.Namespace) -> None:
             parts.append(f"  {fmt(composite(st, subset)):>5}")
         print(f"  {run_name:<{run_w}}  " + "  ".join(parts) + partial)
 
-    # Leaderboard (their metric, gpt-4o-mini generator + judge)
+    # Leaderboard (gpt-4o-mini judge and generator per benchmark paper arXiv:2506.05690)
     # Qwen2.5-14B appendix numbers from paper (Table 7, RAG w/ rerank)
     # Combined med+nov avg per question type is not directly available — showing overall acc
-    print("\n── Published Leaderboard (Qwen2.5-14B generator, gpt-4o-mini judge) ──\n")
+    print("\n── Published Leaderboard (gpt-4o-mini generator + judge) ──\n")
     print(f"  {'Method':<28}  {'Med ACC':>8}  {'Nov ACC':>8}  {'Overall':>8}")
     print("  " + "-" * 58)
     for name, scores in PUBLISHED_BASELINES.items():
@@ -1824,8 +1965,9 @@ def cmd_bench_report(args: argparse.Namespace) -> None:
         ov  = f"{scores['overall']:.3f}" if scores["overall"] is not None else "   —"
         print(f"  {name:<28}  {med:>8}  {nov:>8}  {ov:>8}")
 
-    print(f"\n  * Leaderboard: gpt-4o-mini generator + gpt-4o-mini judge (main results).")
-    print(f"  * Our bench-eval: gpt-4o-mini judge, same answer_correctness metric.")
+    print(f"\n  * Leaderboard: gpt-4o-mini generator + gpt-4o-mini judge (arXiv:2506.05690).")
+    print(f"  * Our bench-eval: gpt-4o-mini generator + gpt-4o-mini judge, answer_correctness metric.")
+    print(f"  * Overall = mean(Med, Nov); Med/Nov = mean of 4 question-type ACC scores.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2037,6 +2179,10 @@ def _make_parser() -> argparse.ArgumentParser:
                    help="Min cosine similarity for entity-expansion candidates entering reranker pool (e.g. 0.45)")
     p.add_argument("--entity-ref-retry", action="store_true", dest="entity_ref_retry",
                    help="After generation, if answer is a refusal, retry with explicit instruction to attempt a partial answer (max 1 retry)")
+    p.add_argument("--concentration-threshold", type=float, default=None, dest="concentration_threshold",
+                   help="If top-K retrieval has >= this fraction from one source doc, auto-trigger entity-ref-expansion (e.g. 0.6); disabled if not set")
+    p.add_argument("--query-complexity-threshold", type=int, default=2, dest="query_complexity_threshold",
+                   help="Skip community context for queries with complexity score below this threshold (entity count + clause signals; default: 2)")
     p.set_defaults(func=cmd_run)
 
     # build-community
@@ -2047,6 +2193,9 @@ def _make_parser() -> argparse.ArgumentParser:
                    help="Heading weight in weighted average (default: 0.2)")
     p.add_argument("--sim-threshold", type=float, default=0.6, dest="sim_threshold",
                    help="Min cosine sim for graph edges (default: 0.6)")
+    p.add_argument("--community-label-strategy", default="ner_embedding",
+                   choices=["term_freq", "ner_embedding"], dest="community_label_strategy",
+                   help="Community label method: ner_embedding (default) uses entity embeddings; term_freq uses word frequency")
     p.add_argument("--force", action="store_true", help="Rebuild even if already populated")
     p.set_defaults(func=cmd_build_community)
 
@@ -2093,11 +2242,19 @@ def _make_parser() -> argparse.ArgumentParser:
                    help="JSON file with list of question IDs to evaluate")
     p.add_argument("--concurrency",    type=int, default=5,
                    help="Parallel workers (default: 5)")
+    p.add_argument("--eval-rpm",       type=int, default=None, dest="eval_rpm",
+                   help="Max judge API requests per minute (token-bucket throttle, default: no limit)")
+    p.add_argument("--eval-batch-size", type=int, default=10, dest="eval_batch_size",
+                   help="Items per async batch (default: 10)")
     p.set_defaults(func=cmd_bench_eval)
 
     # report — combined matrix of all eval runs + leaderboard
     p = sub.add_parser("report", help="Combined matrix: our eval runs + leaderboard")
     p.add_argument("--out-dir", default="/tmp/grb", metavar="DIR")
+    p.add_argument("--filter", default=None, metavar="STR",
+                   help="Only show runs whose name contains STR (e.g. 'grid' or 'full')")
+    p.add_argument("--exclude", default=None, metavar="STR",
+                   help="Exclude runs whose name contains STR (e.g. 'full' to show only grid runs)")
     p.set_defaults(func=cmd_bench_report)
 
     return ap

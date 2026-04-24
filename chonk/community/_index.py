@@ -61,6 +61,83 @@ def _top_terms(texts: list[str], n: int = 5) -> str:
     return ", ".join(w for w, _ in counts.most_common(n))
 
 
+def _ner_embedding_labels(
+    chunk_ids: list[str],
+    db_path,
+    n: int = 5,
+    synonym_threshold: float = 0.85,
+) -> str:
+    """Generate community label using NER entities and embedding-based synonym merging.
+
+    Fetches entity surface forms for the given chunk_ids from the chunk_entities
+    and entity_embeddings tables. Clusters by cosine similarity, picks most-frequent
+    canonical form per cluster, returns top-n clusters by size.
+
+    Falls back to empty string if tables are absent or have no data.
+    """
+    import duckdb
+    import numpy as np
+
+    if not chunk_ids:
+        return ""
+
+    try:
+        con = duckdb.connect(str(db_path), read_only=True)
+        placeholders = ", ".join("?" for _ in chunk_ids)
+        rows = con.execute(
+            f"SELECT ce.entity_id, ee.embedding "
+            f"FROM chunk_entities ce "
+            f"JOIN entity_embeddings ee ON ce.entity_id = ee.entity_id "
+            f"WHERE ce.chunk_id IN ({placeholders})",
+            chunk_ids,
+        ).fetchall()
+        con.close()
+    except Exception:
+        return ""
+
+    if not rows:
+        return ""
+
+    entity_ids = [r[0] for r in rows]
+    emb_list = [r[1] for r in rows]
+    if any(e is None for e in emb_list):
+        # fall back to term freq if embeddings missing
+        return ""
+
+    vecs = np.array(emb_list, dtype="float32")
+    norms = np.linalg.norm(vecs, axis=1, keepdims=True)
+    vecs = vecs / np.maximum(norms, 1e-9)
+
+    # Greedy clustering by cosine similarity
+    assigned: list[int] = [-1] * len(entity_ids)
+    clusters: list[list[int]] = []
+    for i in range(len(entity_ids)):
+        if assigned[i] != -1:
+            continue
+        cid = len(clusters)
+        clusters.append([i])
+        assigned[i] = cid
+        for j in range(i + 1, len(entity_ids)):
+            if assigned[j] != -1:
+                continue
+            sim = float(vecs[i] @ vecs[j])
+            if sim >= synonym_threshold:
+                clusters[cid].append(j)
+                assigned[j] = cid
+
+    # Per cluster: most-frequent surface form, cluster size
+    cluster_info: list[tuple[int, str]] = []
+    for members in clusters:
+        freq: Counter = Counter()
+        for idx in members:
+            freq[entity_ids[idx]] += 1
+        canonical = freq.most_common(1)[0][0]
+        cluster_info.append((len(members), canonical))
+
+    cluster_info.sort(key=lambda x: x[0], reverse=True)
+    return ", ".join(label for _, label in cluster_info[:n])
+
+
 class CommunityIndex:
     """Chunk-to-community assignment with topic labels."""
 
@@ -84,6 +161,9 @@ class CommunityIndex:
         alpha: float = 0.2,
         sim_threshold: float = 0.6,
         top_label_terms: int = 5,
+        label_strategy: str = "term_freq",
+        db_path=None,
+        label_synonym_threshold: float = 0.85,
     ) -> "CommunityIndex":
         """Build a CommunityIndex from chunk embeddings.
 
@@ -95,6 +175,9 @@ class CommunityIndex:
             alpha: Weight for heading in weighted average (0 = content only).
             sim_threshold: Minimum cosine similarity for graph edges.
             top_label_terms: Number of terms per community label.
+            label_strategy: "term_freq" (default) or "ner_embedding".
+            db_path: Path to DuckDB (required for "ner_embedding" strategy).
+            label_synonym_threshold: Cosine similarity for merging synonyms (ner_embedding only).
         """
         import networkx as nx
 
@@ -142,7 +225,16 @@ class CommunityIndex:
             instance._community_to_chunks[cid].append(chunk_ids[idx])
             community_members[cid].append(idx)
 
-        if chunk_texts:
+        if label_strategy == "ner_embedding" and db_path is not None:
+            for cid, indices in community_members.items():
+                cids = [chunk_ids[i] for i in indices if i < len(chunk_ids)]
+                label = _ner_embedding_labels(cids, db_path, n=top_label_terms,
+                                              synonym_threshold=label_synonym_threshold)
+                if not label and chunk_texts:
+                    texts = [chunk_texts[i] for i in indices if i < len(chunk_texts)]
+                    label = _top_terms(texts, top_label_terms)
+                instance._community_to_label[cid] = label
+        elif chunk_texts:
             for cid, indices in community_members.items():
                 texts = [chunk_texts[i] for i in indices if i < len(chunk_texts)]
                 instance._community_to_label[cid] = _top_terms(texts, top_label_terms)
