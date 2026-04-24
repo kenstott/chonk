@@ -18,7 +18,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-PROJECT_NAME = "chunkymonkey"
+PROJECT_NAME = "chonk"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 REGISTRY_PATH = PROJECT_ROOT / ".canary_registry.json"
 _site_dir_env = os.environ.get("CANARY_SITE_DIR")
@@ -28,7 +28,7 @@ EXCLUDE_DIRS = {
     "node_modules", "dist", "build", "canary-site",
 }
 
-PY_SOURCE_DIRS = ["chunkymonkey", "tests", "demo", "examples", "scripts"]
+PY_SOURCE_DIRS = ["chonk", "tests", "demo", "examples", "scripts"]
 
 PY_HEADER = """\
 # Copyright (c) 2025 Kenneth Stott. MIT License.

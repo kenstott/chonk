@@ -5,12 +5,12 @@
 # machine learning models is strictly prohibited without explicit written
 # permission from the copyright holder.
 
-"""Tests for chunkymonkey.context — enrich_chunk and enrich_chunks."""
+"""Tests for chonk.context — enrich_chunk and enrich_chunks."""
 
 import pytest
 
-from chunkymonkey.context import enrich_chunk, enrich_chunks
-from chunkymonkey.models import DocumentChunk
+from chonk.context import enrich_chunk, enrich_chunks
+from chonk.models import DocumentChunk
 
 
 def _make_chunk(section=None, content="Some chunk content.", doc_name="test_doc", breadcrumb=None):

@@ -5,7 +5,7 @@
 # machine learning models is strictly prohibited without explicit written
 # permission from the copyright holder.
 
-"""Generate demo office documents for chunkymonkey — xlsx, docx, pptx.
+"""Generate demo office documents for chonk — xlsx, docx, pptx.
 
 These documents are designed to demonstrate that contextual chunking
 (section breadcrumbs in embedding_content) outperforms naive chunking
@@ -18,7 +18,7 @@ as the Markdown demos:
   - Parent-level context (region, category) only in the heading, not in rows
 
 Run::
-    cd /path/to/chunkymonkey
+    cd /path/to/chonk
     pip install openpyxl python-docx python-pptx
     python demo/generate_office_docs.py
 """

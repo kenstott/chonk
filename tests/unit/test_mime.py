@@ -5,11 +5,11 @@
 # machine learning models is strictly prohibited without explicit written
 # permission from the copyright holder.
 
-"""Tests for chunkymonkey.extractors._mime MIME normalization and detection."""
+"""Tests for chonk.extractors._mime MIME normalization and detection."""
 
 import pytest
 
-from chunkymonkey.extractors._mime import (
+from chonk.extractors._mime import (
     detect_type_from_source,
     is_binary_type,
     normalize_type,

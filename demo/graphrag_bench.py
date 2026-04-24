@@ -40,10 +40,10 @@ except ImportError:
     pass
 
 sys.path.insert(0, str(_PROJECT_ROOT))
-from chunkymonkey import DocumentLoader, NOVEL_STRUCTURAL_LEVELS
-from chunkymonkey import chunk_document, promote_plain_text_headers
-from chunkymonkey.context import enrich_chunks
-from chunkymonkey.storage._store import Store
+from chonk import DocumentLoader, NOVEL_STRUCTURAL_LEVELS
+from chonk import chunk_document, promote_plain_text_headers
+from chonk.context import enrich_chunks
+from chonk.storage._store import Store
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Constants
@@ -64,7 +64,7 @@ MIN_CHUNK     = 400
 MAX_CHUNK     = 1200
 DATASET_NAME  = "GraphRAG-Bench/GraphRAG-Bench"
 SUBSETS       = ["medical", "novel"]
-DB_FILENAME         = "chunkymonkey.duckdb"
+DB_FILENAME         = "chonk.duckdb"
 VANILLA_DB_FILENAME = "vanilla_rag.duckdb"
 VANILLA_K             = 5     # paper Appendix H.2: retrieval_topk=5
 VANILLA_CHUNK_TOKENS  = 256   # benchmark uses 256-token chunks
@@ -284,7 +284,7 @@ def _naive_chunks(text: str,
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Phase 2: Index (chunk + embed + store via chunkymonkey)
+# Phase 2: Index (chunk + embed + store via chonk)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def cmd_build_ner(args: argparse.Namespace) -> None:
@@ -334,7 +334,7 @@ def cmd_index(args: argparse.Namespace) -> None:
     min_chunk = getattr(args, 'min_chunk', MIN_CHUNK) or MIN_CHUNK
     max_chunk = getattr(args, 'max_chunk', MAX_CHUNK) or MAX_CHUNK
     size_suffix = f"_{min_chunk}_{max_chunk}" if (min_chunk != MIN_CHUNK or max_chunk != MAX_CHUNK) else ""
-    base = "chunkymonkey_nobc" if embed_content_only else "chunkymonkey"
+    base = "chonk_nobc" if embed_content_only else "chonk"
     db_path = data_dir / f"{base}{size_suffix}.duckdb"
 
     if db_path.exists() and not args.force:
@@ -423,7 +423,7 @@ def cmd_index_vanilla(args: argparse.Namespace) -> None:
     """Build vanilla RAG index: naive 256-token fixed chunks, no breadcrumbs."""
     import numpy as np
     from sentence_transformers import SentenceTransformer
-    from chunkymonkey.models import DocumentChunk
+    from chonk.models import DocumentChunk
 
     out_dir  = Path(args.out_dir)
     data_dir = out_dir / "data"
@@ -546,8 +546,8 @@ def _generate(question: str, context: str, client, model: str = GEN_MODEL,
 
 def _build_entity_index_from_store(store) -> "EntityIndex":
     """Run NER on all chunks in store and return a populated EntityIndex."""
-    from chunkymonkey.ner import SpacyMatcher, EntityIndex
-    from chunkymonkey.storage._vector import DuckDBVectorBackend
+    from chonk.ner import SpacyMatcher, EntityIndex
+    from chonk.storage._vector import DuckDBVectorBackend
 
     print(f"Building EntityIndex with SpacyMatcher({SPACY_MODEL})...")
     matcher = SpacyMatcher(model=SPACY_MODEL, strip_numeric=True)
@@ -573,7 +573,7 @@ def _persist_entity_index(entity_index, db_path: Path) -> None:
 
     print("  Persisting to chunk_entities table...")
     data = entity_index.to_dict()
-    con = duckdb.connect(str(db_path))
+    con = _connect_with_retry(db_path)
     con.execute("DELETE FROM chunk_entities")
     con.execute("DELETE FROM entities")
     for a in data["associations"]:
@@ -601,7 +601,7 @@ def _build_and_persist_entity_embeddings(entity_index, embed_model, db_path: Pat
     vecs = embed_model.encode(
         entity_ids, normalize_embeddings=True, show_progress_bar=False, batch_size=512
     ).astype("float32")
-    con = duckdb.connect(str(db_path))
+    con = _connect_with_retry(db_path)
     con.execute(
         "CREATE TABLE IF NOT EXISTS entity_embeddings "
         "(entity_id TEXT PRIMARY KEY, embedding FLOAT[])"
@@ -621,7 +621,7 @@ def cmd_build_community(args: argparse.Namespace) -> None:
     import duckdb
     import numpy as np
     from sentence_transformers import SentenceTransformer
-    from chunkymonkey.community import CommunityIndex
+    from chonk.community import CommunityIndex
 
     data_dir = Path(args.out_dir) / "data"
     db_path  = data_dir / args.db_name
@@ -708,6 +708,20 @@ def cmd_build_community(args: argparse.Namespace) -> None:
 # Per-run DuckDB helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _connect_with_retry(db_path, max_attempts: int = 30, delay: float = 2.0):
+    """Open a DuckDB write connection, retrying on lock conflicts."""
+    import duckdb, time as _time
+    for attempt in range(max_attempts):
+        try:
+            return duckdb.connect(str(db_path))
+        except Exception as e:
+            if ("lock" in str(e).lower() or "conflict" in str(e).lower()) and attempt < max_attempts - 1:
+                _time.sleep(delay)
+            else:
+                raise
+    raise RuntimeError(f"Could not acquire DB write lock after {max_attempts * delay:.0f}s")
+
+
 def _run_db_path(data_dir: Path, run_name: str) -> Path:
     runs_dir = data_dir / "runs"
     runs_dir.mkdir(exist_ok=True)
@@ -715,8 +729,7 @@ def _run_db_path(data_dir: Path, run_name: str) -> Path:
 
 
 def _init_run_db(db_path: Path) -> None:
-    import duckdb
-    con = duckdb.connect(str(db_path))
+    con = _connect_with_retry(db_path)
     con.execute("""
         CREATE TABLE IF NOT EXISTS results (
             id TEXT PRIMARY KEY,
@@ -748,8 +761,8 @@ def _init_run_db(db_path: Path) -> None:
 
 def _upsert_results_to_db(db_path: Path, results: list[dict]) -> None:
     """Insert or replace a batch of results without clearing the table."""
-    import duckdb, json as _json
-    con = duckdb.connect(str(db_path))
+    import json as _json
+    con = _connect_with_retry(db_path)
     for r in results:
         con.execute(
             "INSERT OR REPLACE INTO results VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -768,13 +781,13 @@ def _upsert_results_to_db(db_path: Path, results: list[dict]) -> None:
 
 
 def _write_results_to_db(db_path: Path, results: list[dict]) -> None:
-    import duckdb, json as _json
+    import json as _json
     # Deduplicate by id (last write wins — handles checkpoint resume duplicates)
     seen: dict[str, dict] = {}
     for r in results:
         seen[r.get("id")] = r
     results = list(seen.values())
-    con = duckdb.connect(str(db_path))
+    con = _connect_with_retry(db_path)
     con.execute("DELETE FROM results")
     for r in results:
         con.execute(
@@ -814,7 +827,7 @@ def _read_results_from_db(db_path: Path) -> list[dict]:
 
 def _load_community_index(db_path: Path):
     """Load CommunityIndex from DB, return None if not built."""
-    from chunkymonkey.community import CommunityIndex
+    from chonk.community import CommunityIndex
     try:
         import duckdb
         con = duckdb.connect(str(db_path), read_only=True)
@@ -850,7 +863,7 @@ def _load_entity_embeddings(db_path: Path):
 def _load_entity_index_from_db(db_path: Path) -> "EntityIndex":
     """Reconstruct EntityIndex from persisted chunk_entities table."""
     import duckdb
-    from chunkymonkey.ner import EntityIndex
+    from chonk.ner import EntityIndex
 
     con = duckdb.connect(str(db_path), read_only=True)
     rows = con.execute(
@@ -877,12 +890,47 @@ def _load_entity_index_from_db(db_path: Path) -> "EntityIndex":
     })
 
 
-def _build_enhanced_search(store, db_path: Path | None = None, use_ner_x: bool = False, embed_model=None, entity_ref_expansion: bool = False, entity_ref_expansion_k: int = 20, entity_ref_expansion_per_k: int | None = None, entity_ref_expansion_min_sim: float | None = None, use_cluster: bool = False):
+def _prune_redundant(hits, db_conn, threshold):
+    """Remove near-duplicate chunks from reranked hits (greedy, post-rerank).
+
+    Fetches embeddings in one batch query. Keeps the first occurrence when
+    two chunks have cosine similarity >= threshold.
+    """
+    import math
+    if threshold is None or len(hits) <= 1:
+        return hits
+    chunk_ids = [cid for cid, _, _ in hits]
+    placeholders = ", ".join(["?" for _ in chunk_ids])
+    rows = db_conn.execute(
+        f"SELECT chunk_id, embedding FROM embeddings WHERE chunk_id IN ({placeholders})",
+        chunk_ids,
+    ).fetchall()
+    embs = {row[0]: list(row[1]) for row in rows if row[1] is not None}
+
+    def _cosine(a, b):
+        dot = sum(x * y for x, y in zip(a, b))
+        na = math.sqrt(sum(x * x for x in a))
+        nb = math.sqrt(sum(x * x for x in b))
+        return dot / (na * nb) if na and nb else 0.0
+
+    selected, selected_embs = [], []
+    for hit in hits:
+        cid = hit[0]
+        emb = embs.get(cid, [])
+        if emb and selected_embs:
+            if max(_cosine(emb, se) for se in selected_embs if se) >= threshold:
+                continue
+        selected.append(hit)
+        selected_embs.append(emb)
+    return selected
+
+
+def _build_enhanced_search(store, db_path: Path | None = None, use_ner_x: bool = False, embed_model=None, entity_ref_expansion: bool = False, entity_ref_expansion_k: int = 20, entity_ref_expansion_per_k: int | None = None, entity_ref_expansion_min_sim: float | None = None, use_cluster: bool = False, lane_entity_min_sim: float | None = None):
     """Load EnhancedSearch: from pre-built DB tables if available, else rebuild in memory."""
     import duckdb
-    from chunkymonkey.ner import SpacyMatcher, EntityIndex
-    from chunkymonkey.search import EnhancedSearch
-    from chunkymonkey.storage._vector import DuckDBVectorBackend
+    from chonk.ner import SpacyMatcher, EntityIndex
+    from chonk.search import EnhancedSearch
+    from chonk.storage._vector import DuckDBVectorBackend
 
     if db_path is not None and db_path.exists():
         con = duckdb.connect(str(db_path), read_only=True)
@@ -895,7 +943,7 @@ def _build_enhanced_search(store, db_path: Path | None = None, use_ner_x: bool =
 
             cluster_map = None
             if use_cluster:
-                from chunkymonkey.cluster import ClusterMap
+                from chonk.cluster import ClusterMap
                 print("  Building ClusterMap...")
                 cluster_map = ClusterMap.build(entity_index)
                 print(f"  {cluster_map.cluster_count():,} clusters across {cluster_map.entity_count():,} entities")
@@ -935,6 +983,7 @@ def _build_enhanced_search(store, db_path: Path | None = None, use_ner_x: bool =
                 entity_ref_expansion_k=entity_ref_expansion_k,
                 entity_ref_expansion_per_k=entity_ref_expansion_per_k,
                 entity_ref_expansion_min_sim=entity_ref_expansion_min_sim,
+                lane_entity_min_sim=lane_entity_min_sim,
                 **ner_x_kwargs,
                 **embed_fn_kwargs,
             )
@@ -954,7 +1003,7 @@ def _build_enhanced_search(store, db_path: Path | None = None, use_ner_x: bool =
     print(f"  {entity_index.total_chunks():,} chunks, {len(entity_index.entity_ids()):,} entities")
     cluster_map = None
     if use_cluster:
-        from chunkymonkey.cluster import ClusterMap
+        from chonk.cluster import ClusterMap
         print("  Building ClusterMap...")
         cluster_map = ClusterMap.build(entity_index)
         print(f"  {cluster_map.cluster_count():,} clusters across {cluster_map.entity_count():,} entities")
@@ -970,6 +1019,7 @@ def _build_enhanced_search(store, db_path: Path | None = None, use_ner_x: bool =
         entity_ref_expansion_k=entity_ref_expansion_k,
         entity_ref_expansion_per_k=entity_ref_expansion_per_k,
         entity_ref_expansion_min_sim=entity_ref_expansion_min_sim,
+        lane_entity_min_sim=lane_entity_min_sim,
     )
 
 
@@ -1021,6 +1071,8 @@ def cmd_run(args: argparse.Namespace) -> None:
     use_community_context  = getattr(args, "community_context", False)
     community_min_coherence = getattr(args, "community_min_coherence", 0.0)
     no_breadcrumb_embed    = getattr(args, "no_breadcrumb_embed", False)
+    redundancy_threshold   = getattr(args, "redundancy_threshold", None)
+    lane_entity_min_sim    = getattr(args, "lane_entity_min_sim", None)
     db_name_override = getattr(args, 'db_name', None)
     question_ids_file = getattr(args, 'question_ids', None)
     if db_name_override:
@@ -1055,6 +1107,9 @@ def cmd_run(args: argparse.Namespace) -> None:
     pending = [(i, q) for i, q in enumerate(questions)
                if q.get("id", f"q{i}") not in done_ids]
     print(f"Pending: {len(pending)}")
+
+    run_db = _run_db_path(data_dir, run_name)
+    _init_run_db(run_db)
 
     # ── 1. Embed all questions (cached — questions never change across runs)
     import numpy as np
@@ -1122,6 +1177,7 @@ def cmd_run(args: argparse.Namespace) -> None:
             entity_ref_expansion_per_k=entity_ref_expansion_per_k,
             entity_ref_expansion_min_sim=entity_ref_expansion_min_sim,
             use_cluster=use_cluster,
+            lane_entity_min_sim=lane_entity_min_sim,
         ) if use_enhanced else None
 
         for j, (i, q) in enumerate(pending):
@@ -1162,6 +1218,8 @@ def cmd_run(args: argparse.Namespace) -> None:
                 hits   = [h for _, h in ranked]
             elif not use_rerank:
                 hits = hits[:top_k]
+            if redundancy_threshold is not None:
+                hits = _prune_redundant(hits, store.vector._conn, redundancy_threshold)
             chunk_texts = [chunk.content or "" for _, _, chunk in hits]
 
             # Collect unique community topic labels for retrieved chunks
@@ -1185,7 +1243,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                     text = f"{_format_breadcrumb(chunk.breadcrumb, style=breadcrumb_style)}\n\n{text}"
                 return text
 
-            work_items.append({
+            wi = {
                 "_slot":          len(work_items),
                 "qid":            qid,
                 "question":       q["question"],
@@ -1200,7 +1258,25 @@ def cmd_run(args: argparse.Namespace) -> None:
                 "expansion_stats": expansion_stats,
                 "evidence":       q.get("evidence", []),
                 "gold":           str(q.get("answer", "")),
-            })
+            }
+            work_items.append(wi)
+
+            if (j + 1) % 100 == 0 or (j + 1) == len(pending):
+                pct = 100 * (j + 1) // len(pending)
+                print(f"  Retrieved {j+1}/{len(pending)} ({pct}%)", flush=True)
+                batch_start = max(0, j + 1 - 100)
+                _upsert_results_to_db(run_db, [
+                    {
+                        "id": w["qid"], "question": w["question"], "source": w["source"],
+                        "question_type": w["qtype"], "context": w["context"],
+                        "evidence": w["evidence"], "generated_answer": None,
+                        "gold_answer": w["gold"], "retrieved_chunks": w["chunk_ids"],
+                        "retrieved_scores": w["scores"],
+                        "entity_ref_expansion": w.get("expansion_stats"),
+                        "entity_ref_retry": None,
+                    }
+                    for w in work_items[batch_start:j + 1]
+                ])
 
     # Build one client per endpoint (round-robin for parallelism across multiple dedicated endpoints)
     endpoint_ids: list[str] = getattr(args, "endpoint_ids", None) or [args.gen_model]
@@ -1218,7 +1294,7 @@ def cmd_run(args: argparse.Namespace) -> None:
 
     retry_ner_fn = None
     if use_entity_ref_retry:
-        from chunkymonkey.ner import SpacyMatcher
+        from chonk.ner import SpacyMatcher
         _retry_matcher = SpacyMatcher(model=SPACY_MODEL, strip_numeric=True)
         retry_ner_fn = lambda text: [m.display_name for m in _retry_matcher.match(text)]
 
@@ -1291,9 +1367,6 @@ def cmd_run(args: argparse.Namespace) -> None:
         if retry_stats is not None:
             result["entity_ref_retry"] = retry_stats
         return result
-
-    run_db = _run_db_path(data_dir, run_name)
-    _init_run_db(run_db)
 
     with ThreadPoolExecutor(max_workers=args.concurrency) as executor:
         futures = {executor.submit(_process, item): item for item in work_items}
@@ -1404,8 +1477,7 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
         print(f"Resuming bench-eval: {len(done)} already done")
         # Flush checkpoint items to DB immediately so they're visible in report
         if done and run_db.exists():
-            import duckdb as _ddb
-            con = _ddb.connect(str(run_db))
+            con = _connect_with_retry(run_db)
             for item in done.values():
                 con.execute(
                     "INSERT OR REPLACE INTO eval_scores VALUES (?,?,?,?,?,?)",
@@ -1597,8 +1669,7 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
                         done[item["id"]] = item
                         f.write(json.dumps(item) + "\n")
                 if batch_items and run_db.exists():
-                    import duckdb as _ddb
-                    con = _ddb.connect(str(run_db))
+                    con = _connect_with_retry(run_db)
                     for item in batch_items:
                         con.execute(
                             "INSERT OR REPLACE INTO eval_scores VALUES (?,?,?,?,?,?)",
@@ -1640,8 +1711,7 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
 
     # Write per-question eval scores to run DB
     if run_db.exists():
-        import duckdb as _ddb
-        con = _ddb.connect(str(run_db))
+        con = _connect_with_retry(run_db)
         con.execute("DELETE FROM eval_scores")
         for item in done.values():
             con.execute(
@@ -1713,7 +1783,7 @@ def cmd_bench_report(args: argparse.Namespace) -> None:
     print("\n── Benchmark Eval Results (answer_correctness) ──\n")
     # Header: Run | Med-Fact Med-Rsn Med-Summ Med-Crea Med | Nov-Fact ... Nov | All-Fact ... All
     col_w = 6
-    run_w = 42
+    run_w = 52
     hdr_parts = []
     for subset in SUBSETS:
         for _, short in QTYPES:
@@ -1889,11 +1959,11 @@ def _make_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_inspect)
 
     # index (replaces chunk + embed)
-    p = sub.add_parser("index", help="Chunk + embed + store corpus via chunkymonkey")
+    p = sub.add_parser("index", help="Chunk + embed + store corpus via chonk")
     p.add_argument("--out-dir", default="/tmp/grb", metavar="DIR")
     p.add_argument("--force", action="store_true", help="Delete existing index and reindex")
     p.add_argument("--embed-content-only", action="store_true",
-                   help="Embed content only (no breadcrumb); stores to chunkymonkey_nobc.duckdb")
+                   help="Embed content only (no breadcrumb); stores to chonk_nobc.duckdb")
     p.add_argument("--min-chunk", type=int, default=None)
     p.add_argument("--max-chunk", type=int, default=None)
     p.add_argument("--with-ner", action="store_true",
@@ -1945,7 +2015,7 @@ def _make_parser() -> argparse.ArgumentParser:
                    choices=["markdown", "literal", "symbol"], dest="breadcrumb_style",
                    help="Breadcrumb format: markdown (## headings), literal (Document: X. Section: Y.), symbol (original [X > Y])")
     p.add_argument("--no-breadcrumb-embed", action="store_true",
-                   help="Use content-only embedding index (chunkymonkey_nobc.duckdb)")
+                   help="Use content-only embedding index (chonk_nobc.duckdb)")
     p.add_argument("--db-name", default=None, help="Override DB filename")
     p.add_argument("--question-ids", default=None, metavar="PATH",
                    help="JSON file with list of question IDs to use")
@@ -1961,6 +2031,10 @@ def _make_parser() -> argparse.ArgumentParser:
                    help="Inject community topic labels into generation prompt (requires build-community first)")
     p.add_argument("--community-min-coherence", type=float, default=0.0, dest="community_min_coherence",
                    help="Suppress community labels with intra-community coherence below this threshold (default: 0.0 = no gating)")
+    p.add_argument("--redundancy-threshold", type=float, default=None, dest="redundancy_threshold",
+                   help="Post-rerank cosine dedup threshold (e.g. 0.92); disabled if not set")
+    p.add_argument("--lane-entity-min-sim", type=float, default=None, dest="lane_entity_min_sim",
+                   help="Min cosine similarity for entity-expansion candidates entering reranker pool (e.g. 0.45)")
     p.add_argument("--entity-ref-retry", action="store_true", dest="entity_ref_retry",
                    help="After generation, if answer is a refusal, retry with explicit instruction to attempt a partial answer (max 1 retry)")
     p.set_defaults(func=cmd_run)

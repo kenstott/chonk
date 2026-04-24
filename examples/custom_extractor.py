@@ -13,7 +13,7 @@ This example implements a simple CSV summary extractor as a demonstration.
 """
 import csv
 import io
-from chunkymonkey import DocumentLoader
+from chonk import DocumentLoader
 
 
 class CsvSummaryExtractor:

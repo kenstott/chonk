@@ -54,8 +54,8 @@ def _db_name(cfg_type: str, chunk_tokens: int | None, min_chunk: int | None, max
             return "vanilla_rag.duckdb"
         return f"vanilla_rag_{chunk_tokens}.duckdb"
     if min_chunk == CTX_MIN_DEFAULT and max_chunk == CTX_MAX_DEFAULT:
-        return "chunkymonkey_nobc.duckdb"
-    return f"chunkymonkey_nobc_{min_chunk}_{max_chunk}.duckdb"
+        return "chonk_nobc.duckdb"
+    return f"chonk_nobc_{min_chunk}_{max_chunk}.duckdb"
 
 
 def _run_cmd(cmd: list[str], log_path: Path) -> None:
@@ -81,7 +81,7 @@ def _run_cmd(cmd: list[str], log_path: Path) -> None:
 
 
 def cmd_draw_sample(args: argparse.Namespace) -> None:
-    from chunkymonkey import NOVEL_STRUCTURAL_LEVELS  # noqa: F401 — just verify import path works
+    from chonk import NOVEL_STRUCTURAL_LEVELS  # noqa: F401 — just verify import path works
 
     out_dir   = Path(args.out_dir)
     n_obs     = args.n_obs

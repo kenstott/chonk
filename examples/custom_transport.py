@@ -10,8 +10,8 @@
 Shows how to implement the Transport protocol.
 Use this pattern for: SharePoint, Confluence, Notion, Dropbox, internal APIs.
 """
-from chunkymonkey import DocumentLoader
-from chunkymonkey.transports._protocol import FetchResult
+from chonk import DocumentLoader
+from chonk.transports._protocol import FetchResult
 
 
 class InMemoryTransport:

@@ -44,15 +44,15 @@ except ImportError:
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from chunkymonkey.chunking import chunk_document
-from chunkymonkey.extractors import EdgarExtractor
-from chunkymonkey.models import DocumentChunk
+from chonk.chunking import chunk_document
+from chonk.extractors import EdgarExtractor
+from chonk.models import DocumentChunk
 
 # ─────────────────────────────────────────────────────────────────────────────
 # HTTP utility
 # ─────────────────────────────────────────────────────────────────────────────
 
-_UA = "chunkymonkey-benchmark/1.0 (research; contact@example.com)"
+_UA = "chonk-benchmark/1.0 (research; contact@example.com)"
 
 
 def _http_get(url: str, headers: dict | None = None, retries: int = 3,
@@ -833,7 +833,7 @@ _PYTHON_MODULES = [
 
 
 def _build_python(lib_dir: Path) -> None:
-    from chunkymonkey.extractors._html import HtmlExtractor
+    from chonk.extractors._html import HtmlExtractor
     raw_dir   = lib_dir / "_raw"
     out_dir   = lib_dir / "python"
     raw_dir.mkdir(parents=True, exist_ok=True)

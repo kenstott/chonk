@@ -35,11 +35,11 @@ SHOWS TWO EFFECTS:
   2. CLUSTERING — contextual chunks from the same Python type/class cluster
                   more tightly than naive chunks (intra > inter, bigger gap).
 
-Requires: pip install chunkymonkey[http]  (adds requests)
+Requires: pip install chonk[http]  (adds requests)
           Network access to docs.python.org
 
 Usage:
-    cd /path/to/chunkymonkey
+    cd /path/to/chonk
     python demo/python_docs_demo.py
     python demo/python_docs_demo.py --max-pages 30   # faster, fewer chunks
     python demo/python_docs_demo.py --max-pages 100  # more signal
@@ -54,9 +54,9 @@ from collections import Counter, defaultdict
 
 import numpy as np
 
-from chunkymonkey import DocumentLoader
-from chunkymonkey.models import DocumentChunk
-from chunkymonkey.transports import WebCrawler
+from chonk import DocumentLoader
+from chonk.models import DocumentChunk
+from chonk.transports import WebCrawler
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -243,7 +243,7 @@ def main(max_pages: int = 60) -> None:
         urls = crawler.crawl(ROOT_URL)
     except Exception as exc:
         print(f"ERROR: crawl failed — {exc}")
-        print("Check network access and that pip install chunkymonkey[http] is done.")
+        print("Check network access and that pip install chonk[http] is done.")
         sys.exit(1)
 
     if not urls:

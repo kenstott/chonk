@@ -258,7 +258,7 @@ class TestStudyToMarkdown:
 class TestClinicalTrialsWithDocumentLoader:
 
     def _make_chunks(self, nct_id: str = "NCT12345678", context_strategy: str = "prefix"):
-        from chunkymonkey import DocumentLoader
+        from chonk import DocumentLoader
         study = _make_study(nct_id=nct_id, brief_title="Pembrolizumab in NSCLC")
         doc_name, md = _study_to_markdown(study)
         loader = DocumentLoader(min_chunk_size=300, max_chunk_size=300, context_strategy=context_strategy)
@@ -289,7 +289,7 @@ class TestClinicalTrialsWithDocumentLoader:
 
     def test_boilerplate_chunks_disambiguated_by_doc_name(self):
         """Two trials with identical exclusion criteria get different embedding_content."""
-        from chunkymonkey import DocumentLoader
+        from chonk import DocumentLoader
 
         loader = DocumentLoader(min_chunk_size=300, max_chunk_size=300, context_strategy="prefix")
 
@@ -318,7 +318,7 @@ class TestClinicalTrialsWithDocumentLoader:
 
     def test_naive_vs_contextual_chunk_count_equal(self):
         """Same number of chunks; only embedding_content differs."""
-        from chunkymonkey import DocumentLoader
+        from chonk import DocumentLoader
         study = _make_study()
         doc_name, md = _study_to_markdown(study)
 
@@ -332,7 +332,7 @@ class TestClinicalTrialsWithDocumentLoader:
 
     def test_eligibility_section_splits_into_multiple_chunks(self):
         """Long eligibility criteria (>chunk_size chars) must produce multiple chunks."""
-        from chunkymonkey import DocumentLoader
+        from chonk import DocumentLoader
 
         long_criteria = (
             "Inclusion Criteria:\n\n"
@@ -354,7 +354,7 @@ class TestClinicalTrialsWithDocumentLoader:
 
     def test_all_elig_continuation_chunks_carry_section(self):
         """Every eligibility continuation chunk must have a section breadcrumb."""
-        from chunkymonkey import DocumentLoader
+        from chonk import DocumentLoader
 
         long_criteria = (
             "Inclusion Criteria:\n\n"

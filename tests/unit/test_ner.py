@@ -9,10 +9,10 @@ from pathlib import Path
 
 import pytest
 
-from chunkymonkey.ner._vocabulary import VocabularyMatcher, EntityMatch, _auto_id
-from chunkymonkey.ner._index import EntityIndex
-from chunkymonkey.ner._merge import merge_matches, _strip_span, _overlaps
-from chunkymonkey.models import EntityAssociation
+from chonk.ner._vocabulary import VocabularyMatcher, EntityMatch, _auto_id
+from chonk.ner._index import EntityIndex
+from chonk.ner._merge import merge_matches, _strip_span, _overlaps
+from chonk.models import EntityAssociation
 
 
 # ---------------------------------------------------------------------------
@@ -385,7 +385,7 @@ class TestSpacyMatcher:
         Regression: str(SpacyLabel.ORG) returns 'SpacyLabel.ORG' not 'ORG',
         so building self._types with str() caused all labels to be rejected.
         """
-        from chunkymonkey.ner import SpacyMatcher, SpacyLabel
+        from chonk.ner import SpacyMatcher, SpacyLabel
         matcher = SpacyMatcher(
             model="en_core_web_sm",
             entity_types=[SpacyLabel.GPE, SpacyLabel.ORG, SpacyLabel.PERSON],
@@ -401,7 +401,7 @@ class TestSpacyMatcher:
 
     def test_all_labels_default_finds_entities(self):
         """Default ALL_SPACY_LABELS should not suppress every entity."""
-        from chunkymonkey.ner import SpacyMatcher
+        from chonk.ner import SpacyMatcher
         matcher = SpacyMatcher(model="en_core_web_sm")
         text = "Barack Obama was born in Hawaii in 1961."
         matches = matcher.match(text)

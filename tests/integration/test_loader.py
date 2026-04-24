@@ -10,7 +10,7 @@
 import pytest
 from pathlib import Path
 
-from chunkymonkey import DocumentLoader
+from chonk import DocumentLoader
 
 SAMPLE_MARKDOWN = """# Introduction
 
@@ -39,7 +39,7 @@ class TestDocumentLoaderMarkdown:
         assert len(chunks) > 0
 
     def test_chunks_are_document_chunks(self, tmp_path):
-        from chunkymonkey import DocumentChunk
+        from chonk import DocumentChunk
         f = tmp_path / "sample.md"
         f.write_text(SAMPLE_MARKDOWN)
         chunks = DocumentLoader().load(str(f))
@@ -155,7 +155,7 @@ class TestCustomExtractor:
         assert chunks[0].content == "override extracted"
 
     def test_custom_transport_used(self, tmp_path):
-        from chunkymonkey.transports._protocol import FetchResult
+        from chonk.transports._protocol import FetchResult
 
         class MemTransport:
             def can_handle(self, uri):

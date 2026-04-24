@@ -44,9 +44,9 @@ except ImportError:
     _SSL_CTX = ssl.create_default_context()
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from chunkymonkey import DocumentLoader
-from chunkymonkey.extractors import EdgarExtractor
-from chunkymonkey.models import DocumentChunk
+from chonk import DocumentLoader
+from chonk.extractors import EdgarExtractor
+from chonk.models import DocumentChunk
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 50 S&P 500 tickers — diverse mix of sectors so boilerplate collision is
@@ -68,7 +68,7 @@ TARGET_TICKERS = [
 ]
 
 _HEADERS = {
-    "User-Agent": "chunkymonkey-demo/1.0 (research; contact@example.com)",
+    "User-Agent": "chonk-demo/1.0 (research; contact@example.com)",
     "Accept-Encoding": "gzip, deflate",
 }
 

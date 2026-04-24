@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from chunkymonkey.extractors._edgar import (
+from chonk.extractors._edgar import (
     EdgarExtractor,
     _extract_edgar_prose,
     _parse_toc,
@@ -377,7 +377,7 @@ class TestEdgarWithDocumentLoader:
     """Verify the extractor plugs into DocumentLoader correctly."""
 
     def test_load_bytes_produces_chunks(self):
-        from chunkymonkey import DocumentLoader
+        from chonk import DocumentLoader
         loader = DocumentLoader(
             min_chunk_size=400, max_chunk_size=400,
             extra_extractors=[EdgarExtractor()],
@@ -390,7 +390,7 @@ class TestEdgarWithDocumentLoader:
         assert len(chunks) > 0
 
     def test_chunks_have_document_name(self):
-        from chunkymonkey import DocumentLoader
+        from chonk import DocumentLoader
         loader = DocumentLoader(
             min_chunk_size=400, max_chunk_size=400,
             extra_extractors=[EdgarExtractor()],
@@ -403,7 +403,7 @@ class TestEdgarWithDocumentLoader:
         assert all(c.document_name == "acme_10k_2024" for c in chunks)
 
     def test_chunks_have_section_breadcrumbs(self):
-        from chunkymonkey import DocumentLoader
+        from chonk import DocumentLoader
         loader = DocumentLoader(
             min_chunk_size=400, max_chunk_size=400,
             extra_extractors=[EdgarExtractor()],
@@ -418,7 +418,7 @@ class TestEdgarWithDocumentLoader:
         assert any("9A" in s for s in sections)
 
     def test_embedding_content_includes_doc_name(self):
-        from chunkymonkey import DocumentLoader
+        from chonk import DocumentLoader
         loader = DocumentLoader(
             min_chunk_size=400, max_chunk_size=400,
             context_strategy="prefix",
@@ -434,7 +434,7 @@ class TestEdgarWithDocumentLoader:
             assert "acme_10k_2024" in c.embedding_content
 
     def test_embedding_content_includes_section(self):
-        from chunkymonkey import DocumentLoader
+        from chonk import DocumentLoader
         loader = DocumentLoader(
             min_chunk_size=400, max_chunk_size=400,
             context_strategy="prefix",
@@ -451,7 +451,7 @@ class TestEdgarWithDocumentLoader:
             assert " > ".join(c.section) in c.embedding_content
 
     def test_naive_and_contextual_differ(self):
-        from chunkymonkey import DocumentLoader
+        from chonk import DocumentLoader
         naive = DocumentLoader(
             min_chunk_size=400, max_chunk_size=400, context_strategy=None,
             extra_extractors=[EdgarExtractor()],
@@ -473,8 +473,8 @@ class TestEdgarWithDocumentLoader:
 
     def test_globally_registered_extractor(self):
         """register_extractor() adds extractor to global registry found by detect_extractor."""
-        from chunkymonkey.extractors import register_extractor, detect_extractor
-        import chunkymonkey.extractors as _ext_mod
+        from chonk.extractors import register_extractor, detect_extractor
+        import chonk.extractors as _ext_mod
 
         class _CustomEdgar(EdgarExtractor):
             def can_handle(self, doc_type: str) -> bool:

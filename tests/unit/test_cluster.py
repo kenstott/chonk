@@ -4,11 +4,11 @@
 
 import pytest
 
-from chunkymonkey.ner._vocabulary import VocabularyMatcher
-from chunkymonkey.ner._index import EntityIndex
-from chunkymonkey.cluster._cooccurrence import CooccurrenceMatrix
-from chunkymonkey.cluster._map import ClusterMap
-from chunkymonkey.models import ClusterRecord
+from chonk.ner._vocabulary import VocabularyMatcher
+from chonk.ner._index import EntityIndex
+from chonk.cluster._cooccurrence import CooccurrenceMatrix
+from chonk.cluster._map import ClusterMap
+from chonk.models import ClusterRecord
 
 
 SAMPLE_ENTITIES = [

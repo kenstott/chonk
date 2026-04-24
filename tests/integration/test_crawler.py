@@ -14,8 +14,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from chunkymonkey.transports import Crawler, DirectoryCrawler, WebCrawler
-from chunkymonkey import DocumentLoader
+from chonk.transports import Crawler, DirectoryCrawler, WebCrawler
+from chonk import DocumentLoader
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -84,7 +84,7 @@ class TestWebCrawler:
         assert not c.can_handle("s3://bucket/key")
         assert not c.can_handle("/local/path")
 
-    @patch("chunkymonkey.transports._web_crawler._http_get", side_effect=_fake_http_get)
+    @patch("chonk.transports._web_crawler._http_get", side_effect=_fake_http_get)
     def test_crawl_same_domain_only(self, mock_get):
         c = WebCrawler(max_pages=10, same_domain=True)
         urls = c.crawl("https://example.com/")
@@ -94,27 +94,27 @@ class TestWebCrawler:
         # External domain excluded
         assert not any("other-domain.com" in u for u in urls)
 
-    @patch("chunkymonkey.transports._web_crawler._http_get", side_effect=_fake_http_get)
+    @patch("chonk.transports._web_crawler._http_get", side_effect=_fake_http_get)
     def test_crawl_binary_urls_excluded(self, mock_get):
         c = WebCrawler(max_pages=10)
         urls = c.crawl("https://example.com/")
         assert not any(u.endswith(".png") for u in urls)
 
-    @patch("chunkymonkey.transports._web_crawler._http_get", side_effect=_fake_http_get)
+    @patch("chonk.transports._web_crawler._http_get", side_effect=_fake_http_get)
     def test_crawl_max_pages(self, mock_get):
         c = WebCrawler(max_pages=1)
         urls = c.crawl("https://example.com/")
         assert len(urls) == 1
         assert urls[0] == "https://example.com/"
 
-    @patch("chunkymonkey.transports._web_crawler._http_get", side_effect=_fake_http_get)
+    @patch("chonk.transports._web_crawler._http_get", side_effect=_fake_http_get)
     def test_crawl_max_depth_zero(self, mock_get):
         c = WebCrawler(max_pages=50, max_depth=0)
         urls = c.crawl("https://example.com/")
         # Depth 0 means root only (no child links followed)
         assert urls == ["https://example.com/"]
 
-    @patch("chunkymonkey.transports._web_crawler._http_get", side_effect=_fake_http_get)
+    @patch("chonk.transports._web_crawler._http_get", side_effect=_fake_http_get)
     def test_crawl_include_pattern(self, mock_get):
         c = WebCrawler(max_pages=10, include_pattern=r"page1")
         urls = c.crawl("https://example.com/")
@@ -123,7 +123,7 @@ class TestWebCrawler:
         assert "https://example.com/page1" in urls
         assert "https://example.com/page2.html" not in urls
 
-    @patch("chunkymonkey.transports._web_crawler._http_get", side_effect=_fake_http_get)
+    @patch("chonk.transports._web_crawler._http_get", side_effect=_fake_http_get)
     def test_crawl_exclude_pattern(self, mock_get):
         c = WebCrawler(max_pages=10, exclude_patterns=[r"page2"])
         urls = c.crawl("https://example.com/")
@@ -131,12 +131,12 @@ class TestWebCrawler:
 
     def test_crawl_root_fetch_failure_returns_empty(self):
         from urllib.error import URLError
-        with patch("chunkymonkey.transports._web_crawler._http_get", side_effect=URLError("timeout")):
+        with patch("chonk.transports._web_crawler._http_get", side_effect=URLError("timeout")):
             c = WebCrawler()
             urls = c.crawl("https://unreachable.example.com/")
             assert urls == []
 
-    @patch("chunkymonkey.transports._web_crawler._http_get", side_effect=_fake_http_get)
+    @patch("chonk.transports._web_crawler._http_get", side_effect=_fake_http_get)
     def test_crawl_no_duplicates(self, mock_get):
         c = WebCrawler(max_pages=50)
         urls = c.crawl("https://example.com/")
@@ -288,22 +288,22 @@ class TestDocumentLoaderCrawl:
         chunks = loader.load_directory(str(tmp_path), crawler=FixedCrawler())
         assert any(c.document_name == "custom" for c in chunks)
 
-    @patch("chunkymonkey.transports._web_crawler._http_get", side_effect=_fake_http_get)
+    @patch("chonk.transports._web_crawler._http_get", side_effect=_fake_http_get)
     def test_load_site_returns_chunks(self, mock_get):
-        from chunkymonkey.transports._protocol import FetchResult
+        from chonk.transports._protocol import FetchResult
 
         def fake_transport_fetch(uri, **kwargs):
             body, ct = _fake_http_get(uri, 20)
             return FetchResult(data=body, detected_mime=ct, source_path=uri)
 
-        with patch("chunkymonkey.transports._http.HttpTransport.fetch", side_effect=fake_transport_fetch):
+        with patch("chonk.transports._http.HttpTransport.fetch", side_effect=fake_transport_fetch):
             loader = DocumentLoader()
             chunks = loader.load_site("https://example.com/", max_pages=5)
         assert len(chunks) > 0
 
-    @patch("chunkymonkey.transports._web_crawler._http_get", side_effect=_fake_http_get)
+    @patch("chonk.transports._web_crawler._http_get", side_effect=_fake_http_get)
     def test_load_site_with_custom_crawler(self, mock_get):
-        from chunkymonkey.transports._protocol import FetchResult
+        from chonk.transports._protocol import FetchResult
 
         def fake_transport_fetch(uri, **kwargs):
             body, ct = _fake_http_get(uri, 20)
@@ -313,7 +313,7 @@ class TestDocumentLoaderCrawl:
             def can_handle(self, uri): return True
             def crawl(self, uri, **kw): return ["https://example.com/page1"]
 
-        with patch("chunkymonkey.transports._http.HttpTransport.fetch", side_effect=fake_transport_fetch):
+        with patch("chonk.transports._http.HttpTransport.fetch", side_effect=fake_transport_fetch):
             loader = DocumentLoader()
             chunks = loader.load_site("https://example.com/", crawler=FixedCrawler())
         assert len(chunks) > 0
@@ -335,7 +335,7 @@ class TestDocumentLoaderCrawl:
     def test_load_crawl_auto_selects_web_crawler_for_http(self):
         from urllib.error import URLError
         with patch(
-            "chunkymonkey.transports._web_crawler._http_get",
+            "chonk.transports._web_crawler._http_get",
             side_effect=URLError("connection refused"),
         ):
             loader = DocumentLoader()

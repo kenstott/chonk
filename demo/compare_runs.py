@@ -206,8 +206,8 @@ def run_compare(args) -> None:
         all_chunk_ids_a.update(run_a_data[qid].get("retrieved_chunks", []))
         all_chunk_ids_b.update(run_b_data[qid].get("retrieved_chunks", []))
 
-    db_a = data_dir / ("vanilla_rag.duckdb" if "vanilla" in args.run_a else "chunkymonkey.duckdb")
-    db_b = data_dir / ("vanilla_rag.duckdb" if "vanilla" in args.run_b else "chunkymonkey.duckdb")
+    db_a = data_dir / ("vanilla_rag.duckdb" if "vanilla" in args.run_a else "chonk.duckdb")
+    db_b = data_dir / ("vanilla_rag.duckdb" if "vanilla" in args.run_b else "chonk.duckdb")
 
     print(f"Fetching {len(all_chunk_ids_a)} chunks from {db_a.name}…")
     chunk_data_a = _load_chunks(db_a, list(all_chunk_ids_a)) if all_chunk_ids_a else {}

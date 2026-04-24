@@ -5,10 +5,10 @@
 import pytest
 import numpy as np
 
-from chunkymonkey.models import DocumentChunk, ScoredChunk
-from chunkymonkey.ner._vocabulary import VocabularyMatcher
-from chunkymonkey.ner._index import EntityIndex
-from chunkymonkey.search._enhanced import EnhancedSearch
+from chonk.models import DocumentChunk, ScoredChunk
+from chonk.ner._vocabulary import VocabularyMatcher
+from chonk.ner._index import EntityIndex
+from chonk.search._enhanced import EnhancedSearch
 
 
 # ---------------------------------------------------------------------------
@@ -36,7 +36,7 @@ def _random_emb() -> np.ndarray:
 
 def _make_store_with_chunks():
     """Return a Store loaded with 5 small chunks."""
-    from chunkymonkey.storage._store import Store
+    from chonk.storage._store import Store
     store = Store(":memory:", embedding_dim=DIM)
 
     chunks = [
@@ -143,7 +143,7 @@ class TestEnhancedSearchEntityExpansion:
 
         # Index all chunks via NER
         all_db_chunks = store.vector.get_all_chunks()
-        from chunkymonkey.storage._vector import DuckDBVectorBackend
+        from chonk.storage._vector import DuckDBVectorBackend
         for c in all_db_chunks:
             cid = DuckDBVectorBackend._generate_chunk_id(
                 c.document_name, c.chunk_index,
@@ -167,7 +167,7 @@ class TestEnhancedSearchEntityExpansion:
         matcher = VocabularyMatcher(VOCAB)
         entity_index = EntityIndex()
         all_db_chunks = store.vector.get_all_chunks()
-        from chunkymonkey.storage._vector import DuckDBVectorBackend
+        from chonk.storage._vector import DuckDBVectorBackend
         for c in all_db_chunks:
             cid = DuckDBVectorBackend._generate_chunk_id(
                 c.document_name, c.chunk_index,

@@ -72,12 +72,12 @@ try:
 except ImportError:
     _SSL_CTX = ssl.create_default_context()
 
-# ── chunkymonkey ─────────────────────────────────────────────────────────────
+# ── chonk ─────────────────────────────────────────────────────────────
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from chunkymonkey import DocumentLoader
-from chunkymonkey.extractors import EdgarExtractor
-from chunkymonkey.models import DocumentChunk
+from chonk import DocumentLoader
+from chonk.extractors import EdgarExtractor
+from chonk.models import DocumentChunk
 
 # ─────────────────────────────────────────────────────────────────────────────
 # EDGAR filing index — four large-cap companies, fiscal year 2024/2025
@@ -111,7 +111,7 @@ _FILINGS: list[dict] = [
 ]
 
 _HEADERS = {
-    "User-Agent": "chunkymonkey-demo/1.0 (research; contact@example.com)",
+    "User-Agent": "chonk-demo/1.0 (research; contact@example.com)",
     "Accept-Encoding": "gzip, deflate",
 }
 

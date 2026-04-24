@@ -22,9 +22,9 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from chunkymonkey import DocumentLoader
-from chunkymonkey.extractors._edgar import EdgarExtractor, _extract_edgar_prose
-from chunkymonkey.models import DocumentChunk
+from chonk import DocumentLoader
+from chonk.extractors._edgar import EdgarExtractor, _extract_edgar_prose
+from chonk.models import DocumentChunk
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -5,24 +5,24 @@
 # machine learning models is strictly prohibited without explicit written
 # permission from the copyright holder.
 
-"""Integration tests for chunkymonkey storage (requires chunkymonkey[storage])."""
+"""Integration tests for chonk storage (requires chonk[storage])."""
 
 import pytest
 
 try:
     import duckdb
     import numpy as np
-    from chunkymonkey.storage import Store
+    from chonk.storage import Store
     STORAGE_AVAILABLE = True
 except ImportError:
     STORAGE_AVAILABLE = False
 
 pytestmark = pytest.mark.skipif(
     not STORAGE_AVAILABLE,
-    reason="chunkymonkey[storage] not installed — pip install chunkymonkey[storage]",
+    reason="chonk[storage] not installed — pip install chonk[storage]",
 )
 
-from chunkymonkey.models import DocumentChunk
+from chonk.models import DocumentChunk
 
 
 def make_chunks(n=3):

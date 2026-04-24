@@ -5,11 +5,11 @@
 # machine learning models is strictly prohibited without explicit written
 # permission from the copyright holder.
 
-"""Tests for chunkymonkey chunking primitives."""
+"""Tests for chonk chunking primitives."""
 
 import pytest
 
-from chunkymonkey import (
+from chonk import (
     DocumentChunk,
     NOVEL_STRUCTURAL_LEVELS,
     chunk_document,

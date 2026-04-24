@@ -73,20 +73,20 @@ logic — is unchanged.
 
 Core (no optional dependencies):
 ```bash
-pip install chunkymonkey
+pip install chonk
 ```
 
 With specific extras:
 ```bash
-pip install "chunkymonkey[http]"       # HTTP/HTTPS transport
-pip install "chunkymonkey[s3]"         # Amazon S3 transport
-pip install "chunkymonkey[sftp]"       # SFTP transport
-pip install "chunkymonkey[pdf]"        # PDF extraction
-pip install "chunkymonkey[docx]"       # DOCX extraction
-pip install "chunkymonkey[xlsx]"       # XLSX extraction
-pip install "chunkymonkey[pptx]"       # PPTX extraction
-pip install "chunkymonkey[storage]"    # DuckDB vector store
-pip install "chunkymonkey[full]"       # Everything
+pip install "chonk[http]"       # HTTP/HTTPS transport
+pip install "chonk[s3]"         # Amazon S3 transport
+pip install "chonk[sftp]"       # SFTP transport
+pip install "chonk[pdf]"        # PDF extraction
+pip install "chonk[docx]"       # DOCX extraction
+pip install "chonk[xlsx]"       # XLSX extraction
+pip install "chonk[pptx]"       # PPTX extraction
+pip install "chonk[storage]"    # DuckDB vector store
+pip install "chonk[full]"       # Everything
 ```
 
 ---
@@ -94,7 +94,7 @@ pip install "chunkymonkey[full]"       # Everything
 ## Quick start
 
 ```python
-from chunkymonkey import DocumentLoader
+from chonk import DocumentLoader
 
 loader = DocumentLoader()   # context_strategy="prefix" is the default
 
@@ -227,7 +227,7 @@ chunks = loader.load_bytes(csv_bytes, name="data.csv", doc_type="csv")
 ### Custom transport
 
 ```python
-from chunkymonkey.transports._protocol import FetchResult
+from chonk.transports._protocol import FetchResult
 
 class SharePointTransport:
     def can_handle(self, uri): return uri.startswith("sharepoint://")
@@ -243,12 +243,12 @@ chunks = loader.load("sharepoint://site/document")
 
 ## Storage
 
-Requires `pip install "chunkymonkey[storage]"`.
+Requires `pip install "chonk[storage]"`.
 
 ```python
 import numpy as np
-from chunkymonkey import DocumentLoader
-from chunkymonkey.storage import Store
+from chonk import DocumentLoader
+from chonk.storage import Store
 
 loader = DocumentLoader()
 chunks = loader.load("report.pdf")

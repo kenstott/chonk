@@ -10,7 +10,7 @@
 Shows how enrich_chunks() adds section breadcrumbs to embedding_content
 while leaving the original content untouched.
 """
-from chunkymonkey import chunk_document, enrich_chunks
+from chonk import chunk_document, enrich_chunks
 
 SAMPLE = """
 # Annual Report 2024

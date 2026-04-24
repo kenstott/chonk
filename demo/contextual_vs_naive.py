@@ -6,7 +6,7 @@
 # permission from the copyright holder.
 
 """
-Contextual vs Naive RAG — demonstration of the chunkymonkey thesis.
+Contextual vs Naive RAG — demonstration of the chonk thesis.
 
 Loads three documents of different structures:
   - ops_report.md:      repeated section names across geographic regions
@@ -19,10 +19,10 @@ Shows two effects:
   2. CLUSTERING — contextual chunks from the same section are more similar
                   to each other than to chunks from other sections.
 
-Requires only chunkymonkey core (zero external dependencies).
+Requires only chonk core (zero external dependencies).
 
 Usage:
-    cd /path/to/chunkymonkey
+    cd /path/to/chonk
     python demo/contextual_vs_naive.py
 """
 from __future__ import annotations
@@ -34,8 +34,8 @@ from pathlib import Path
 
 import numpy as np
 
-from chunkymonkey import DocumentLoader
-from chunkymonkey.models import DocumentChunk
+from chonk import DocumentLoader
+from chonk.models import DocumentChunk
 
 _HERE = Path(__file__).parent
 DOCS_DIR = _HERE / "docs"

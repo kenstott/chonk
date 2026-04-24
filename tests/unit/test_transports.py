@@ -5,12 +5,12 @@
 # machine learning models is strictly prohibited without explicit written
 # permission from the copyright holder.
 
-"""Tests for chunkymonkey transport backends."""
+"""Tests for chonk transport backends."""
 
 import pytest
 
-from chunkymonkey.transports import LocalTransport, HttpTransport, S3Transport, detect_transport
-from chunkymonkey.transports._protocol import FetchResult
+from chonk.transports import LocalTransport, HttpTransport, S3Transport, detect_transport
+from chonk.transports._protocol import FetchResult
 
 
 # =============================================================================
@@ -20,9 +20,9 @@ from chunkymonkey.transports._protocol import FetchResult
 class TestLocalTransport:
     def test_reads_file(self, tmp_path):
         f = tmp_path / "test.txt"
-        f.write_bytes(b"hello from chunkymonkey")
+        f.write_bytes(b"hello from chonk")
         result = LocalTransport().fetch(str(f))
-        assert result.data == b"hello from chunkymonkey"
+        assert result.data == b"hello from chonk"
 
     def test_returns_fetch_result(self, tmp_path):
         f = tmp_path / "test.txt"
@@ -148,23 +148,23 @@ class TestImapTransport:
     """Tests for ImapTransport — network calls are mocked via unittest.mock."""
 
     def test_can_handle_imap(self):
-        from chunkymonkey.transports._imap import ImapTransport
+        from chonk.transports._imap import ImapTransport
         assert ImapTransport().can_handle("imap://user:pass@mail.example.com/INBOX")
 
     def test_can_handle_imaps(self):
-        from chunkymonkey.transports._imap import ImapTransport
+        from chonk.transports._imap import ImapTransport
         assert ImapTransport().can_handle("imaps://user:pass@imap.gmail.com/INBOX")
 
     def test_cannot_handle_http(self):
-        from chunkymonkey.transports._imap import ImapTransport
+        from chonk.transports._imap import ImapTransport
         assert not ImapTransport().can_handle("https://example.com/doc.pdf")
 
     def test_cannot_handle_local(self):
-        from chunkymonkey.transports._imap import ImapTransport
+        from chonk.transports._imap import ImapTransport
         assert not ImapTransport().can_handle("/local/path/to/file.eml")
 
     def test_cannot_handle_s3(self):
-        from chunkymonkey.transports._imap import ImapTransport
+        from chonk.transports._imap import ImapTransport
         assert not ImapTransport().can_handle("s3://bucket/key")
 
     def _mock_imap(self, raw_messages: list[bytes], search_ids: list[str] | None = None):
@@ -189,8 +189,8 @@ class TestImapTransport:
 
     def test_fetch_messages_yields_fetch_results(self):
         from unittest.mock import patch
-        from chunkymonkey.transports._imap import ImapTransport
-        from chunkymonkey.transports._protocol import FetchResult
+        from chonk.transports._imap import ImapTransport
+        from chonk.transports._protocol import FetchResult
 
         raw = b"From: a@b.com\r\nSubject: Hi\r\n\r\nBody"
         conn = self._mock_imap([raw])
@@ -207,7 +207,7 @@ class TestImapTransport:
 
     def test_fetch_messages_limit(self):
         from unittest.mock import patch
-        from chunkymonkey.transports._imap import ImapTransport
+        from chonk.transports._imap import ImapTransport
 
         msgs = [f"From: a@b.com\r\n\r\nMsg {i}".encode() for i in range(5)]
         conn = self._mock_imap(msgs)
@@ -221,7 +221,7 @@ class TestImapTransport:
 
     def test_fetch_messages_most_recent_first(self):
         from unittest.mock import patch
-        from chunkymonkey.transports._imap import ImapTransport
+        from chonk.transports._imap import ImapTransport
 
         msgs = [
             b"From: a@b.com\r\n\r\nOlder",
@@ -239,7 +239,7 @@ class TestImapTransport:
 
     def test_fetch_returns_single_result(self):
         from unittest.mock import patch
-        from chunkymonkey.transports._imap import ImapTransport
+        from chonk.transports._imap import ImapTransport
 
         raw = b"From: a@b.com\r\nSubject: Only\r\n\r\nSingle"
         conn = self._mock_imap([raw])
@@ -251,7 +251,7 @@ class TestImapTransport:
 
     def test_fetch_no_messages_raises(self):
         from unittest.mock import patch, MagicMock
-        from chunkymonkey.transports._imap import ImapTransport
+        from chonk.transports._imap import ImapTransport
 
         conn = MagicMock()
         conn.login.return_value = ("OK", [])
@@ -266,7 +266,7 @@ class TestImapTransport:
 
     def test_uses_imap4_for_plain_imap(self):
         from unittest.mock import patch
-        from chunkymonkey.transports._imap import ImapTransport
+        from chonk.transports._imap import ImapTransport
 
         raw = b"From: a@b.com\r\n\r\nPlain"
         conn = self._mock_imap([raw])

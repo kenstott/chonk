@@ -6,7 +6,7 @@
 # permission from the copyright holder.
 
 """Basic chunking example — no optional dependencies required."""
-from chunkymonkey import chunk_document
+from chonk import chunk_document
 
 SAMPLE = """
 # Introduction
