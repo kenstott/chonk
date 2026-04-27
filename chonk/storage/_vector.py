@@ -364,6 +364,7 @@ class DuckDBVectorBackend:
                 source_offset=row[4],
                 source_length=row[5],
                 breadcrumb=row[6],
+                embedding_content=f"{row[6]}\n\n{row[1]}" if row[6] else row[1],
             )
             for row in rows
         ]

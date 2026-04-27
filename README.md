@@ -1,4 +1,4 @@
-# Chunky Monkey
+# Chonk
 
 > A dairy-free RAG pipeline for delicious semantic similarity, clustering and NER.
 > No artificial embeddings. No factory-farm vector stores. Sustainably harvested tokens.
@@ -49,9 +49,9 @@ makes the embedding retrievable. There is no downside.
 
 ---
 
-## What Chunky Monkey does
+## What Chonk does
 
-Chunky Monkey is a document chunking and contextual enrichment pipeline. It:
+Chonk is a document chunking and contextual enrichment pipeline. It:
 
 1. **Fetches** documents from local disk, HTTP/HTTPS, S3, FTP, SFTP, or any custom
    source (SharePoint, Confluence, Google Drive, Notion)
@@ -210,7 +210,7 @@ Methods:
 
 ---
 
-## Extending Chunky Monkey
+## Extending Chonk
 
 ### Custom extractor
 

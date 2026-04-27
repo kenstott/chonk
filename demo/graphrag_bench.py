@@ -549,8 +549,12 @@ def _build_entity_index_from_store(store) -> "EntityIndex":
     from chonk.ner import SpacyMatcher, EntityIndex
     from chonk.storage._vector import DuckDBVectorBackend
 
+    from chonk.ner import SpacyLabel
+    _NUMERIC_TYPES = {SpacyLabel.CARDINAL, SpacyLabel.ORDINAL, SpacyLabel.MONEY,
+                      SpacyLabel.PERCENT, SpacyLabel.QUANTITY}
+    _label_types = [t for t in SpacyLabel if t not in _NUMERIC_TYPES]
     print(f"Building EntityIndex with SpacyMatcher({SPACY_MODEL})...")
-    matcher = SpacyMatcher(model=SPACY_MODEL, strip_numeric=True)
+    matcher = SpacyMatcher(model=SPACY_MODEL, strip_numeric=True, entity_types=_label_types)
     entity_index = EntityIndex()
 
     all_chunks = store.vector.get_all_chunks()
@@ -1073,7 +1077,8 @@ def cmd_run(args: argparse.Namespace) -> None:
     breadcrumb_style       = getattr(args, "breadcrumb_style", "markdown")
     use_community_context  = getattr(args, "community_context", False)
     community_min_coherence = getattr(args, "community_min_coherence", 0.0)
-    no_breadcrumb_embed    = getattr(args, "no_breadcrumb_embed", False)
+    breadcrumb_embed       = getattr(args, "breadcrumb_embed", False)
+    no_breadcrumb_embed    = not breadcrumb_embed  # legacy alias for internal logic
     redundancy_threshold   = getattr(args, "redundancy_threshold", None)
     lane_entity_min_sim    = getattr(args, "lane_entity_min_sim", None)
     concentration_threshold = getattr(args, "concentration_threshold", None)
@@ -1085,12 +1090,40 @@ def cmd_run(args: argparse.Namespace) -> None:
     else:
         _ctx_db = DB_FILENAME.replace(".duckdb", "_nobc.duckdb") if no_breadcrumb_embed else DB_FILENAME
         db_path = data_dir / (VANILLA_DB_FILENAME if use_vanilla else _ctx_db)
-    top_k        = VANILLA_K if use_vanilla else K
+    top_k        = VANILLA_K if use_vanilla else (getattr(args, "top_k", None) or K)
     gen_temperature = VANILLA_TEMPERATURE  # paper: 0.7 for all systems
 
     if not db_path.exists():
         print("No index found. Run 'index' first.")
         return
+
+    # Write sidecar flags file for reproducibility
+    _flags = {
+        "run_name": run_name,
+        "db": str(db_path.name),
+        "vanilla": use_vanilla,
+        "rerank": use_rerank,
+        "rerank_provider": rerank_provider,
+        "enhanced": use_enhanced,
+        "entity_ref_expansion": use_entity_ref_expansion,
+        "entity_ref_expansion_min_sim": entity_ref_expansion_min_sim,
+        "entity_ref_expansion_per_k": entity_ref_expansion_per_k,
+        "lane_entity_min_sim": lane_entity_min_sim,
+        "community_context": use_community_context,
+        "community_min_coherence": community_min_coherence,
+        "redundancy_threshold": redundancy_threshold,
+        "breadcrumb_embed": breadcrumb_embed,
+        "breadcrumb_context": use_breadcrumb_context,
+        "breadcrumb_style": breadcrumb_style,
+        "cluster": use_cluster,
+        "ner_x": use_ner_x,
+        "concentration_threshold": concentration_threshold,
+        "query_complexity_threshold": query_complexity_threshold,
+        "top_k": top_k,
+    }
+    (results_dir / f"{run_name}_flags.json").write_text(
+        json.dumps(_flags, indent=2), encoding="utf-8"
+    )
 
     questions = _load_questions(data_dir)
     if question_ids_file:
@@ -1541,8 +1574,9 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
         if done and run_db.exists():
             con = _connect_with_retry(run_db)
             for item in done.values():
+                con.execute("DELETE FROM eval_scores WHERE id = ?", [item.get("id")])
                 con.execute(
-                    "INSERT OR REPLACE INTO eval_scores VALUES (?,?,?,?,?,?)",
+                    "INSERT INTO eval_scores VALUES (?,?,?,?,?,?)",
                     [item.get("id"), item.get("question_type"),
                      item.get("answer_correctness"), item.get("rouge_score"),
                      item.get("coverage_score"), item.get("faithfulness")],
@@ -1671,6 +1705,8 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
 
         semaphore = asyncio.Semaphore(args.concurrency)
         eval_rpm: int | None = getattr(args, "eval_rpm", None)
+        nan_limit: int | None = getattr(args, "nan_limit", None)
+        _nan_final = [0]  # count of items finalized as NaN (shared across coroutines)
 
         # Token-bucket throttle: at most eval_rpm tokens per 60s window.
         _rpm_tokens   = [float(eval_rpm or 0)]
@@ -1700,8 +1736,10 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
             qtype   = r["question_type"]
             metrics = METRIC_CONFIG.get(qtype, ["answer_correctness"])
             result  = {"id": r["id"], "question_type": qtype}
-            async with semaphore:
-                for attempt in range(5):
+            for attempt in range(5):
+                # Hold semaphore only during the API call — release it before any retry sleep
+                # so other items can proceed while this one waits.
+                async with semaphore:
                     try:
                         await _acquire_rpm_token()
                         tasks = {}
@@ -1724,24 +1762,33 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
                             if isinstance(val, BaseException):
                                 print(f"[eval] {r['id']} {key} exception: {type(val).__name__}: {val}", flush=True)
                             result[key] = float(val) if isinstance(val, (int, float)) else float("nan")
-                        # Retry if all non-rouge metrics are NaN (transient API failure)
                         nan_metrics = [k for k in tasks if k != "rouge_score" and result.get(k) != result.get(k)]
                         if nan_metrics and attempt < 4:
+                            # Skip retry if already at/below nan_limit — no point burning calls
+                            if nan_limit is not None and _nan_final[0] <= nan_limit:
+                                print(f"[eval] {r['id']} NaN but global NaN count ({_nan_final[0]}) ≤ limit ({nan_limit}), skipping retry", flush=True)
+                                _nan_final[0] += 1
+                                return result
+                            # Semaphore released here — other items run during the sleep
                             print(f"[eval] {r['id']} all LLM metrics NaN, retrying (attempt {attempt+1}/5)", flush=True)
-                            await _aio.sleep(5 * (attempt + 1))
-                            continue
-                        break
+                        else:
+                            if nan_metrics:
+                                _nan_final[0] += 1
+                            return result
                     except Exception as e:
                         is_rate = "429" in str(e) or "rate_limit" in str(e).lower() or "RateLimit" in type(e).__name__
                         print(f"[eval] {r['id']} attempt {attempt+1}/5 {'rate-limit' if is_rate else 'error'}: {e}", flush=True)
                         if is_rate:
                             delay = 15 * (2 ** attempt)
                             print(f"[eval] backing off {delay}s", flush=True)
-                            await _aio.sleep(delay)
                         else:
                             for key in METRIC_CONFIG.get(qtype, ["answer_correctness"]):
                                 result.setdefault(key, float("nan"))
-                            break
+                            _nan_final[0] += 1
+                            return result
+                # Sleep outside the semaphore so other items can run
+                await _aio.sleep(5 * (attempt + 1))
+            _nan_final[0] += 1
             return result
 
         async def _eval_one_safe(r: dict) -> dict:
@@ -1768,8 +1815,9 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
                 if batch_items and run_db.exists():
                     con = _connect_with_retry(run_db)
                     for item in batch_items:
+                        con.execute("DELETE FROM eval_scores WHERE id = ?", [item.get("id")])
                         con.execute(
-                            "INSERT OR REPLACE INTO eval_scores VALUES (?,?,?,?,?,?)",
+                            "INSERT INTO eval_scores VALUES (?,?,?,?,?,?)",
                             [
                                 item.get("id"), item.get("question_type"),
                                 item.get("answer_correctness"), item.get("rouge_score"),
@@ -1812,7 +1860,7 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
         con.execute("DELETE FROM eval_scores")
         for item in done.values():
             con.execute(
-                "INSERT OR REPLACE INTO eval_scores VALUES (?,?,?,?,?,?)",
+                "INSERT INTO eval_scores VALUES (?,?,?,?,?,?)",
                 [
                     item.get("id"), item.get("question_type"),
                     item.get("answer_correctness"), item.get("rouge_score"),
@@ -2141,48 +2189,72 @@ def _make_parser() -> argparse.ArgumentParser:
                    help="Parallel workers (default: 20)")
     p.add_argument("--run-name",      default="contextual",
                    help="Output file prefix (default: contextual)")
-    p.add_argument("--rerank",        action="store_true",
-                   help=f"Rerank top-{K_FETCH} candidates to top-{K}")
-    p.add_argument("--rerank-provider", default="local", choices=["local", "together", "cohere"],
-                   help=f"Reranker: local={RERANK_MODEL}, together={RERANK_MODEL_TOGETHER} (default: local)")
-    p.add_argument("--enhanced",      action="store_true",
-                   help=f"Use NER+cluster EnhancedSearch (SpacyMatcher/{SPACY_MODEL} + agglomerative clustering)")
-    p.add_argument("--ner-x",         action="store_true", dest="ner_x",
-                   help="Add entity embedding ANN expansion (k=10) on top of NER+cluster; requires --enhanced and pre-built entity_embeddings (build-ner --with-embeddings)")
-    p.add_argument("--vanilla",       action="store_true",
-                   help=f"Use vanilla RAG index ({VANILLA_CHUNK_TOKENS}-token chunks, k={VANILLA_K})")
-    p.add_argument("--breadcrumb-context", action="store_true",
-                   help="Prepend breadcrumb to each chunk in the generator context window")
-    p.add_argument("--breadcrumb-style", default="markdown",
-                   choices=["markdown", "literal", "symbol"], dest="breadcrumb_style",
-                   help="Breadcrumb format: markdown (## headings), literal (Document: X. Section: Y.), symbol (original [X > Y])")
-    p.add_argument("--no-breadcrumb-embed", action="store_true",
-                   help="Use content-only embedding index (chonk_nobc.duckdb)")
-    p.add_argument("--db-name", default=None, help="Override DB filename")
-    p.add_argument("--question-ids", default=None, metavar="PATH",
-                   help="JSON file with list of question IDs to use")
-    p.add_argument("--entity-ref-expansion", action="store_true", dest="entity_ref_expansion",
-                   help="Post-selection expansion: if query entities missing from top-k, fetch k=20 and add covering chunks")
-    p.add_argument("--entity-ref-expansion-per-k", type=int, default=None, dest="entity_ref_expansion_per_k",
-                   help="Override per-entity retrieval k in semantic expansion (default: derived from total k / n_missing)")
-    p.add_argument("--entity-ref-expansion-min-sim", type=float, default=None, dest="entity_ref_expansion_min_sim",
-                   help="Min cosine similarity threshold for semantic expansion hits (default: no filter)")
-    p.add_argument("--cluster", action="store_true",
-                   help="Enable cluster expansion (builds ClusterMap; off by default)")
-    p.add_argument("--community-context", action="store_true", dest="community_context",
-                   help="Inject community topic labels into generation prompt (requires build-community first)")
-    p.add_argument("--community-min-coherence", type=float, default=0.0, dest="community_min_coherence",
-                   help="Suppress community labels with intra-community coherence below this threshold (default: 0.0 = no gating)")
-    p.add_argument("--redundancy-threshold", type=float, default=None, dest="redundancy_threshold",
-                   help="Post-rerank cosine dedup threshold (e.g. 0.92); disabled if not set")
-    p.add_argument("--lane-entity-min-sim", type=float, default=None, dest="lane_entity_min_sim",
-                   help="Min cosine similarity for entity-expansion candidates entering reranker pool (e.g. 0.45)")
-    p.add_argument("--entity-ref-retry", action="store_true", dest="entity_ref_retry",
-                   help="After generation, if answer is a refusal, retry with explicit instruction to attempt a partial answer (max 1 retry)")
-    p.add_argument("--concentration-threshold", type=float, default=None, dest="concentration_threshold",
-                   help="If top-K retrieval has >= this fraction from one source doc, auto-trigger entity-ref-expansion (e.g. 0.6); disabled if not set")
-    p.add_argument("--query-complexity-threshold", type=int, default=2, dest="query_complexity_threshold",
-                   help="Skip community context for queries with complexity score below this threshold (entity count + clause signals; default: 2)")
+    # ── Base ──────────────────────────────────────────────────────────────────
+    g_base = p.add_argument_group("base", "Core retrieval mode")
+    g_base.add_argument("--vanilla", action="store_true",
+                        help=f"Use vanilla RAG index ({VANILLA_CHUNK_TOKENS}-token chunks, k={VANILLA_K})")
+    g_base.add_argument("--rerank", action="store_true",
+                        help=f"Rerank top-{K_FETCH} candidates to top-{K}")
+    g_base.add_argument("--rerank-provider", default="local", choices=["local", "together", "cohere"],
+                        help=f"Reranker: local={RERANK_MODEL}, together={RERANK_MODEL_TOGETHER} (default: local)")
+
+    # ── Expansion ─────────────────────────────────────────────────────────────
+    g_exp = p.add_argument_group(
+        "expansion",
+        "Grow the candidate pool beyond vector seed. Dependencies: --enhanced required for all expansion flags.")
+    g_exp.add_argument("--enhanced", action="store_true",
+                       help=f"Enable entity/structural/cluster expansion (SpacyMatcher/{SPACY_MODEL})")
+    g_exp.add_argument("--ner-x", action="store_true", dest="ner_x",
+                       help="Add entity embedding ANN expansion; requires --enhanced + build-ner --with-embeddings")
+    g_exp.add_argument("--cluster", action="store_true",
+                       help="Enable cluster-neighbor expansion (off by default); requires --enhanced")
+    g_exp.add_argument("--entity-ref-expansion", action="store_true", dest="entity_ref_expansion",
+                       help="Post-selection: if query entities absent from top-k, re-search and insert covering chunks")
+    g_exp.add_argument("--entity-ref-expansion-per-k", type=int, default=None, dest="entity_ref_expansion_per_k",
+                       help="Per-entity retrieval k for --entity-ref-expansion (default: k / n_missing)")
+    g_exp.add_argument("--entity-ref-expansion-min-sim", type=float, default=None, dest="entity_ref_expansion_min_sim",
+                       help="Min cosine sim for --entity-ref-expansion hits (default: no filter)")
+    g_exp.add_argument("--breadcrumb-embed", action="store_true",
+                       help="Use bc-in-embedding index (chunkymonkey_1100_2200.duckdb); improves seed quality for structured docs")
+
+    # ── Pool Management ───────────────────────────────────────────────────────
+    g_pool = p.add_argument_group(
+        "pool_management",
+        "Control which expanded candidates survive to the final top-k. Meaningful only when --enhanced is set.")
+    g_pool.add_argument("--lane-entity-min-sim", type=float, default=None, dest="lane_entity_min_sim",
+                        help="Quality gate: drop entity-adjacent chunks with query-sim < threshold before pool merge (e.g. 0.45)")
+    g_pool.add_argument("--redundancy-threshold", type=float, default=None, dest="redundancy_threshold",
+                        help="Dedup: drop near-duplicate chunks from merged pool before top-k selection (e.g. 0.92); fires after lane filter")
+    g_pool.add_argument("--concentration-threshold", type=float, default=None, dest="concentration_threshold",
+                        help="Auto-trigger --entity-ref-expansion if ≥ this fraction of top-k is from one doc (e.g. 0.6)")
+
+    # ── Context Enrichment ────────────────────────────────────────────────────
+    g_ctx = p.add_argument_group(
+        "context_enrichment",
+        "Modify what the generator sees. Independent of retrieval quality.")
+    g_ctx.add_argument("--community-context", action="store_true", dest="community_context",
+                       help="Inject community topic labels into generation prompt (requires build-community)")
+    g_ctx.add_argument("--community-min-coherence", type=float, default=0.0, dest="community_min_coherence",
+                       help="Suppress community labels with coherence < threshold (default: 0.0)")
+    g_ctx.add_argument("--query-complexity-threshold", type=int, default=2, dest="query_complexity_threshold",
+                       help="Skip community context for low-complexity queries (default: 2)")
+    g_ctx.add_argument("--breadcrumb-context", action="store_true",
+                       help="Prepend breadcrumb heading to each chunk in the generator context window")
+    g_ctx.add_argument("--breadcrumb-style", default="markdown",
+                       choices=["markdown", "literal", "symbol"], dest="breadcrumb_style",
+                       help="Breadcrumb format in context: markdown (## headings), literal (Section: X.), symbol ([X > Y])")
+
+    # ── Misc ──────────────────────────────────────────────────────────────────
+    g_misc = p.add_argument_group("misc")
+    g_misc.add_argument("--entity-ref-retry", action="store_true", dest="entity_ref_retry",
+                        help="On refusal answer, retry with partial-answer hint (max 1 retry)")
+    g_misc.add_argument("--top-k", type=int, default=None, dest="top_k", metavar="K",
+                        help=f"Override retrieval top-k (default: {K})")
+    g_misc.add_argument("--db-name", default=None, dest="db_name",
+                        help="Override DB filename inside {out_dir}/data/ (default: auto from --breadcrumb-embed)")
+    g_misc.add_argument("--question-ids", default=None, dest="question_ids", metavar="PATH",
+                        help="JSON file with list of question IDs to run (default: all)")
+
     p.set_defaults(func=cmd_run)
 
     # build-community
@@ -2246,6 +2318,8 @@ def _make_parser() -> argparse.ArgumentParser:
                    help="Max judge API requests per minute (token-bucket throttle, default: no limit)")
     p.add_argument("--eval-batch-size", type=int, default=10, dest="eval_batch_size",
                    help="Items per async batch (default: 10)")
+    p.add_argument("--nan-limit",      type=int, default=None, dest="nan_limit",
+                   help="Stop retrying NaN items once total finalized-NaN count is ≤ this threshold (default: always retry)")
     p.set_defaults(func=cmd_bench_eval)
 
     # report — combined matrix of all eval runs + leaderboard

@@ -12,6 +12,7 @@ htmlcov/
 .canary_registry.json
 /.env
 .DS_Store
+._*
 .idea/
 .claude/
 /work/
