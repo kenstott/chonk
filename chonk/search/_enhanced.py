@@ -25,6 +25,8 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING, Callable
 
+import numpy as np
+
 from ..models import DocumentChunk, ScoredChunk
 
 if TYPE_CHECKING:
@@ -439,7 +441,7 @@ class EnhancedSearch:
         query_embedding,
         k: int,
     ) -> list[ScoredChunk]:
-        """Greedy sequential MMR selection.
+        """Greedy sequential MMR selection (vectorized with numpy).
 
         Implements the algorithm from the spec:
           composite = rw * relevance + pw * priority + cw * coverage
@@ -447,50 +449,75 @@ class EnhancedSearch:
         if not candidates:
             return []
 
-        query_vec = list(query_embedding.flatten())
+        q = np.array(query_embedding.flatten(), dtype=np.float32)
+        qnorm = np.linalg.norm(q)
+        q_unit = q / qnorm if qnorm > 0 else q
 
-        # Pre-fetch embeddings and compute relevance for all candidates
-        cand_data: list[tuple[ScoredChunk, list[float], float]] = []
+        # Pre-fetch embeddings, normalize to unit vectors
+        scs: list[ScoredChunk] = []
+        units: list[np.ndarray | None] = []
+        relevances: list[float] = []
+        dim = len(q_unit)
+
         for sc in candidates:
-            emb = self._get_embedding(sc.chunk_id)
-            if emb is None:
-                emb = []
-            relevance = self._cosine_similarity(query_vec, emb) if emb else 0.0
-            sc.embedding = emb
-            cand_data.append((sc, emb, relevance))
+            raw = self._get_embedding(sc.chunk_id)
+            sc.embedding = raw
+            if raw and len(raw) == dim:
+                arr = np.array(raw, dtype=np.float32)
+                norm = np.linalg.norm(arr)
+                unit = arr / norm if norm > 0 else arr
+                rel = float(np.dot(q_unit, unit))
+            else:
+                unit = None
+                rel = 0.0
+            scs.append(sc)
+            units.append(unit)
+            relevances.append(rel)
 
-        selected: list[tuple[ScoredChunk, list[float]]] = []
-        remaining = list(cand_data)
+        priorities = np.array(
+            [self._PRIORITY.get(sc.provenance, 0.5) for sc in scs], dtype=np.float32
+        )
+
+        remaining = list(range(len(scs)))
+        sel_units: list[np.ndarray] = []
+        result: list[ScoredChunk] = []
 
         for _ in range(min(k, len(remaining))):
+            # Build matrix of selected unit vectors for batch max-sim
+            if sel_units:
+                sel_mat = np.stack(sel_units)  # (n_sel, dim)
+
             best_score = -float("inf")
-            best_idx = 0
+            best_j = 0
 
-            for i, (sc, emb, relevance) in enumerate(remaining):
-                priority = self._PRIORITY.get(sc.provenance, 0.5)
+            for j, i in enumerate(remaining):
+                rel = relevances[i]
+                pri = float(priorities[i])
+                unit = units[i]
 
-                if selected:
-                    max_sim = max(
-                        self._cosine_similarity(emb, sel_emb)
-                        for _, sel_emb in selected
-                        if emb and sel_emb
-                    ) if emb else 0.0
-                    coverage = relevance - self._lambda * max_sim
+                if sel_units:
+                    if unit is not None:
+                        sims = sel_mat @ unit  # (n_sel,) — all cosines in one BLAS call
+                        max_sim = float(np.max(sims))
+                    else:
+                        max_sim = 0.0
+                    coverage = rel - self._lambda * max_sim
                 else:
-                    coverage = relevance
+                    coverage = rel
 
-                composite = (
-                    self._rw * relevance
-                    + self._pw * priority
-                    + self._cw * coverage
-                )
+                composite = self._rw * rel + self._pw * pri + self._cw * coverage
                 if composite > best_score:
                     best_score = composite
-                    best_idx = i
+                    best_j = j
 
-            chosen_sc, chosen_emb, chosen_rel = remaining.pop(best_idx)
-            chosen_sc.score = best_score
-            chosen_sc.embedding = None  # don't leak internals in result
-            selected.append((chosen_sc, chosen_emb))
+            chosen_i = remaining.pop(best_j)
+            sc = scs[chosen_i]
+            sc.score = best_score
+            sc.embedding = None
+            if units[chosen_i] is not None:
+                sel_units.append(units[chosen_i])
+            else:
+                sel_units.append(np.zeros(dim, dtype=np.float32))
+            result.append(sc)
 
-        return [sc for sc, _ in selected]
+        return result

@@ -1128,8 +1128,9 @@ def cmd_run(args: argparse.Namespace) -> None:
     questions = _load_questions(data_dir)
     if question_ids_file:
         with open(question_ids_file) as _f:
-            _allowed = set(json.load(_f))
-        questions = [q for q in questions if q.get('id') in _allowed]
+            _order = json.load(_f)
+        _id_to_q = {q.get("id"): q for q in questions}
+        questions = [_id_to_q[qid] for qid in _order if qid in _id_to_q]
     if args.limit:
         questions = questions[:args.limit]
     print(f"Questions: {len(questions)}")
@@ -1142,41 +1143,64 @@ def cmd_run(args: argparse.Namespace) -> None:
                 done_ids.add(r["id"])
         print(f"Resuming from checkpoint: {len(done_ids)} already done")
 
+    run_db = _run_db_path(data_dir, run_name)
+    _init_run_db(run_db)
+
+    # Also resume from DuckDB retrieval results (handles kill-during-retrieval)
+    if run_db.exists():
+        import duckdb as _duckdb
+        try:
+            _con = _duckdb.connect(str(run_db), read_only=True)
+            _db_done = set(
+                row[0] for row in _con.execute(
+                    "SELECT id FROM results WHERE context IS NOT NULL"
+                ).fetchall()
+            )
+            _con.close()
+            if _db_done - done_ids:
+                print(f"Resuming from DB: {len(_db_done)} already retrieved")
+                done_ids.update(_db_done)
+        except Exception:
+            pass
+
     pending = [(i, q) for i, q in enumerate(questions)
                if q.get("id", f"q{i}") not in done_ids]
     print(f"Pending: {len(pending)}")
 
-    run_db = _run_db_path(data_dir, run_name)
-    _init_run_db(run_db)
-
-    # ── 1. Embed all questions (cached — questions never change across runs)
+    # ── 1. Embed all questions (full-corpus cache — order-independent across runs)
+    # Cache key is the full unfiltered corpus so any --question-ids subset or
+    # reordering reuses the same cache file via ID lookup.
     import numpy as np
     q_vecs_cache = data_dir / "question_embeddings.npy"
     q_ids_cache  = data_dir / "question_ids.json"
-    all_ids = [q.get("id", f"q{i}") for i, q in enumerate(questions)]
 
+    _corpus_qs  = _load_questions(data_dir)
+    _corpus_ids = [q.get("id", f"q{i}") for i, q in enumerate(_corpus_qs)]
+
+    _corpus_vecs = None
     if q_vecs_cache.exists() and q_ids_cache.exists():
-        cached_ids = json.loads(q_ids_cache.read_text())
-        if cached_ids == all_ids:
+        if json.loads(q_ids_cache.read_text()) == _corpus_ids:
             print(f"Loading cached question embeddings from {q_vecs_cache}")
-            all_vecs = np.load(str(q_vecs_cache))
+            _corpus_vecs = np.load(str(q_vecs_cache))
         else:
-            q_vecs_cache.unlink()  # stale cache
-            cached_ids = None
+            q_vecs_cache.unlink()  # stale — corpus changed
 
     embed_model = None
-    if not q_vecs_cache.exists() or use_ner_x or use_entity_ref_retry or use_entity_ref_expansion or concentration_threshold is not None:
+    if _corpus_vecs is None or use_ner_x or use_entity_ref_retry or use_entity_ref_expansion or concentration_threshold is not None:
         embed_model = SentenceTransformer(EMBED_MODEL)
-    if not q_vecs_cache.exists():
-        print(f"Embedding {len(questions)} questions (will cache)...")
-        all_texts = [q["question"] for q in questions]
-        all_vecs  = embed_model.encode(
-            all_texts, normalize_embeddings=True,
-            show_progress_bar=False, batch_size=256,
+    if _corpus_vecs is None:
+        print(f"Embedding {len(_corpus_qs)} questions (will cache)...")
+        _corpus_vecs = embed_model.encode(
+            [q["question"] for q in _corpus_qs],
+            normalize_embeddings=True, show_progress_bar=False, batch_size=256,
         ).astype("float32")
-        np.save(str(q_vecs_cache), all_vecs)
-        q_ids_cache.write_text(json.dumps(all_ids), encoding="utf-8")
+        np.save(str(q_vecs_cache), _corpus_vecs)
+        q_ids_cache.write_text(json.dumps(_corpus_ids), encoding="utf-8")
         print(f"Cached → {q_vecs_cache}")
+
+    # Build lookup and align to the (possibly filtered/reordered) questions list
+    _id_to_vec = {qid: _corpus_vecs[i] for i, qid in enumerate(_corpus_ids)}
+    all_vecs = np.stack([_id_to_vec[q.get("id", f"q{i}")] for i, q in enumerate(questions)])
 
     # slice to pending indices only
     pending_indices = [i for i, _ in pending]
@@ -1200,8 +1224,10 @@ def cmd_run(args: argparse.Namespace) -> None:
             print(f"Using Cohere reranker: {RERANK_MODEL_COHERE}")
         else:
             from sentence_transformers import CrossEncoder
-            print(f"Loading reranker: {RERANK_MODEL}...")
-            reranker = CrossEncoder(RERANK_MODEL)
+            import os as _os
+            _rerank_device = _os.environ.get("RERANKER_DEVICE") or None
+            print(f"Loading reranker: {RERANK_MODEL}{'  [device='+_rerank_device+']' if _rerank_device else ''}...")
+            reranker = CrossEncoder(RERANK_MODEL, max_length=512, device=_rerank_device) if _rerank_device else CrossEncoder(RERANK_MODEL, max_length=512)
 
     community_index = _load_community_index(db_path) if use_community_context else None
     if use_community_context and community_index is None:
@@ -1356,22 +1382,18 @@ def cmd_run(args: argparse.Namespace) -> None:
             }
             work_items.append(wi)
 
+            _upsert_results_to_db(run_db, [{
+                "id": wi["qid"], "question": wi["question"], "source": wi["source"],
+                "question_type": wi["qtype"], "context": wi["context"],
+                "evidence": wi["evidence"], "generated_answer": None,
+                "gold_answer": wi["gold"], "retrieved_chunks": wi["chunk_ids"],
+                "retrieved_scores": wi["scores"],
+                "entity_ref_expansion": wi.get("expansion_stats"),
+                "entity_ref_retry": None,
+            }])
             if (j + 1) % 100 == 0 or (j + 1) == len(pending):
                 pct = 100 * (j + 1) // len(pending)
                 print(f"  Retrieved {j+1}/{len(pending)} ({pct}%)", flush=True)
-                batch_start = max(0, j + 1 - 100)
-                _upsert_results_to_db(run_db, [
-                    {
-                        "id": w["qid"], "question": w["question"], "source": w["source"],
-                        "question_type": w["qtype"], "context": w["context"],
-                        "evidence": w["evidence"], "generated_answer": None,
-                        "gold_answer": w["gold"], "retrieved_chunks": w["chunk_ids"],
-                        "retrieved_scores": w["scores"],
-                        "entity_ref_expansion": w.get("expansion_stats"),
-                        "entity_ref_retry": None,
-                    }
-                    for w in work_items[batch_start:j + 1]
-                ])
 
     # Build one client per endpoint (round-robin for parallelism across multiple dedicated endpoints)
     endpoint_ids: list[str] = getattr(args, "endpoint_ids", None) or [args.gen_model]
@@ -1641,21 +1663,38 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
 
         embed_model = SentenceTransformer(EMBED_MODEL)
 
-        # Ground truth embeddings (cached globally)
-        gt_texts = [r["ground_truth"] for r in bench_records]
-        gt_ids   = [r["id"] for r in bench_records]
-        if gt_cache_f.exists() and gt_id_f.exists() and json.loads(gt_id_f.read_text()) == gt_ids:
-            print(f"Loading cached ground-truth embeddings...")
-            gt_vecs = np.load(str(gt_cache_f))
-        else:
-            print(f"Encoding {len(gt_texts)} ground-truth texts (batched)...")
-            gt_vecs = embed_model.encode(
-                gt_texts, batch_size=32, normalize_embeddings=True,
+        # Ground truth embeddings — cached by sorted ID set so any run subset
+        # or reordering reuses the same cache file via ID lookup.
+        _gt_by_id = {r["id"]: r["ground_truth"] for r in bench_records}
+        _gt_ids_sorted = sorted(_gt_by_id.keys())
+
+        _gt_cache_vecs = None
+        if gt_cache_f.exists() and gt_id_f.exists():
+            _cached_gt_ids = json.loads(gt_id_f.read_text())
+            # Hit if cached IDs are a superset of what we need (common in full→grid direction)
+            if set(_gt_ids_sorted).issubset(set(_cached_gt_ids)):
+                print(f"Loading cached ground-truth embeddings...")
+                _all_gt_vecs = np.load(str(gt_cache_f))
+                _cached_id_idx = {qid: i for i, qid in enumerate(_cached_gt_ids)}
+                _gt_cache_vecs = np.stack([_all_gt_vecs[_cached_id_idx[qid]] for qid in _gt_ids_sorted])
+
+        if _gt_cache_vecs is None:
+            _gt_texts_sorted = [_gt_by_id[qid] for qid in _gt_ids_sorted]
+            print(f"Encoding {len(_gt_texts_sorted)} ground-truth texts (batched)...")
+            _gt_cache_vecs = embed_model.encode(
+                _gt_texts_sorted, batch_size=32, normalize_embeddings=True,
                 show_progress_bar=False,
             ).astype("float32")
-            np.save(str(gt_cache_f), gt_vecs)
-            gt_id_f.write_text(json.dumps(gt_ids), encoding="utf-8")
-            print(f"  Cached → {gt_cache_f}")
+            # Only expand cache if this run has more questions than what's cached
+            if not gt_cache_f.exists() or len(_gt_ids_sorted) > len(json.loads(gt_id_f.read_text()) if gt_id_f.exists() else []):
+                np.save(str(gt_cache_f), _gt_cache_vecs)
+                gt_id_f.write_text(json.dumps(_gt_ids_sorted), encoding="utf-8")
+                print(f"  Cached → {gt_cache_f}")
+
+        # Align to bench_records order
+        _gt_sorted_idx = {qid: i for i, qid in enumerate(_gt_ids_sorted)}
+        gt_ids  = [r["id"] for r in bench_records]
+        gt_vecs = np.stack([_gt_cache_vecs[_gt_sorted_idx[rid]] for rid in gt_ids])
 
         # Answer embeddings (per run — cached)
         ans_cache_f = out_dir / "data" / f"ans_embeddings_{run_name}.npy"
@@ -1827,6 +1866,26 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
                     con.close()
                 completed = min(batch_start + batch_size, len(pending))
                 print(f"  {completed}/{len(pending)} evaluated", flush=True)
+                _es_target = getattr(args, "early_stop_target", None)
+                _es_min_n  = getattr(args, "early_stop_min_n", 500)
+                if _es_target is not None and len(done) >= _es_min_n:
+                    import math as _math
+                    _scores = [
+                        v["answer_correctness"] for v in done.values()
+                        if "answer_correctness" in v
+                        and isinstance(v["answer_correctness"], float)
+                        and not _math.isnan(v["answer_correctness"])
+                    ]
+                    if len(_scores) >= _es_min_n:
+                        _n    = len(_scores)
+                        _mean = sum(_scores) / _n
+                        _var  = sum((s - _mean) ** 2 for s in _scores) / _n
+                        _se   = _math.sqrt(_var / _n) if _var > 0 else 0.0
+                        _uci  = _mean + 1.645 * _se
+                        print(f"  [early-stop] n={_n} mean={_mean:.4f} upper_95={_uci:.4f} target={_es_target:.4f}", flush=True)
+                        if _uci < _es_target:
+                            print(f"\n=== EARLY STOP: upper_95 CI {_uci:.4f} < target {_es_target:.4f} — aborting ===", flush=True)
+                            sys.exit(2)
                 await _aio.sleep(3)   # pace between batches to avoid TPM burst
 
         asyncio.run(_run_all())
@@ -1872,6 +1931,96 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
     print(f"\nBench eval complete → {out_f}")
     for qtype, scores in aggregated.items():
         print(f"  {qtype}: " + ", ".join(f"{k}={v:.3f}" for k, v in scores.items()))
+
+
+def cmd_score(args: argparse.Namespace) -> None:
+    """Print the All score (matches report: mean-of-means per subset×type) for a run.
+
+    Outputs a single float (e.g. '0.6850') or 'nan' if the run is incomplete.
+    Intended for shell scripts: SCORE=$(python ... score --run-name foo)
+    """
+    import math as _math
+    from collections import defaultdict as _dd
+    data_dir = Path(args.out_dir) / "data"
+    run_db   = data_dir / "runs" / f"{args.run_name}.duckdb"
+    if not run_db.exists():
+        print("nan")
+        return
+    import duckdb as _ddb
+    con = _ddb.connect(str(run_db), read_only=True)
+    try:
+        rows = con.execute(
+            "SELECT e.question_type, r.source, e.answer_correctness "
+            "FROM eval_scores e JOIN results r ON e.id = r.id"
+        ).fetchall()
+    except Exception:
+        rows = []
+    finally:
+        con.close()
+    # Group by (subset, question_type) — same logic as cmd_bench_report
+    by_st: dict[tuple, list] = _dd(list)
+    for qtype, source, ac in rows:
+        if ac is None or (isinstance(ac, float) and _math.isnan(ac)):
+            continue
+        subset = "Med" if source and "medical" in str(source).lower() else "Nov"
+        by_st[(subset, qtype)].append(float(ac))
+    def _m(lst): return sum(lst) / len(lst) if lst else float("nan")  # noqa
+    qtypes = ["Fact Retrieval", "Complex Reasoning", "Contextual Summarize", "Creative Generation"]
+    med_vals = [_m(by_st[(s, qt)]) for s in ["Med"] for qt in qtypes]
+    nov_vals = [_m(by_st[(s, qt)]) for s in ["Nov"] for qt in qtypes]
+    med = _m([v for v in med_vals if not _math.isnan(v)])
+    nov = _m([v for v in nov_vals if not _math.isnan(v)])
+    if _math.isnan(med) or _math.isnan(nov):
+        print("nan")
+    else:
+        print(f"{(med + nov) / 2:.4f}")
+
+
+def cmd_make_order(args: argparse.Namespace) -> None:
+    """Generate a stratified question order file for representative full-corpus evaluation.
+
+    Interleaves questions by (subset × question_type) so any prefix of N questions
+    has the same stratum distribution as the full set.
+    """
+    out_dir  = Path(args.out_dir)
+    data_dir = out_dir / "data"
+    out_file = Path(args.output) if args.output else data_dir / "full_corpus_stratified_order.json"
+
+    # Load questions tagged with their subset
+    questions = []
+    for subset in SUBSETS:
+        f = data_dir / f"{subset}_questions.jsonl"
+        if f.exists():
+            with open(f) as fh:
+                for line in fh:
+                    q = json.loads(line)
+                    q["_subset"] = subset
+                    questions.append(q)
+
+    # Bucket by (subset, question_type)
+    buckets: dict[tuple, list] = defaultdict(list)
+    for q in questions:
+        key = (q.get("_subset", "unknown"), q.get("question_type", "unknown"))
+        buckets[key].append(q.get("id", ""))
+
+    # Assign fractional rank = position_within_bucket / bucket_size so that
+    # sorting by this rank interleaves buckets proportionally (like a zipper).
+    ranked: list[tuple] = []
+    for key, ids in sorted(buckets.items()):
+        n = len(ids)
+        for pos, qid in enumerate(ids):
+            ranked.append((pos / n, key, qid))
+    ranked.sort(key=lambda x: (x[0], x[1]))
+    ordered_ids = [x[2] for x in ranked]
+
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(out_file, "w") as f:
+        json.dump(ordered_ids, f)
+
+    total = len(ordered_ids)
+    print(f"Stratified order: {total} questions → {out_file}")
+    for key, ids in sorted(buckets.items()):
+        print(f"  {key[0]}/{key[1]}: {len(ids)} ({100 * len(ids) / total:.1f}%)")
 
 
 def cmd_bench_report(args: argparse.Namespace) -> None:
@@ -2320,7 +2469,24 @@ def _make_parser() -> argparse.ArgumentParser:
                    help="Items per async batch (default: 10)")
     p.add_argument("--nan-limit",      type=int, default=None, dest="nan_limit",
                    help="Stop retrying NaN items once total finalized-NaN count is ≤ this threshold (default: always retry)")
+    p.add_argument("--early-stop-target", type=float, default=None, dest="early_stop_target",
+                   help="Abort eval (exit 2) when upper 95%% CI of answer_correctness falls below this score")
+    p.add_argument("--early-stop-min-n",  type=int,   default=500,  dest="early_stop_min_n",
+                   help="Min evaluated questions before early-stop check fires (default: 500)")
     p.set_defaults(func=cmd_bench_eval)
+
+    # score — print All score for a completed run (for shell script use)
+    p = sub.add_parser("score", help="Print All score (mean of Med+Nov answer_correctness) for a run")
+    p.add_argument("--out-dir",  default="/tmp/grb", metavar="DIR")
+    p.add_argument("--run-name", required=True, help="Run name to score")
+    p.set_defaults(func=cmd_score)
+
+    # make-order — generate stratified question order for full-corpus runs
+    p = sub.add_parser("make-order", help="Generate stratified question order file for full-corpus runs")
+    p.add_argument("--out-dir", default="/tmp/grb", metavar="DIR")
+    p.add_argument("--output", default=None, metavar="PATH",
+                   help="Output JSON path (default: {out_dir}/data/full_corpus_stratified_order.json)")
+    p.set_defaults(func=cmd_make_order)
 
     # report — combined matrix of all eval runs + leaderboard
     p = sub.add_parser("report", help="Combined matrix: our eval runs + leaderboard")
