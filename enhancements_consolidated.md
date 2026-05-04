@@ -1,6 +1,6 @@
 # ChunkyMonkey Enhancements — Consolidated
 
-**Already implemented (excluded):** Enhanced semantic similarity search (NER + cluster + cohort assembly), cross-encoder reranking, breadcrumb-weighted embeddings, entity reference expansion, community detection / Louvain, community coherence gating.
+**Already implemented (excluded):** Enhanced semantic similarity search (NER + cluster + cohort assembly), cross-encoder reranking, breadcrumb-weighted embeddings, entity reference expansion, community detection / Louvain, community coherence gating, retrieval concentration gating (`--concentration-threshold`, grouping by `document_name` breadcrumb heuristic), NER community labels with embedding-based synonym merging (`--community-label-strategy ner_embedding`, default).
 
 **Excluded as operational (not feature enhancements):** Constat migration compatibility.
 
@@ -36,7 +36,7 @@ All remaining items follow the coherence-gating pattern: measure a proxy signal,
 
 ---
 
-### 3. Retrieval Concentration Gating (auto-trigger NER gap-fill)
+### 3. Retrieval Concentration Gating (auto-trigger NER gap-fill) `[complete]`
 
 **Signal:** Fraction of top-K retrieved chunks from the same grouping unit.
 
@@ -65,7 +65,7 @@ All remaining items follow the coherence-gating pattern: measure a proxy signal,
 
 ---
 
-### 4. NER-Based Community Topic Labels with Embedding-Based Synonym Merging
+### 4. NER-Based Community Topic Labels with Embedding-Based Synonym Merging `[complete]`
 
 **Signal:** Named entities extracted from chunk texts within each community, deduplicated via entity embeddings, computed at index time.
 

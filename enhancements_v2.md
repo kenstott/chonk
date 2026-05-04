@@ -5,7 +5,7 @@ Each follows the coherence-gating pattern: measure a proxy, gate on a threshold,
 
 ---
 
-## 1. Retrieval Concentration Gating (auto-trigger NER gap-fill)
+## 1. Retrieval Concentration Gating (auto-trigger NER gap-fill) `[complete]`
 
 **Signal:** Fraction of top-K retrieved chunks from the same source document.
 
@@ -93,7 +93,7 @@ Each follows the coherence-gating pattern: measure a proxy, gate on a threshold,
 
 ---
 
-## 8. NER-Based Community Topic Labels with Embedding-Based Synonym Merging
+## 8. NER-Based Community Topic Labels with Embedding-Based Synonym Merging `[complete]`
 
 **Signal:** Named entities extracted from chunk texts within each community, deduplicated via entity embeddings, computed at index time.
 

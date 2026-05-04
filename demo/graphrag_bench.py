@@ -1146,19 +1146,21 @@ def cmd_run(args: argparse.Namespace) -> None:
     run_db = _run_db_path(data_dir, run_name)
     _init_run_db(run_db)
 
-    # Also resume from DuckDB retrieval results (handles kill-during-retrieval)
+    # Resume from DuckDB only for fully-generated results (generated_answer IS NOT NULL).
+    # Rows with context but NULL generated_answer are retrieval-phase stubs — they must
+    # be regenerated, not skipped.
     if run_db.exists():
         import duckdb as _duckdb
         try:
             _con = _duckdb.connect(str(run_db), read_only=True)
             _db_done = set(
                 row[0] for row in _con.execute(
-                    "SELECT id FROM results WHERE context IS NOT NULL"
+                    "SELECT id FROM results WHERE generated_answer IS NOT NULL"
                 ).fetchall()
             )
             _con.close()
             if _db_done - done_ids:
-                print(f"Resuming from DB: {len(_db_done)} already retrieved")
+                print(f"Resuming from DB: {len(_db_done)} already generated")
                 done_ids.update(_db_done)
         except Exception:
             pass
@@ -1882,7 +1884,12 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
                         _var  = sum((s - _mean) ** 2 for s in _scores) / _n
                         _se   = _math.sqrt(_var / _n) if _var > 0 else 0.0
                         _uci  = _mean + 1.645 * _se
-                        print(f"  [early-stop] n={_n} mean={_mean:.4f} upper_95={_uci:.4f} target={_es_target:.4f}", flush=True)
+                        _n_remaining = len(pending) - completed
+                        _max_possible = (_n * _mean + _n_remaining) / (_n + _n_remaining) if (_n + _n_remaining) > 0 else 0.0
+                        print(f"  [early-stop] n={_n} mean={_mean:.4f} upper_95={_uci:.4f} max_possible={_max_possible:.4f} target={_es_target:.4f}", flush=True)
+                        if _max_possible < _es_target:
+                            print(f"\n=== EARLY STOP: max_possible {_max_possible:.4f} < target {_es_target:.4f} — mathematically impossible to win ===", flush=True)
+                            sys.exit(2)
                         if _uci < _es_target:
                             print(f"\n=== EARLY STOP: upper_95 CI {_uci:.4f} < target {_es_target:.4f} — aborting ===", flush=True)
                             sys.exit(2)

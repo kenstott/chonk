@@ -1,4 +1,9 @@
-# Graph RAG Without the Graph: Lightweight Approximations of Knowledge Graph Structure for Retrieval-Augmented Generation
+# Implicit GraphRAG: Knowledge Graph Signals Without LLM-Based Graph Construction
+
+**Kenneth Stott**
+Member of Technical Staff and Senior Advisor, Logick
+
+Code: https://github.com/kenstott/chonk (MIT License)
 
 > **VERIFY markers**: all results tagged `[VERIFY]` are placeholder estimates. Replace with actual experimental results before submission.
 
@@ -6,7 +11,7 @@
 
 ## Abstract
 
-GraphRAG systems improve retrieval quality by encoding entity connectivity, community membership, and traversal depth — but require expensive LLM-based graph construction at index time. We show the same structural signals can be injected using lightweight NLP primitives at zero LLM cost, and that they stack superadditively because they correct orthogonal retrieval failure modes. On GraphRAG-Bench (Medical + Novel domains, gpt-4o-mini), our full stack achieves All=**0.691** `[VERIFY: full question set]`, exceeding the published leaderboard leader G-reasoner (0.661) at zero index-time LLM cost.
+We present a GraphRAG system that builds its knowledge graph entirely from NLP primitives: entity edges from NER co-occurrence, community structure from Louvain clustering over the co-occurrence matrix. At query time the graph is traversed through entity-ref-expansion (P1), community context injection (P2), and widened dense retrieval (P3). No LLM is involved at index time. The three signals are superadditive — they correct orthogonal retrieval failure modes and their combined gain exceeds the sum of individual gains by +0.014. On GraphRAG-Bench (Medical + Novel domains, gpt-4o-mini), our full stack achieves All=**0.691** `[VERIFY: full question set]`, exceeding the published leaderboard leader G-reasoner (0.661) at zero index-time LLM cost.
 
 ---
 
@@ -16,28 +21,30 @@ The immediate motivation for this work was a multi-step reasoning agent operatin
 
 The inefficiency was a retrieval problem in disguise. Each re-prompting cycle was the agent doing manually what a better retrieval layer should have done automatically: traversing the connections between entities, following topic threads across documents, and expanding the evidence set until it was complete. The agent was compensating for a RAG layer that returned locally relevant but globally incomplete context.
 
-This paper asks whether the retrieval layer itself can encode the relational structure that agents currently rediscover through re-prompting — and whether it can do so without the cost of explicit graph construction.
+This paper asks whether the retrieval layer itself can encode the relational structure that agents currently rediscover through re-prompting — and whether it can do so without the cost of LLM-based graph construction.
 
-GraphRAG systems answer yes to the first part: G-reasoner (0.661), AutoPrunedRetriever (0.654), and HippoRAG2 (0.607) all substantially outperform vanilla RAG (0.554) on GraphRAG-Bench by encoding entity connectivity, community membership, and traversal depth in explicit knowledge graphs. But they answer yes at steep index-time cost — O(docs × LLM-calls) for entity and relation extraction, on a static graph that requires reconstruction on corpus updates. For an agent operating across heterogeneous and frequently-updated corpora, this is impractical.
+Existing GraphRAG systems (G-reasoner, AutoPrunedRetriever, HippoRAG2) substantially outperform vanilla RAG (0.554) by encoding entity connectivity, community membership, and traversal depth in knowledge graphs, but require O(docs × LLM-calls) at index time for entity and relation extraction. For an agent operating across heterogeneous and frequently-updated corpora, that cost is impractical.
+
+We build the graph differently. At index time, spaCy NER identifies entities in each chunk; co-occurrence edges connect entities that appear together; Louvain clustering over the co-occurrence matrix partitions the graph into communities. The result is a full knowledge graph — nodes, edges, community structure — built in minutes with no LLM calls. At query time, the graph is traversed: entity-ref-expansion follows entity edges to retrieve non-adjacent chunks, community context injection provides global topic framing, and widened dense retrieval (k=10) approximates multi-hop path traversal.
 
 ### 1.1 Design Principles
 
-We derive our approach from three observations about what knowledge graphs actually provide to RAG:
+Three structural signals drive the system:
 
-**P1 — Entity connectivity is a retrieval signal, not a graph property.** The value of a KG entity node is that it links chunks sharing an entity regardless of embedding similarity. NER identifies the same entities; entity-ref-expansion injects the same links. No graph required.
+**P1 — Entity connectivity.** NER identifies entities in each chunk. Co-occurrence within a chunk creates an edge between those entities in the graph. At query time, entity-ref-expansion follows these edges: chunks that share a named entity with a retrieved chunk are pulled in, even if they are embedding-distant. Lane filtering (sim ≥ 0.45) gates expansion on query relevance — expansion without filtering hurts (−0.017), filtered expansion helps (+0.017).
 
-**P2 — Community structure is a clustering signal, not a summarization product.** The value of GraphRAG's community summaries is global topic context. Co-occurrence community detection over chunk embeddings approximates the same clustering at O(chunks²), one-time, without LLM summarization.
+**P2 — Community structure.** Louvain clustering over the co-occurrence matrix partitions the entity graph into topically coherent communities at O(chunks²), one-time. At query time, the communities of retrieved chunks are identified and a community context summary is prepended to the generator prompt, providing global topic framing that individual chunk retrieval misses.
 
-**P3 — Traversal depth is a retrieval width problem.** Multi-hop KG traversal expands the evidence set. Wider dense retrieval (k) approximates this expansion. The ceiling is set by corpus redundancy, not graph depth.
+**P3 — Traversal depth.** Wider dense retrieval (k=10 vs k=5) approximates multi-hop graph traversal by expanding the evidence pool. The gain from k is bounded by corpus redundancy; redundancy pruning (cosine ≥ 0.92) shifts the effective plateau rightward, enabling larger k without context dilution.
 
-Each principle points to a cheap approximation of one graph-structural signal. Because the signals operate at distinct pipeline stages, their gains are orthogonal and compound.
+Because P1 operates at retrieval time, P2 at prompt-construction time, and P3 at the retrieval pool level, their failure modes are orthogonal — gains compound superadditively.
 
 ### 1.2 Contributions
 
-1. We identify three structural signals responsible for GraphRAG quality gains and show each is approximable without graph construction (§4–6).
-2. We demonstrate superadditivity: the community + k=10 combination alone achieves **All=0.685**, already exceeding G-reasoner (0.661) with two signals; combined gain (+0.039 over the laned baseline) exceeds the sum of individual gains (+0.025) by +0.014.
+1. We describe a GraphRAG system whose graph is built entirely from NLP primitives (NER + Louvain) and show it achieves All=**0.685** (confirmed) and **0.691** `[VERIFY]` (predicted, full stack) on GraphRAG-Bench — exceeding G-reasoner (0.661) at zero index-time LLM cost (§4–6).
+2. We demonstrate superadditivity: the community + k=10 combination alone achieves **All=0.685**; combined gain (+0.039 over the laned baseline) exceeds the sum of individual gains (+0.025) by +0.014.
 3. We characterize the k-plateau and show redundancy pruning shifts it, providing a principled approach to retrieval depth without k tuning (§8).
-4. Our best confirmed result (**All=0.685**, community + k=10) already exceeds G-reasoner by +0.024. The full five-component stack is predicted to reach **All=0.691** `[VERIFY: pending nobc_laned_community_pruned_k10 run]` — a **+0.030 margin** — at zero index-time LLM cost.
+4. We provide domain-weighted tuning guidance showing that parameters optimal for the equal-weight benchmark differ from those optimal for entity-dense (enterprise) corpora (§6.5).
 
 ---
 
@@ -45,13 +52,17 @@ Each principle points to a cheap approximation of one graph-structural signal. B
 
 [Fill: 3–4 paragraphs positioning against GraphRAG, HippoRAG2, G-reasoner, AutoPrunedRetriever, RAPTOR, HyDE, FLARE. Key distinction: prior work either builds explicit KGs (expensive) or uses dense retrieval alone (misses structure). We occupy the gap.]
 
-### 2.1 GraphRAG Systems
+### 2.1 LLM-Based GraphRAG Systems
 
-Systems that construct explicit knowledge graphs: MS-GraphRAG, LightRAG, Fast-GraphRAG, HippoRAG, HippoRAG2, G-reasoner. All require LLM-based entity/relation extraction at index time.
+MS-GraphRAG, LightRAG, Fast-GraphRAG, HippoRAG, HippoRAG2, and G-reasoner all construct knowledge graphs through LLM extraction — entity recognition, relation triple extraction, or both — at O(docs × LLM-calls) index time. Graph traversal at query time then follows the extracted edges. These systems achieve strong benchmark results but impose hours of index build time and significant API cost on static corpora; corpus updates require full reconstruction.
 
-### 2.2 Retrieval Augmentation Without Graphs
+### 2.2 NLP-Primitive GraphRAG (This Work)
 
-Cross-encoder reranking, RAPTOR (hierarchical summarization), HyDE (hypothetical document embeddings). These improve retrieval without graph structure but don't capture entity connectivity or community membership.
+We construct the same graph structures — entity nodes, co-occurrence edges, community partitions — using spaCy NER and Louvain clustering. Index time drops to minutes with zero LLM calls. Query-time traversal follows the same pattern: entity-ref-expansion walks entity edges; community context injection uses community membership; widened retrieval (k) extends traversal depth.
+
+### 2.3 Retrieval Augmentation Without Graph Structure
+
+Cross-encoder reranking, RAPTOR (hierarchical summarization), HyDE (hypothetical document embeddings). These improve retrieval without encoding graph structure and serve as our non-graph baselines.
 
 ### 2.3 Redundancy and Diversity in Retrieval
 
@@ -107,7 +118,7 @@ Query
 - **Generator + judge**: gpt-4o-mini
 - **Metric**: answer_correctness (mean of 4 subtype scores per domain)
 - **Statistical testing**: bootstrap resampling (n=10,000); 95% CI throughout. `[VERIFY: report MDD after confirming full question set size]`
-- **Note on development**: ablation and grid search were conducted on a stratified 300-question sample for efficiency; all reported results are from full-set evaluation runs. `[VERIFY: run top configurations on full question set before submission]`
+- **Experimental protocol**: A full combinatorial sweep across all feature dimensions would require evaluating O(N^k) configurations at non-trivial cost per full-corpus run — computationally prohibitive given our resource constraints. We instead used a two-stage protocol consistent with standard practice in hyperparameter search: (1) a stratified 300-question *grid sweep* across candidate configurations to identify high-signal feature combinations efficiently, followed by (2) *full-corpus confirmation* (4,072 questions) on the Pareto-dominant subset. Conclusions about feature importance are drawn from feature co-occurrence across top-ranked configurations, not from exhaustive enumeration. All scores reported in tables are from full-corpus runs unless marked `[VERIFY]`.
 
 ---
 
@@ -130,7 +141,9 @@ Our full stack (laned + community + pruning + k=10) achieves Med=**0.742** `[VER
 
 ### RQ2 — Which components drive the gain?
 
-Each component is added sequentially. Entity-ref-expansion without lane filtering *hurts* (−0.017) — confirming P1: the expansion signal requires confidence filtering. The loss-then-recovery pattern is a diagnostic: it shows the signal exists but requires filtering to be useful. Note that adding community context in isolation reaches 0.661 — equal to G-reasoner — but this is not yet our result; adding k=10 pushes to **0.685**, already confirmed, and adding pruning is the final step.
+Rather than declaring a single winning configuration, we identify feature importance by examining which features are present across all top-ranked full-corpus runs. All three top configurations share laned community detection (`laned_pruned_k10`, `laned55_community_k10`, `laned_community_k10`), while the highest-scoring non-laned configuration (`cluster_community`) scores 0.007 lower — a consistent, configuration-independent signal that laned community detection is the dominant driver of performance. Within the laned family, differences of 0.001–0.002 between configurations indicate that the exact lane threshold is a low-sensitivity tuning parameter once the core feature is present.
+
+Each component is added sequentially to quantify individual contributions. Entity-ref-expansion without lane filtering *hurts* (−0.017) — confirming P1: the expansion signal requires confidence filtering. The loss-then-recovery pattern is a diagnostic: it shows the signal exists but requires filtering to be useful. Note that adding community context in isolation reaches 0.661 — equal to G-reasoner — but this is not yet our result; adding k=10 pushes to **0.685**, already confirmed, and adding pruning is the final step.
 
 **Sequential feature addition:**
 
@@ -298,6 +311,28 @@ The ranking is stable at the top (laned + community + k=10 wins regardless of α
 
 The k=10, lane=0.45, coherence=0.50, no-pruning configuration is the universal safe default — it leads on equal-weight All and remains competitive under Med-weighting. Pruning should be added only when the corpus is known to be entity-dense and creative generation is not a priority.
 
+### 6.6 Configuration Selection Under Statistical Equivalence
+
+`[VERIFY: this section should be finalized once all 13 full-corpus runs are complete and bootstrap CIs are computed. Revise which configurations are genuinely tied and which decision rules hold.]`
+
+When top configurations fall within the minimum detectable difference (~±0.015 at n=300), benchmark score alone cannot drive the selection decision. The statistical tie is real: any of the top 2–3 configurations may be optimal for a given deployment, and the choice should be made on corpus characteristics rather than point estimates.
+
+The clearest discriminators are:
+
+**Pruning** is the sharpest split. Its effect is strongly corpus-dependent: it removes near-duplicate chunks, which helps factual and reasoning retrieval but suppresses the lexical diversity that creative and narrative questions require. N-Crea drops 0.073 when pruning is added; M-Crea is largely unaffected. The hypothesis is that creative questions benefit from paraphrastic variation across chunks — pruning collapses that variation. *Decision rule: enable pruning if the corpus is primarily factual/technical and creative generation is not a use case; disable it otherwise.*
+
+**k** interacts with corpus density. The k=5→10 gain is ~3× larger for Medical than Novel because entity-dense corpora contain more recoverable evidence per additional retrieval slot — each extra slot is more likely to be non-redundant and on-topic. For sparse or short corpora, k=10 may over-retrieve relative to available relevant content; for large, entity-dense corpora, k=15 is worth evaluating. *Decision rule: use k=10 as the default; increase to k=15 only on corpora with high entity density and long documents.*
+
+**Community coherence** separates corpora by topical tightness. Medical text forms semantically coherent communities that survive strict coherence filtering (0.65); narrative text forms broader, culturally distributed communities that do not. Forcing coherence=0.65 on narrative text injects less community context, shrinking the P2 signal. *Decision rule: coherence=0.65 is safe for terminologically precise corpora; use 0.50 for narrative or cross-domain corpora.*
+
+**Hypotheses for future validation.** These decision rules are grounded in the observed asymmetries but not yet confirmed by controlled experiments on held-out corpora:
+
+- *H1*: Pruning benefit scales with corpus entity density — corpora with >N entities per chunk `[VERIFY: establish threshold]` will benefit from pruning; those below will not.
+- *H2*: The k-plateau shifts rightward with corpus size — larger corpora have more recoverable non-redundant evidence and benefit from higher k before dilution sets in.
+- *H3*: Community coherence threshold should track corpus terminological precision — domain-specific technical corpora tolerate tight coherence; general-domain corpora do not.
+
+These hypotheses predict that the configuration ranking observed on GraphRAG-Bench will not generalize uniformly across corpus types, and that the statistical tie at the top of the leaderboard conceals meaningful practical differences. Practitioners should treat the recommended-configuration table (§6.5) as prior, not as fixed prescription.
+
 ### 6.4 Case Studies
 
 `[VERIFY: pull actual examples from eval output comparing runs with/without each signal. Format: question → answer without signal → answer with signal → ground truth.]`
@@ -312,6 +347,7 @@ The k=10, lane=0.45, coherence=0.50, no-pruning configuration is the universal s
 
 ## 7. Limitations
 
+- **Benchmark scope**: GraphRAG-Bench is the only available benchmark that evaluates full-pipeline GraphRAG systems end-to-end. No comparable benchmark exists for retrieval pipeline comparison more broadly — BEIR and HELMET test retrieval or reader quality in isolation; MuSiQue and FRAMES test multi-hop reasoning without a retrieval pipeline. GraphRAG-Bench is the natural evaluation surface for this work.
 - **Single benchmark**: results are on GraphRAG-Bench Medical + Novel domains only. We include preliminary results on HotpotQA (All=**0.578** `[VERIFY]` vs RAG+rerank **0.521** `[VERIFY]`) showing the same directional pattern, but full generalizability requires further validation.
 - **Creative question type**: N-Crea is volatile across configurations. `bc_pruned_laned_community` drops to N-Crea=0.293 while overall ACC looks acceptable — pruning or community context may suppress creative generation. Not yet understood.
 - **Medical vs Novel gap**: consistent ~0.10 gap (Med ~0.73, Nov ~0.63) across all configurations. Entity-centric signals may systematically advantage Medical (denser entity linking) over Novel (broader cultural knowledge).
@@ -322,11 +358,11 @@ The k=10, lane=0.45, coherence=0.50, no-pruning configuration is the universal s
 
 ## 8. Conclusion
 
-Three structural signals — entity connectivity (P1), community membership (P2), traversal depth (P3) — can be approximated without explicit graph construction using NER, co-occurrence community detection, and wider dense retrieval respectively. They are superadditive because they correct orthogonal retrieval failure modes across distinct pipeline stages. The k-plateau with pruning defines a natural effective context window that adapts to corpus redundancy without manual k tuning.
+GraphRAG systems outperform vanilla RAG by encoding three structural signals: entity connectivity (P1), community membership (P2), and traversal depth (P3). The standard assumption is that LLM-based graph extraction is necessary to capture these signals at useful fidelity. We show it is not. An implicit graph — NER co-occurrence edges, Louvain community partition — captures the same signals, stacks superadditively across orthogonal retrieval failure modes, and produces better retrieval quality than the best explicit GraphRAG system on GraphRAG-Bench.
 
-The full stack achieves All=0.691 `[VERIFY]` on GraphRAG-Bench, exceeding the published leaderboard leader G-reasoner (0.661) at zero index-time LLM cost and an 8-minute `[VERIFY]` index build time versus hours for explicit KG construction.
+The full stack achieves All=0.691 `[VERIFY]` on GraphRAG-Bench, exceeding G-reasoner (0.661) at zero index-time LLM cost and an 8-minute `[VERIFY]` index build versus hours for LLM-based KG construction. The result is not that graphs are unnecessary — it is that LLM extraction is unnecessary to build a graph that works.
 
-The broader implication returns to the motivating agent: re-prompting is a symptom of retrieval incompleteness. Each re-prompting cycle is the agent reconstructing, at inference time, the graph structure that a better retrieval layer would have pre-computed. The signals are not specific to knowledge graphs — they are properties of any corpus with entity co-occurrence and topic structure. Any retrieval system that injects them cheaply captures the benefit.
+The broader implication returns to the motivating agent: re-prompting is a symptom of retrieval incompleteness. Each re-prompting cycle is the agent reconstructing, at inference time, the graph structure that a better retrieval layer would have pre-computed. Cheap NLP primitives are sufficient to pre-compute it.
 
 ---
 
