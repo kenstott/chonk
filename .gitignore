@@ -15,4 +15,5 @@ htmlcov/
 ._*
 .idea/
 .claude/
+.codex/
 /work/
