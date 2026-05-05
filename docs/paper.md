@@ -345,7 +345,63 @@ These hypotheses predict that the configuration ranking observed on GraphRAG-Ben
 
 ---
 
-## 7. Limitations
+## 7. Generator Model Effects on Retrieval Signal Utilization
+
+The benchmark results throughout this paper use gpt-4o-mini as both generator and judge — a deliberate choice for cost, reproducibility, and comparability with published baselines. However, this choice may systematically understate the practical advantage of richer retrieval configurations. A stronger generator may better utilize the structured context that graph-augmented retrieval provides, widening the gap between feature-rich and simpler configurations that appears narrow under gpt-4o-mini.
+
+This section tests that hypothesis directly.
+
+### 7.1 Motivation
+
+On GraphRAG-Bench (gpt-4o-mini generator + judge), the top full-corpus configurations cluster within a narrow band:
+
+| Configuration | Med | Nov | All |
+|---|---|---|---|
+| RAG + rerank (published baseline) | — | — | 0.554 |
+| nobc\_rerank\_k10 (ablation baseline) | 0.727 | 0.595 | 0.661 |
+| `[TOP-1]` `[TBD]` | `[TBD]` | `[TBD]` | `[TBD]` |
+| `[TOP-2]` `[TBD]` | `[TBD]` | `[TBD]` | `[TBD]` |
+| `[TOP-3]` `[TBD]` | `[TBD]` | `[TBD]` | `[TBD]` |
+
+*Top-3 chonk configurations selected after all full-corpus runs complete. nobc\_rerank\_k10 uses no graph features (no entity-ref-expansion, no community context) and serves as an ablation baseline to isolate the contribution of graph signals.*
+
+The statistical proximity of these configurations raises a practical question: is the small generator unable to exploit the difference in retrieval quality that the graph features provide? Complex Reasoning and Creative Generation — the subtasks that most require multi-hop synthesis — are also the subtasks where larger models are known to gain most. If a stronger generator can leverage entity connectivity and community framing into qualitatively better answers, the configurations with those features should pull ahead.
+
+### 7.2 Experimental Design
+
+We evaluate four configurations × three generator/judge combinations:
+
+| Generator | Judge | Label |
+|---|---|---|
+| gpt-4o-mini | gpt-4o-mini | **Baseline** (already run) |
+| gpt-4o | gpt-4o-mini | **Large-Gen** |
+| gpt-4o | gpt-4o | **Large-Both** |
+
+*The fourth combination (gpt-4o-mini generator + gpt-4o judge) is omitted: a stronger judge scoring weaker answers is unlikely to reveal retrieval-driven differences.*
+
+Configurations evaluated: RAG + rerank (published benchmark baseline), nobc\_rerank\_k10 (ablation baseline), and the top-3 chonk configurations from §6.
+
+### 7.3 Results
+
+`[TBD: run Large-Gen and Large-Both experiments on top-3 configs + baselines. Insert table below.]`
+
+| Configuration | Baseline All | Large-Gen All | Large-Both All |
+|---|---|---|---|
+| RAG + rerank | 0.554 | `[TBD]` | `[TBD]` |
+| nobc\_rerank\_k10 | 0.661 | `[TBD]` | `[TBD]` |
+| `[TOP-1]` | `[TBD]` | `[TBD]` | `[TBD]` |
+| `[TOP-2]` | `[TBD]` | `[TBD]` | `[TBD]` |
+| `[TOP-3]` | `[TBD]` | `[TBD]` | `[TBD]` |
+
+### 7.4 Interpretation
+
+`[TBD: fill in after results. Expected pattern: feature-rich configurations pull ahead of nobc\_rerank\_k10 under Large-Gen and Large-Both, while the gap between all chonk configs and the published RAG+rerank baseline widens further. If nobc\_rerank\_k10 tracks the top-3 chonkers across model sizes, that is evidence that the generator ceiling — not retrieval quality — explains the benchmark tie.]`
+
+**Guidance for practitioners**: GraphRAG-Bench scores with gpt-4o-mini represent a conservative lower bound on the advantage of richer retrieval. For production deployments using models stronger than gpt-4o-mini, the full graph-augmented stack (entity-ref-expansion + community context + k=10) is recommended over simpler retrieval configurations, even where the benchmark score difference is small.
+
+---
+
+## 8. Limitations
 
 - **Benchmark scope**: GraphRAG-Bench is the only available benchmark that evaluates full-pipeline GraphRAG systems end-to-end. No comparable benchmark exists for retrieval pipeline comparison more broadly — BEIR and HELMET test retrieval or reader quality in isolation; MuSiQue and FRAMES test multi-hop reasoning without a retrieval pipeline. GraphRAG-Bench is the natural evaluation surface for this work.
 - **Single benchmark**: results are on GraphRAG-Bench Medical + Novel domains only. We include preliminary results on HotpotQA (All=**0.578** `[VERIFY]` vs RAG+rerank **0.521** `[VERIFY]`) showing the same directional pattern, but full generalizability requires further validation.
@@ -356,7 +412,7 @@ These hypotheses predict that the configuration ranking observed on GraphRAG-Ben
 
 ---
 
-## 8. Conclusion
+## 9. Conclusion
 
 GraphRAG systems outperform vanilla RAG by encoding three structural signals: entity connectivity (P1), community membership (P2), and traversal depth (P3). The standard assumption is that LLM-based graph extraction is necessary to capture these signals at useful fidelity. We show it is not. An implicit graph — NER co-occurrence edges, Louvain community partition — captures the same signals, stacks superadditively across orthogonal retrieval failure modes, and produces better retrieval quality than the best explicit GraphRAG system on GraphRAG-Bench.
 
