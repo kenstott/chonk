@@ -23,6 +23,7 @@ from ._markdown import MarkdownExtractor
 from ._csv import CsvExtractor
 from ._odf import OdfExtractor
 from ._email import EmailExtractor
+from ._parquet import ParquetExtractor
 
 _REGISTRY: list[Extractor] | None = None
 
@@ -39,6 +40,7 @@ def _build_registry() -> list[Extractor]:
         YamlExtractor(),
         MarkdownExtractor(),
         CsvExtractor(),
+        ParquetExtractor(),
         OdfExtractor(),
         EmailExtractor(),
         XmlExtractor(),
@@ -87,6 +89,7 @@ __all__ = [
     "YamlExtractor",
     "MarkdownExtractor",
     "CsvExtractor",
+    "ParquetExtractor",
     "OdfExtractor",
     "EmailExtractor",
     "XmlExtractor",

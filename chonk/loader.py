@@ -14,6 +14,9 @@ from typing import TYPE_CHECKING
 
 from .models import DocumentChunk
 from .schema import ColumnMeta, TableMeta, FieldMeta, EndpointMeta
+from ._struct_inference import infer_csv, infer_json, infer_jsonl, infer_parquet
+
+_STRUCTURED_EXTENSIONS = frozenset({".parquet", ".arrow", ".feather", ".csv", ".jsonl", ".ndjson"})
 from .chunking import chunk_document
 from .extractors import detect_extractor, detect_type_from_source, normalize_type
 from .transports import (
@@ -122,6 +125,9 @@ class DocumentLoader:
     def load(self, uri: str, name: str | None = None) -> list[DocumentChunk]:
         """Fetch + extract + chunk + enrich.
 
+        For .parquet, .arrow, .feather, .csv, .jsonl, and .ndjson files this
+        delegates to load_structured_file() and returns N+1 schema chunks.
+
         Args:
             uri: File path, file:// URL, http(s):// URL, s3://, ftp://, or sftp://.
             name: Document name for chunk metadata. Defaults to the last path segment.
@@ -129,6 +135,10 @@ class DocumentLoader:
         Returns:
             List of DocumentChunk objects.
         """
+        import os
+        if os.path.splitext(uri)[1].lower() in _STRUCTURED_EXTENSIONS:
+            return self.load_structured_file(uri, name=name)
+
         transport = self._find_transport(uri)
         result: FetchResult = transport.fetch(uri)
 
@@ -422,6 +432,48 @@ class DocumentLoader:
                 ))
 
         return self._enrich(chunks)
+
+    def load_structured_file(
+        self, path_or_uri: str, name: str | None = None
+    ) -> list[DocumentChunk]:
+        """Infer schema from a structured file and return N+1 DocumentChunks.
+
+        Supports .csv, .json, .jsonl / .ndjson, .parquet, .arrow, .feather.
+        Internally calls load_schema(), so output is identical to passing a
+        TableMeta directly — regardless of the source file type.
+
+        Args:
+            path_or_uri: Local path or URI of the structured file.
+            name: Table name used in document_name. Defaults to the file stem.
+
+        Returns:
+            Enriched DocumentChunk list (one table chunk + one per column).
+        """
+        import os
+        ext = os.path.splitext(path_or_uri)[1].lower()
+        doc_name = name or os.path.splitext(os.path.basename(path_or_uri))[0]
+
+        _supported = {".parquet", ".arrow", ".feather", ".csv", ".json", ".jsonl", ".ndjson"}
+        if ext not in _supported:
+            raise ValueError(
+                f"Unsupported structured file extension: {ext!r}. "
+                "Supported: .parquet, .arrow, .feather, .csv, .json, .jsonl, .ndjson"
+            )
+
+        transport = self._find_transport(path_or_uri)
+        result = transport.fetch(path_or_uri)
+        data = result.data
+
+        if ext in (".parquet", ".arrow", ".feather"):
+            table_meta = infer_parquet(data, ext, doc_name)
+        elif ext == ".csv":
+            table_meta = infer_csv(data, doc_name)
+        elif ext == ".json":
+            table_meta = infer_json(data, doc_name)
+        else:  # .jsonl / .ndjson
+            table_meta = infer_jsonl(data, doc_name)
+
+        return self.load_schema([table_meta])
 
     # ── Multi-document crawl methods ─────────────────────────────────────────
 

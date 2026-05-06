@@ -81,6 +81,9 @@ EXTENSION_TO_SHORT: dict[str, str] = {
     ".bmp": "image",
     ".gif": "image",
     ".svg": "image",
+    ".parquet": "parquet",
+    ".arrow": "arrow",
+    ".feather": "feather",
     ".mp3": "audio",
     ".mp4": "audio",
     ".m4a": "audio",
@@ -96,7 +99,7 @@ EXTENSION_TO_SHORT: dict[str, str] = {
 _KNOWN_SHORT: set[str] = {
     "auto", "pdf", "html", "markdown", "text", "csv", "tsv", "json", "jsonl",
     "yaml", "xml", "docx", "xlsx", "pptx", "odt", "ods", "odp", "image", "audio",
-    "email", "eml",
+    "email", "eml", "parquet", "arrow", "feather",
 }
 
 # Legacy transport types — treated as "auto" (transport is now inferred from fields)
