@@ -8,7 +8,7 @@
 """Chunky Monkey — a dairy-free RAG pipeline for delicious semantic similarity, clustering and NER."""
 from .chunking import chunk_document, extract_markdown_sections, is_list_line, is_table_line, merge_blocks, promote_plain_text_headers, NOVEL_STRUCTURAL_LEVELS
 from .models import DocumentChunk, LoadedDocument, EntityAssociation, Entity, ClusterRecord, ScoredChunk
-from .ner import VocabularyMatcher, EntityMatch, EntityIndex, SpacyMatcher, SpacyLabel, ALL_SPACY_LABELS, merge_matches
+from .ner import VocabularyMatcher, EntityMatch, EntityIndex, SpacyMatcher, SpacyLabel, ALL_SPACY_LABELS, merge_matches, SchemaMatcher, normalize_schema_term
 from .cluster import CooccurrenceMatrix, cluster_entities, ClusterMap
 from .search import EnhancedSearch
 from .context import enrich_chunk, enrich_chunks
@@ -67,6 +67,8 @@ __all__ = [
     "SpacyLabel",
     "ALL_SPACY_LABELS",
     "merge_matches",
+    "SchemaMatcher",
+    "normalize_schema_term",
     # Cluster
     "CooccurrenceMatrix",
     "cluster_entities",

@@ -10,6 +10,7 @@ from ._index import EntityIndex
 from ._spacy import SpacyMatcher
 from ._spacy_labels import SpacyLabel, ALL_SPACY_LABELS
 from ._merge import merge_matches
+from ._schema import SchemaMatcher, normalize_schema_term
 
 __all__ = [
     "VocabularyMatcher",
@@ -19,4 +20,6 @@ __all__ = [
     "SpacyLabel",
     "ALL_SPACY_LABELS",
     "merge_matches",
+    "SchemaMatcher",
+    "normalize_schema_term",
 ]
