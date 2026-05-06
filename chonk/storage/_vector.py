@@ -115,12 +115,13 @@ class DuckDBVectorBackend:
     # Add chunks
     # ------------------------------------------------------------------
 
-    def add_chunks(self, chunks: list, embeddings) -> None:
+    def add_chunks(self, chunks: list, embeddings, namespace: str | None = None) -> None:
         """Insert chunks with embeddings into the embeddings table.
 
         Args:
             chunks: List of DocumentChunk objects.
             embeddings: np.ndarray of shape (n, embedding_dim).
+            namespace: Optional partition key. None means no namespace filter at search time.
         """
         if not chunks:
             return
@@ -153,6 +154,7 @@ class DuckDBVectorBackend:
                 chunk_type,
                 getattr(chunk, "source_offset", None),
                 getattr(chunk, "source_length", None),
+                namespace,
                 embedding,
             ))
 
@@ -160,8 +162,8 @@ class DuckDBVectorBackend:
             """
             INSERT INTO embeddings
                 (chunk_id, document_name, section, chunk_index, content,
-                 breadcrumb, chunk_type, source_offset, source_length, embedding)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 breadcrumb, chunk_type, source_offset, source_length, namespace, embedding)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT DO NOTHING
             """,
             records,
@@ -271,6 +273,7 @@ class DuckDBVectorBackend:
         limit: int = 5,
         query_text: str | None = None,
         include_breadcrumbs: bool = True,
+        namespaces: list[str] | None = None,
     ) -> list[tuple[str, float, object]]:
         """Search by vector similarity, with optional BM25 hybrid re-ranking.
 
@@ -280,6 +283,8 @@ class DuckDBVectorBackend:
             query_text: If provided, perform hybrid vector + BM25 RRF search.
             include_breadcrumbs: If True (default), prepend stored breadcrumb to
                 returned chunk content. If False, return raw content only.
+            namespaces: If provided, restrict search to rows whose namespace is in
+                this list. None searches all namespaces (backwards-compatible default).
 
         Returns:
             List of (chunk_id, score, DocumentChunk).
@@ -288,6 +293,14 @@ class DuckDBVectorBackend:
 
         query = query_embedding.flatten().tolist()
         fetch_limit = limit * 3 if query_text else limit
+
+        if namespaces is not None:
+            placeholders = ", ".join("?" * len(namespaces))
+            ns_clause = f"WHERE e.namespace IN ({placeholders})"
+            params = [query, *namespaces, fetch_limit]
+        else:
+            ns_clause = ""
+            params = [query, fetch_limit]
 
         rows = self._conn.execute(
             f"""
@@ -303,10 +316,11 @@ class DuckDBVectorBackend:
                 e.source_length,
                 array_cosine_similarity(e.embedding, ?::FLOAT[{self._embedding_dim}]) AS similarity
             FROM embeddings e
+            {ns_clause}
             ORDER BY similarity DESC
             LIMIT ?
             """,
-            [query, fetch_limit],
+            params,
         ).fetchall()
 
         vector_results = []

@@ -18,12 +18,17 @@ CREATE TABLE IF NOT EXISTS embeddings (
     chunk_type   TEXT NOT NULL DEFAULT 'document',
     source_offset INTEGER,
     source_length INTEGER,
+    namespace    TEXT,
     embedding    FLOAT[{dim}]
 )
 """.strip()
 
 EMBEDDINGS_MIGRATE_BREADCRUMB = """
 ALTER TABLE embeddings ADD COLUMN IF NOT EXISTS breadcrumb TEXT
+""".strip()
+
+EMBEDDINGS_MIGRATE_NAMESPACE = """
+ALTER TABLE embeddings ADD COLUMN IF NOT EXISTS namespace TEXT
 """.strip()
 
 ENTITIES_DDL = """
@@ -56,6 +61,7 @@ def get_ddl(embedding_dim: int = 1024) -> list[str]:
     return [
         EMBEDDINGS_DDL.format(dim=embedding_dim),
         EMBEDDINGS_MIGRATE_BREADCRUMB,
+        EMBEDDINGS_MIGRATE_NAMESPACE,
         ENTITIES_DDL,
         CHUNK_ENTITIES_DDL,
     ]

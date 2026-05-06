@@ -64,22 +64,34 @@ class Store:
             )
             self.relational = None  # type: ignore
 
-    def add_document(self, chunks: list, embeddings) -> None:
-        """Add chunks with embeddings. embeddings is np.ndarray shape (n, dim)."""
-        self.vector.add_chunks(chunks, embeddings)
+    def add_document(self, chunks: list, embeddings, namespace: str | None = None) -> None:
+        """Add chunks with embeddings. embeddings is np.ndarray shape (n, dim).
+
+        Args:
+            namespace: Optional partition key (e.g. "__base__" or a project ID).
+                       None means no namespace — backwards-compatible default.
+        """
+        self.vector.add_chunks(chunks, embeddings, namespace=namespace)
 
     def search(
         self,
         query_embedding,
         limit: int = 5,
         query_text: str | None = None,
+        namespaces: list[str] | None = None,
     ) -> list:
         """Hybrid or pure vector search.
+
+        Args:
+            namespaces: If provided, restrict results to rows in these namespaces.
+                        None searches all namespaces — backwards-compatible default.
 
         Returns:
             List of (chunk_id, score, DocumentChunk).
         """
-        return self.vector.search(query_embedding, limit=limit, query_text=query_text)
+        return self.vector.search(
+            query_embedding, limit=limit, query_text=query_text, namespaces=namespaces
+        )
 
     def delete_document(self, document_name: str) -> int:
         """Delete all chunks for a document. Returns count deleted."""
