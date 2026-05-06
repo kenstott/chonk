@@ -64,7 +64,7 @@ class DocumentChunk:
         source_offset: Byte offset in the original source document
         source_length: Length in bytes of the original source span
         embedding_content: Set by enrich_chunks(); what actually gets embedded
-        chunk_type: "document" | "schema" | "api"
+        chunk_type: "document" | "db_table" | "db_column" | "api_endpoint" | etc.
     """
     document_name: str
     content: str
@@ -76,6 +76,12 @@ class DocumentChunk:
     chunk_type: str = "document"
     breadcrumb: Optional[str] = None
     paragraph_continuation: bool = False
+
+    def __post_init__(self) -> None:
+        if self.section is None:
+            self.section = []
+        elif isinstance(self.section, str):
+            self.section = [self.section] if self.section else []
 
 
 @dataclass

@@ -161,3 +161,25 @@ class TestEnrichChunks:
         results = enrich_chunks(chunks)
         for r in results:
             assert "techcorp_msa" in r.embedding_content
+
+
+class TestDocumentChunkSectionNormalization:
+    def test_section_none_becomes_empty_list(self):
+        chunk = DocumentChunk(document_name="d", content="c", section=None, chunk_index=0)
+        assert chunk.section == []
+
+    def test_section_str_becomes_single_element_list(self):
+        chunk = DocumentChunk(document_name="d", content="c", section="Introduction", chunk_index=0)
+        assert chunk.section == ["Introduction"]
+
+    def test_section_empty_str_becomes_empty_list(self):
+        chunk = DocumentChunk(document_name="d", content="c", section="", chunk_index=0)
+        assert chunk.section == []
+
+    def test_section_list_unchanged(self):
+        chunk = DocumentChunk(document_name="d", content="c", section=["A", "B"], chunk_index=0)
+        assert chunk.section == ["A", "B"]
+
+    def test_section_default_is_empty_list(self):
+        chunk = DocumentChunk(document_name="d", content="c", chunk_index=0)
+        assert chunk.section == []
