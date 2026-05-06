@@ -13,6 +13,7 @@ from .cluster import CooccurrenceMatrix, cluster_entities, ClusterMap
 from .search import EnhancedSearch
 from .context import enrich_chunk, enrich_chunks
 from .loader import DocumentLoader
+from .schema import ColumnMeta, TableMeta, FieldMeta, EndpointMeta
 from .transports import (
     Transport,
     FetchResult,
@@ -72,4 +73,9 @@ __all__ = [
     "ClusterMap",
     # Search
     "EnhancedSearch",
+    # Schema metadata
+    "ColumnMeta",
+    "TableMeta",
+    "FieldMeta",
+    "EndpointMeta",
 ]

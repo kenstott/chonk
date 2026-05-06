@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .models import DocumentChunk
+from .schema import ColumnMeta, TableMeta, FieldMeta, EndpointMeta
 from .chunking import chunk_document
 from .extractors import detect_extractor, detect_type_from_source, normalize_type
 from .transports import (
@@ -295,6 +296,131 @@ class DocumentLoader:
             include_breadcrumb=(self.context_strategy is not None),
             include_doc_name=self.include_doc_name,
         )
+        return self._enrich(chunks)
+
+    # ── Structured metadata loaders ──────────────────────────────────────────
+
+    def load_schema(self, tables: list[TableMeta]) -> list[DocumentChunk]:
+        """Build N+1 DocumentChunks per table (one table chunk + one per column).
+
+        Each chunk is independently embeddable: a query about a specific column
+        retrieves that column's chunk directly rather than the whole table block.
+
+        Args:
+            tables: List of TableMeta describing each table and its columns.
+
+        Returns:
+            Enriched DocumentChunk list, ready for embedding.
+        """
+        chunks: list[DocumentChunk] = []
+        for table in tables:
+            db_prefix = table.source_db or "db"
+            doc_name = f"schema:{db_prefix}.{table.name}"
+
+            lines = [f"Table: {table.name}"]
+            if table.schema_name:
+                lines.append(f"Schema: {table.schema_name}")
+            if table.source_db:
+                lines.append(f"Source DB: {table.source_db}")
+            if table.row_count is not None:
+                lines.append(f"Row count: {table.row_count}")
+            if table.description:
+                lines.append(f"Description: {table.description}")
+            if table.columns:
+                lines.append(f"Columns: {', '.join(c.name for c in table.columns)}")
+
+            chunks.append(DocumentChunk(
+                document_name=doc_name,
+                content="\n".join(lines),
+                section=["table_description"],
+                chunk_index=0,
+                chunk_type="db_table",
+            ))
+
+            for col_idx, col in enumerate(table.columns, start=1):
+                col_doc_name = f"schema:{db_prefix}.{table.name}.{col.name}"
+                col_lines = [
+                    f"Column: {col.name}",
+                    f"Table: {table.name}",
+                    f"Type: {col.data_type}",
+                    f"Nullable: {'yes' if col.nullable else 'no'}",
+                ]
+                if col.is_primary_key:
+                    col_lines.append("Primary key: yes")
+                if col.is_foreign_key and col.foreign_key_ref:
+                    col_lines.append(f"Foreign key: {col.foreign_key_ref}")
+                if col.description:
+                    col_lines.append(f"Description: {col.description}")
+
+                chunks.append(DocumentChunk(
+                    document_name=col_doc_name,
+                    content="\n".join(col_lines),
+                    section=["column_description"],
+                    chunk_index=col_idx,
+                    chunk_type="db_column",
+                ))
+
+        return self._enrich(chunks)
+
+    def load_api(self, endpoints: list[EndpointMeta]) -> list[DocumentChunk]:
+        """Build N+1 DocumentChunks per endpoint (one endpoint chunk + one per field).
+
+        Args:
+            endpoints: List of EndpointMeta describing each endpoint and its fields.
+
+        Returns:
+            Enriched DocumentChunk list, ready for embedding.
+        """
+        _GRAPHQL_CHUNK_TYPES = {
+            "graphql_query": "api_graphql_query",
+            "graphql_mutation": "api_graphql_mutation",
+            "graphql_type": "api_graphql_type",
+        }
+
+        chunks: list[DocumentChunk] = []
+        for endpoint in endpoints:
+            api_prefix = endpoint.source_api or "api"
+            doc_name = f"api:{api_prefix}.{endpoint.path}"
+            chunk_type = _GRAPHQL_CHUNK_TYPES.get(endpoint.endpoint_type, "api_endpoint")
+
+            lines = [f"Endpoint: {endpoint.path}"]
+            if endpoint.method:
+                lines.append(f"Method: {endpoint.method}")
+            lines.append(f"Type: {endpoint.endpoint_type}")
+            if endpoint.source_api:
+                lines.append(f"Source API: {endpoint.source_api}")
+            if endpoint.description:
+                lines.append(f"Description: {endpoint.description}")
+            if endpoint.fields:
+                lines.append(f"Fields: {', '.join(f.name for f in endpoint.fields)}")
+
+            chunks.append(DocumentChunk(
+                document_name=doc_name,
+                content="\n".join(lines),
+                section=[],
+                chunk_index=0,
+                chunk_type=chunk_type,
+            ))
+
+            for field_idx, fld in enumerate(endpoint.fields, start=1):
+                field_doc_name = f"api:{api_prefix}.{endpoint.path}.{fld.name}"
+                field_lines = [
+                    f"Field: {fld.name}",
+                    f"Endpoint: {endpoint.path}",
+                    f"Type: {fld.field_type}",
+                    f"Required: {'yes' if fld.required else 'no'}",
+                ]
+                if fld.description:
+                    field_lines.append(f"Description: {fld.description}")
+
+                chunks.append(DocumentChunk(
+                    document_name=field_doc_name,
+                    content="\n".join(field_lines),
+                    section=[],
+                    chunk_index=field_idx,
+                    chunk_type="api_field",
+                ))
+
         return self._enrich(chunks)
 
     # ── Multi-document crawl methods ─────────────────────────────────────────
