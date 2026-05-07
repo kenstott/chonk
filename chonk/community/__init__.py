@@ -5,5 +5,6 @@
 # permission from the copyright holder.
 
 from ._index import CommunityIndex
+from ._summarizer import CommunitySummarizer
 
-__all__ = ["CommunityIndex"]
+__all__ = ["CommunityIndex", "CommunitySummarizer"]

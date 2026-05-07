@@ -277,6 +277,14 @@ class CommunityIndex:
     def community_chunks(self, community_id: int) -> list[str]:
         return list(self._community_to_chunks.get(community_id, []))
 
+    def community_ids(self) -> list[int]:
+        """Return all community IDs present in this index."""
+        return list(self._community_to_chunks.keys())
+
+    def topic_label_for_community(self, community_id: int) -> str:
+        """Return the topic label for *community_id*, or empty string if unknown."""
+        return self._community_to_label.get(community_id, "")
+
     def community_count(self) -> int:
         return len(self._community_to_label)
 

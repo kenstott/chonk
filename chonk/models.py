@@ -91,6 +91,8 @@ class DocumentChunk:
                 "graphql_query", "graphql_mutation", "graphql_type", "graphql_field"
             ):
                 self.source = "api"
+            elif ct == "community_summary":
+                self.source = "community"
             else:
                 self.source = "document"
 
