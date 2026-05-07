@@ -26,7 +26,7 @@ class TestSVOTriple:
 
     def test_invalid_verb_raises(self):
         with pytest.raises(ValueError, match="not in closed vocabulary"):
-            SVOTriple("a", "causes", "b", 0.9)
+            SVOTriple("a", "relates_to", "b", 0.9)
 
     def test_confidence_below_zero_raises(self):
         with pytest.raises(ValueError, match="confidence must be in"):
@@ -46,16 +46,27 @@ class TestSVOTriple:
             assert t.verb == verb
 
     def test_verb_set_contents(self):
-        assert "type_of" in VERB_SET
-        assert "references" in VERB_SET
-        assert "contains" in VERB_SET
-        assert "part_of" in VERB_SET
-        assert "governs" in VERB_SET
-        assert "requires" in VERB_SET
-        assert "defined_by" in VERB_SET
-        assert "equivalent_to" in VERB_SET
-        assert "created_by" in VERB_SET
-        assert len(VERB_SET) == 9
+        # spot-check one from each category
+        assert "type_of" in VERB_SET           # taxonomy
+        assert "contains" in VERB_SET          # structure
+        assert "references" in VERB_SET        # lineage
+        assert "governs" in VERB_SET           # governance
+        assert "manages" in VERB_SET           # ownership
+        assert "equivalent_to" in VERB_SET     # equivalence
+        assert "depends_on" in VERB_SET        # causation
+        assert "produces" in VERB_SET          # data flow
+        assert "located_in" in VERB_SET
+        assert "used_for" in VERB_SET
+        assert "member_of" in VERB_SET
+        assert "inverse_of" in VERB_SET
+        assert len(VERB_SET) == 48
+
+    def test_removed_verbs_rejected(self):
+        for verb in ("categorized_under", "inherits_from", "regulated_by",
+                     "subject_to", "synonym_of", "replaces", "computed_from",
+                     "authored_by", "joins_to"):
+            with pytest.raises(ValueError):
+                SVOTriple("a", verb, "b", 0.9)
 
 
 # ---------------------------------------------------------------------------

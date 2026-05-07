@@ -11,15 +11,63 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 VERB_SET: frozenset[str] = frozenset({
+    # Taxonomy / Classification
     "type_of",
-    "references",
+    "instance_of",
+    "classified_as",
+    # Structure / Schema
     "contains",
     "part_of",
+    "has_attribute",
+    "composed_of",
+    "extends",
+    "implements",
+    # Database / Lineage
+    "references",
+    "indexed_by",
+    "partitioned_by",
+    "derived_from",
+    "calculated_by",
+    "aggregates",
+    "sourced_from",
+    "populates",
+    "transforms",
+    # Governance / Compliance
     "governs",
     "requires",
     "defined_by",
-    "equivalent_to",
+    "complies_with",
+    "enforced_by",
+    "exempt_from",
+    "audited_by",
+    "validates",
+    # Ownership / Responsibility
     "created_by",
+    "owned_by",
+    "maintained_by",
+    "manages",
+    # Equivalence / Mapping
+    "equivalent_to",
+    "maps_to",
+    "supersedes",
+    "version_of",
+    "inverse_of",
+    # Membership / Location
+    "member_of",
+    "located_in",
+    "used_for",
+    # Causation / Dependency
+    "depends_on",
+    "triggers",
+    "enables",
+    "causes",
+    "blocks",
+    "precedes",
+    # Data Flow / Integration
+    "produces",
+    "consumes",
+    "exposes",
+    "masks",
 })
 
 
