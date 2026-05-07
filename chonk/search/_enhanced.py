@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from ..storage._store import Store
     from ..ner._index import EntityIndex
     from ..cluster._map import ClusterMap
+    from ..graph._index import RelationshipIndex
 
 
 class EnhancedSearch:
@@ -67,6 +68,7 @@ class EnhancedSearch:
         store: "Store",
         entity_index: "EntityIndex | None" = None,
         cluster_map: "ClusterMap | None" = None,
+        relationship_index: "RelationshipIndex | None" = None,
         seed_pool_multiplier: int = 3,
         entity_expansion_top_n: int = 3,
         cluster_budget: int | None = None,
@@ -93,6 +95,7 @@ class EnhancedSearch:
         self._store = store
         self._entity_index = entity_index
         self._cluster_map = cluster_map
+        self._relationship_index = relationship_index
         self._chunk_cache: dict[str, "DocumentChunk"] | None = None
         self._embedding_cache: dict[str, list[float]] | None = None
         self._seed_multiplier = seed_pool_multiplier
@@ -130,6 +133,7 @@ class EnhancedSearch:
         query_text: str | None = None,
         query_entities: list[str] | None = None,
         precomputed_entity_vecs: dict[str, "np.ndarray"] | None = None,
+        mode: str = "vector_first",
     ) -> list[ScoredChunk]:
         """Assemble a top-k cohort using all enabled expansion dimensions.
 
@@ -137,10 +141,21 @@ class EnhancedSearch:
             query_embedding: np.ndarray shape (dim,) or (1, dim).
             k: Target cohort size.
             query_text: Optional query text for BM25 hybrid seed search.
+            mode: Retrieval mode — "vector_first" (default), "graph_first", or "global".
+                  "graph_first": drives on RelationshipIndex traversal, vector reranks.
+                  "global": searches community_summary chunks only.
 
         Returns:
             Ranked list of up to k ScoredChunk objects.
         """
+        if mode == "global":
+            return self._global_search(query_embedding, k, query_text)
+        if mode == "graph_first":
+            return self._graph_first_search(
+                query_embedding, k, query_text, query_entities, precomputed_entity_vecs
+            )
+        if mode != "vector_first":
+            raise ValueError(f"Unknown search mode {mode!r}. Use 'vector_first', 'graph_first', or 'global'.")
         seed_limit = k * self._seed_multiplier
         cluster_budget = self._cluster_budget if self._cluster_budget is not None else 2 * k
 
@@ -281,6 +296,118 @@ class EnhancedSearch:
             if ents:
                 results = self._entity_ref_expand(results, pool, query_embedding, ents, k, query_text, precomputed_entity_vecs)
 
+        return results
+
+    # ------------------------------------------------------------------
+    # graph_first mode
+    # ------------------------------------------------------------------
+
+    def _graph_first_search(
+        self,
+        query_embedding,
+        k: int,
+        query_text: str | None,
+        query_entities: list[str] | None,
+        precomputed_entity_vecs,
+    ) -> list[ScoredChunk]:
+        """Driver: RelationshipIndex traversal. Assist: vector rerank via _select_cohort.
+
+        Falls back to vector_first when prerequisites are absent:
+          - no relationship_index
+          - no query_text and no query_entities provided
+          - NER produces no entity hits
+        """
+        fallback = (
+            self._relationship_index is None
+            or self._entity_index is None
+            or (query_text is None and not query_entities)
+        )
+        if fallback:
+            return self.search(
+                query_embedding, k=k, query_text=query_text,
+                query_entities=query_entities,
+                precomputed_entity_vecs=precomputed_entity_vecs,
+                mode="vector_first",
+            )
+
+        # Resolve query entities via NER if not supplied
+        ents = query_entities
+        if not ents and self._query_ner_fn is not None and query_text:
+            ents = self._query_ner_fn(query_text)
+        if not ents:
+            return self.search(
+                query_embedding, k=k, query_text=query_text,
+                query_entities=query_entities,
+                precomputed_entity_vecs=precomputed_entity_vecs,
+                mode="vector_first",
+            )
+
+        # Traverse RelationshipIndex: collect related entity IDs
+        related: set[str] = set()
+        for entity_id in ents:
+            for triple in self._relationship_index.get_objects(entity_id):
+                related.add(triple.object_id)
+            for triple in self._relationship_index.get_subjects(entity_id):
+                related.add(triple.subject_id)
+        related -= set(ents)  # exclude the query entities themselves
+
+        # Build pool from related-entity chunks
+        pool: dict[str, ScoredChunk] = {}
+        for related_entity_id in related:
+            for linked_chunk_id, _ in self._entity_index.get_chunks_for_entity(
+                related_entity_id, top_n=self._entity_top_n
+            ):
+                if linked_chunk_id not in pool:
+                    chunk = self._fetch_chunk(linked_chunk_id)
+                    if chunk is not None:
+                        pool[linked_chunk_id] = ScoredChunk(
+                            chunk_id=linked_chunk_id,
+                            chunk=chunk,
+                            score=0.0,
+                            provenance="entity_adjacent",
+                            linked_by=related_entity_id,
+                        )
+
+        # Augment with vector seeds so reranker has enough candidates
+        seed_limit = max(k * self._seed_multiplier, k - len(pool))
+        for chunk_id, score, chunk in self._store.search(
+            query_embedding, limit=seed_limit, query_text=query_text
+        ):
+            if chunk_id not in pool:
+                pool[chunk_id] = ScoredChunk(
+                    chunk_id=chunk_id, chunk=chunk, score=score, provenance="seed"
+                )
+
+        if not pool:
+            return []
+
+        return self._select_cohort(list(pool.values()), query_embedding, k)
+
+    # ------------------------------------------------------------------
+    # global mode
+    # ------------------------------------------------------------------
+
+    def _global_search(
+        self,
+        query_embedding,
+        k: int,
+        query_text: str | None,
+    ) -> list[ScoredChunk]:
+        """Driver: vector search over community_summary chunks only."""
+        raw = self._store.search(
+            query_embedding,
+            limit=k,
+            query_text=query_text,
+            chunk_types=["community_summary"],
+        )
+        results: list[ScoredChunk] = []
+        for chunk_id, score, chunk in raw:
+            results.append(ScoredChunk(
+                chunk_id=chunk_id,
+                chunk=chunk,
+                score=score,
+                provenance="seed",
+            ))
         return results
 
     # ------------------------------------------------------------------

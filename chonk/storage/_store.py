@@ -79,18 +79,22 @@ class Store:
         limit: int = 5,
         query_text: str | None = None,
         namespaces: list[str] | None = None,
+        chunk_types: list[str] | None = None,
     ) -> list:
         """Hybrid or pure vector search.
 
         Args:
             namespaces: If provided, restrict results to rows in these namespaces.
                         None searches all namespaces — backwards-compatible default.
+            chunk_types: If provided, restrict results to rows with these chunk_types.
+                         None searches all chunk types — backwards-compatible default.
 
         Returns:
             List of (chunk_id, score, DocumentChunk).
         """
         return self.vector.search(
-            query_embedding, limit=limit, query_text=query_text, namespaces=namespaces
+            query_embedding, limit=limit, query_text=query_text,
+            namespaces=namespaces, chunk_types=chunk_types,
         )
 
     def delete_document(self, document_name: str) -> int:
