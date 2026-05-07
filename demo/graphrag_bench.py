@@ -1790,6 +1790,8 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
         records = _read_results_from_db(run_db)
     elif results_f.exists():
         records = [json.loads(line) for line in open(results_f)]
+        _init_run_db(run_db)
+        _write_results_to_db(run_db, records)
     else:
         print(f"No results found: {results_f}. Run 'run' first.")
         return
