@@ -14,6 +14,7 @@ from .search import EnhancedSearch
 from .context import enrich_chunk, enrich_chunks
 from .loader import DocumentLoader
 from .schema import ColumnMeta, TableMeta, FieldMeta, EndpointMeta
+from .generation import AnswerContext, PromptBuilder, Answer, AnswerGenerator
 from .transports import (
     Transport,
     FetchResult,
@@ -80,4 +81,9 @@ __all__ = [
     "TableMeta",
     "FieldMeta",
     "EndpointMeta",
+    # Generation
+    "AnswerContext",
+    "PromptBuilder",
+    "Answer",
+    "AnswerGenerator",
 ]
