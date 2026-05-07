@@ -2180,6 +2180,45 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
         print(f"  {qtype}: " + ", ".join(f"{k}={v:.3f}" for k, v in scores.items()))
 
 
+def cmd_backfill_db(args: argparse.Namespace) -> None:
+    """Reconstruct a run DuckDB from results jsonl + eval checkpoint jsonl.
+
+    Use when gen ran on a different machine and no DuckDB exists, so cmd_score
+    returns nan. Reads work/results/{name}.jsonl and bench_eval_ckpt_{name}.jsonl,
+    creates work/data/runs/{name}.duckdb with both results and eval_scores tables.
+    """
+    out_dir      = Path(args.out_dir)
+    results_dir  = out_dir / "results"
+    run_name     = args.run_name
+    results_f    = results_dir / f"{run_name}.jsonl"
+    ckpt_f       = results_dir / f"bench_eval_ckpt_{run_name}.jsonl"
+    run_db       = _run_db_path(out_dir / "data", run_name)
+
+    if not results_f.exists():
+        print(f"Missing: {results_f}")
+        return
+    if not ckpt_f.exists():
+        print(f"Missing: {ckpt_f}")
+        return
+
+    records = [json.loads(l) for l in open(results_f)]
+    _init_run_db(run_db)
+    _write_results_to_db(run_db, records)
+
+    import duckdb as _ddb
+    con = _ddb.connect(str(run_db))
+    eval_rows = [json.loads(l) for l in open(ckpt_f)]
+    for r in eval_rows:
+        con.execute("DELETE FROM eval_scores WHERE id = ?", [r["id"]])
+        con.execute(
+            "INSERT INTO eval_scores VALUES (?,?,?,?,?,?)",
+            [r["id"], r.get("question_type"), r.get("answer_correctness"),
+             r.get("rouge_score"), r.get("coverage_score"), r.get("faithfulness")],
+        )
+    con.close()
+    print(f"Backfilled {len(records)} results + {len(eval_rows)} eval_scores → {run_db}")
+
+
 def cmd_score(args: argparse.Namespace) -> None:
     """Print the All score (matches report: mean-of-means per subset×type) for a run.
 
@@ -2817,6 +2856,12 @@ def _make_parser() -> argparse.ArgumentParser:
     p.add_argument("--out-dir",  default="/tmp/grb", metavar="DIR")
     p.add_argument("--run-name", required=True, help="Run name to score")
     p.set_defaults(func=cmd_score)
+
+    # backfill-db — reconstruct DuckDB from jsonl + eval checkpoint
+    p = sub.add_parser("backfill-db", help="Reconstruct run DuckDB from results jsonl + eval checkpoint jsonl")
+    p.add_argument("--out-dir",  default="/tmp/grb", metavar="DIR")
+    p.add_argument("--run-name", required=True, help="Run name to backfill")
+    p.set_defaults(func=cmd_backfill_db)
 
     # make-order — generate stratified question order for full-corpus runs
     p = sub.add_parser("make-order", help="Generate stratified question order file for full-corpus runs")
