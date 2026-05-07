@@ -12,6 +12,7 @@ CRITICAL: Zero commentary. Output only what was explicitly requested. No observa
 # BAD:  "Good idea! I'll add that to CLAUDE.md right away."
 # GOOD: "Done."
 CRITICAL: Test errors must be resolved whether preexisting or not. Never skip or ignore failing tests.
+CRITICAL: Before answering any question about what existing code does, run a Grep or Read tool call first. No exceptions. Do not answer from memory.
 
 # Requirements Tracking
 On any new requirement, constraint, feature, or design decision: spawn a background haiku agent. It reads `.claude/agents/requirements-tracker.md` for format, then appends to `docs/arch/requirements.md`. Silent — skip implementation details, bugs, questions.

@@ -47,7 +47,8 @@ CREATE TABLE IF NOT EXISTS chunk_entities (
 )
 """.strip()
 
-VSS_INDEX_DDL = "CREATE INDEX IF NOT EXISTS embeddings_vss ON embeddings USING HNSW (embedding)"
+VSS_INDEX_DDL = "CREATE INDEX IF NOT EXISTS embeddings_vss ON embeddings USING HNSW (embedding) WITH (metric = 'cosine')"
+VSS_DROP_INDEX_DDL = "DROP INDEX IF EXISTS embeddings_vss"
 
 FTS_DDL = "PRAGMA create_fts_index('embeddings', 'chunk_id', 'content', overwrite=1)"
 
