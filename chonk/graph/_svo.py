@@ -87,11 +87,6 @@ class SVOTriple:
     source_chunk_id: str | None = None
 
     def __post_init__(self) -> None:
-        if self.verb not in VERB_SET:
-            raise ValueError(
-                f"verb {self.verb!r} not in closed vocabulary. "
-                f"Allowed: {sorted(VERB_SET)}"
-            )
         if not 0.0 <= self.confidence <= 1.0:
             raise ValueError(
                 f"confidence must be in [0.0, 1.0], got {self.confidence}"

@@ -2,9 +2,10 @@
 
 """Unit tests for SVOTriple and RelationshipIndex (Phase 4.1)."""
 
+import json
 import pytest
 
-from chonk.graph import SVOTriple, VERB_SET, RelationshipIndex
+from chonk.graph import SVOTriple, VERB_SET, RelationshipIndex, SVOExtractor
 
 
 # ---------------------------------------------------------------------------
@@ -24,9 +25,10 @@ class TestSVOTriple:
         t = SVOTriple("orders", "references", "customers", 1.0, source_chunk_id="chunk_001")
         assert t.source_chunk_id == "chunk_001"
 
-    def test_invalid_verb_raises(self):
-        with pytest.raises(ValueError, match="not in closed vocabulary"):
-            SVOTriple("a", "relates_to", "b", 0.9)
+    def test_invalid_verb_accepted_by_dataclass(self):
+        # SVOTriple is a pure storage primitive; verb enforcement is SVOExtractor's job
+        t = SVOTriple("a", "relates_to", "b", 0.9)
+        assert t.verb == "relates_to"
 
     def test_confidence_below_zero_raises(self):
         with pytest.raises(ValueError, match="confidence must be in"):
@@ -61,12 +63,21 @@ class TestSVOTriple:
         assert "inverse_of" in VERB_SET
         assert len(VERB_SET) == 48
 
-    def test_removed_verbs_rejected(self):
-        for verb in ("categorized_under", "inherits_from", "regulated_by",
-                     "subject_to", "synonym_of", "replaces", "computed_from",
-                     "authored_by", "joins_to"):
-            with pytest.raises(ValueError):
-                SVOTriple("a", verb, "b", 0.9)
+    def test_removed_verbs_dropped_by_extractor(self):
+        # Removed verbs are rejected by SVOExtractor (not the dataclass)
+        removed = ("categorized_under", "inherits_from", "regulated_by",
+                   "subject_to", "synonym_of", "replaces", "computed_from",
+                   "authored_by", "joins_to")
+
+        class _Stub:
+            def __init__(self, verb): self._verb = verb
+            def complete(self, p): return json.dumps([
+                {"subject_id": "a", "verb": self._verb, "object_id": "b", "confidence": 0.9}
+            ])
+
+        for verb in removed:
+            extractor = SVOExtractor(_Stub(verb))
+            assert extractor.extract("text") == [], f"extractor should drop removed verb {verb!r}"
 
 
 # ---------------------------------------------------------------------------
