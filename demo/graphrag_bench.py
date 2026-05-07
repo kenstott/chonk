@@ -68,8 +68,17 @@ DB_FILENAME         = "chonk.duckdb"
 VANILLA_DB_FILENAME = "vanilla_rag.duckdb"
 VANILLA_K             = 5     # paper Appendix H.2: retrieval_topk=5
 VANILLA_CHUNK_TOKENS  = 256   # benchmark uses 256-token chunks
-VANILLA_CHUNK_OVERLAP = 32
+VANILLA_CHUNK_OVERLAP = 0
 VANILLA_TEMPERATURE   = 0.7   # paper: "generation temperature of 0.7"
+
+def _model_rpm_limit(model: str) -> int:
+    """Return 80%-of-tier-4 RPM limit for a given OpenAI model, loaded from openai_rpm_limits.json."""
+    _limits_file = Path(__file__).parent / "openai_rpm_limits.json"
+    try:
+        _data = json.loads(_limits_file.read_text())
+        return _data.get(model, _data.get("_default", 2400))
+    except Exception:
+        return 2400
 
 # Published leaderboard results scraped from graphrag-bench.github.io, April 2026.
 # Avg = mean(Fact ACC, Reason ACC, Summ ACC, Creative ACC) for each subset.
@@ -524,24 +533,67 @@ def _is_refusal(answer: str) -> bool:
     return any(p in low for p in _REFUSAL_PHRASES)
 
 
+_STRUCTURED_GEN_SYSTEM = (
+    "Answer the question based only on the provided context. "
+    "If the context does not contain enough information, say so. "
+    "You MUST format your response exactly as:\nANSWER: <your answer here>\n"
+    "Do not include any text before or after this line."
+)
+_STRUCTURED_GEN_RETRY_HINT = (
+    "Your response did not follow the required format. "
+    "You MUST respond with exactly one line starting with 'ANSWER: ' followed by your answer. "
+    "Example: ANSWER: The capital of France is Paris."
+)
+_UNSTRUCTURED_GEN_SYSTEM = (
+    "Answer the question based only on the provided context. "
+    "If the context does not contain enough information, "
+    "say so rather than making up an answer."
+)
+
+def _extract_structured_answer(text: str) -> str | None:
+    """Extract content after 'ANSWER:' marker. Returns None if marker absent."""
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.upper().startswith("ANSWER:"):
+            return stripped[len("ANSWER:"):].strip()
+    return None
+
 def _generate(question: str, context: str, client, model: str = GEN_MODEL,
-              temperature: float = 0.0, retry_hint: str | None = None) -> str:
+              temperature: float = 0.0, retry_hint: str | None = None,
+              structured: bool = False) -> str:
+    system = _STRUCTURED_GEN_SYSTEM if structured else _UNSTRUCTURED_GEN_SYSTEM
     user_content = f"Context:\n{context}\n\nQuestion: {question}"
     if retry_hint:
         user_content += f"\n\n{retry_hint}"
     resp = client.chat.completions.create(
         model=model,
         messages=[
-            {"role": "system",
-             "content": ("Answer the question based only on the provided context. "
-                         "If the context does not contain enough information, "
-                         "say so rather than making up an answer.")},
+            {"role": "system", "content": system},
             {"role": "user", "content": user_content},
         ],
         temperature=temperature,
         max_tokens=500,
     )
-    return resp.choices[0].message.content.strip()
+    raw = resp.choices[0].message.content.strip()
+    if not structured:
+        return raw
+    answer = _extract_structured_answer(raw)
+    if answer is not None:
+        return answer
+    # Format non-compliant — retry once with explicit format hint
+    retry_content = user_content + f"\n\n{_STRUCTURED_GEN_RETRY_HINT}"
+    resp2 = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": retry_content},
+        ],
+        temperature=temperature,
+        max_tokens=500,
+    )
+    raw2 = resp2.choices[0].message.content.strip()
+    answer2 = _extract_structured_answer(raw2)
+    return answer2 if answer2 is not None else raw2
 
 
 def _build_entity_index_from_store(store) -> "EntityIndex":
@@ -1073,6 +1125,7 @@ def cmd_run(args: argparse.Namespace) -> None:
     entity_ref_expansion_min_sim = getattr(args, "entity_ref_expansion_min_sim", None)
     use_cluster = getattr(args, "cluster", False)
     use_entity_ref_retry     = getattr(args, "entity_ref_retry", False)
+    use_structured_gen       = getattr(args, "structured_gen", False)
     use_breadcrumb_context = getattr(args, "breadcrumb_context", False)
     breadcrumb_style       = getattr(args, "breadcrumb_style", "markdown")
     use_community_context  = getattr(args, "community_context", False)
@@ -1121,9 +1174,26 @@ def cmd_run(args: argparse.Namespace) -> None:
         "query_complexity_threshold": query_complexity_threshold,
         "top_k": top_k,
     }
-    (results_dir / f"{run_name}_flags.json").write_text(
-        json.dumps(_flags, indent=2), encoding="utf-8"
-    )
+    _flags_path = results_dir / f"{run_name}_flags.json"
+    _flags_path.write_text(json.dumps(_flags, indent=2), encoding="utf-8")
+
+    import signal as _signal, atexit as _atexit
+    _run_completed = [False]
+    def _cleanup_flags():
+        if not _run_completed[0] and _flags_path.exists():
+            _flags_path.unlink(missing_ok=True)
+        try:
+            import torch, gc
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize()
+        except Exception:
+            pass
+    _atexit.register(_cleanup_flags)
+    def _sigterm_handler(signum, frame):
+        raise SystemExit(0)
+    _signal.signal(_signal.SIGTERM, _sigterm_handler)
 
     questions = _load_questions(data_dir)
     if question_ids_file:
@@ -1187,18 +1257,37 @@ def cmd_run(args: argparse.Namespace) -> None:
         else:
             q_vecs_cache.unlink()  # stale — corpus changed
 
-    embed_model = None
-    if _corpus_vecs is None or use_ner_x or use_entity_ref_retry or use_entity_ref_expansion or concentration_threshold is not None:
-        embed_model = SentenceTransformer(EMBED_MODEL)
+    import hashlib as _hl_pre
+    _ent_cache_key_pre = _hl_pre.md5(
+        (EMBED_MODEL + SPACY_MODEL + json.dumps(_corpus_ids)).encode()
+    ).hexdigest()[:16]
+    _ent_vecs_cache_path = data_dir / f"entity_vecs_{_ent_cache_key_pre}.npz"
+    _ent_ents_cache_path = data_dir / f"entity_ents_{_ent_cache_key_pre}.json"
+    _ent_cache_exists    = _ent_vecs_cache_path.exists() and _ent_ents_cache_path.exists()
+
+    _needs_entity_embed_at_run = use_ner_x or use_entity_ref_expansion or concentration_threshold is not None
+    if _needs_entity_embed_at_run and not _ent_cache_exists:
+        raise RuntimeError(
+            f"Entity embedding cache missing for model '{EMBED_MODEL}' / spaCy '{SPACY_MODEL}'.\n"
+            f"Run: python demo/graphrag_bench.py prime-cache --out-dir {args.out_dir}"
+        )
     if _corpus_vecs is None:
-        print(f"Embedding {len(_corpus_qs)} questions (will cache)...")
-        _corpus_vecs = embed_model.encode(
-            [q["question"] for q in _corpus_qs],
-            normalize_embeddings=True, show_progress_bar=False, batch_size=256,
-        ).astype("float32")
-        np.save(str(q_vecs_cache), _corpus_vecs)
-        q_ids_cache.write_text(json.dumps(_corpus_ids), encoding="utf-8")
-        print(f"Cached → {q_vecs_cache}")
+        raise RuntimeError(
+            f"Question embedding cache missing.\n"
+            f"Run: python demo/graphrag_bench.py prime-cache --out-dir {args.out_dir}"
+        )
+
+    embed_model = None
+    if use_entity_ref_retry:
+        _embed_device = os.environ.get("EMBED_DEVICE") or None
+        if not _embed_device:
+            try:
+                import torch
+                if hasattr(torch.backends, "mps") and torch.backends.mps.is_available() and not torch.cuda.is_available():
+                    _embed_device = "cpu"
+            except ImportError:
+                pass
+        embed_model = SentenceTransformer(EMBED_MODEL, device=_embed_device) if _embed_device else SentenceTransformer(EMBED_MODEL)
 
     # Build lookup and align to the (possibly filtered/reordered) questions list
     _id_to_vec = {qid: _corpus_vecs[i] for i, qid in enumerate(_corpus_ids)}
@@ -1228,6 +1317,13 @@ def cmd_run(args: argparse.Namespace) -> None:
             from sentence_transformers import CrossEncoder
             import os as _os
             _rerank_device = _os.environ.get("RERANKER_DEVICE") or None
+            if not _rerank_device:
+                try:
+                    import torch
+                    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available() and not torch.cuda.is_available():
+                        _rerank_device = "cpu"
+                except ImportError:
+                    pass
             print(f"Loading reranker: {RERANK_MODEL}{'  [device='+_rerank_device+']' if _rerank_device else ''}...")
             reranker = CrossEncoder(RERANK_MODEL, max_length=512, device=_rerank_device) if _rerank_device else CrossEncoder(RERANK_MODEL, max_length=512)
 
@@ -1283,10 +1379,45 @@ def cmd_run(args: argparse.Namespace) -> None:
                 lane_entity_min_sim=lane_entity_min_sim,
             )
 
+        # Preload embeddings + chunk metadata into RAM (eliminates per-query DuckDB round-trips)
+        store.vector.preload_embeddings()
+        print(f"  Embeddings preloaded ({store.vector.count()} chunks).", flush=True)
+        if enhanced_search is not None:
+            enhanced_search.preload_chunk_cache()
+            print(f"  Chunk cache preloaded.", flush=True)
+        if _conc_search is not None:
+            _conc_search.preload_chunk_cache()
+
+        # Load pre-computed NER entity embeddings from cache (built by prime-cache)
+        _precomputed_entity_vecs: dict[str, np.ndarray] | None = None
+        _precomputed_question_entities: list[list[str]] | None = None
+        _needs_entity_embed = (
+            use_enhanced
+            and enhanced_search is not None
+            and (use_ner_x or use_entity_ref_expansion)
+        )
+        if _needs_entity_embed:
+            print(f"  Loading cached entity embeddings from {_ent_vecs_cache_path.name}", flush=True)
+            _npz = np.load(str(_ent_vecs_cache_path))
+            _ent_strings = list(_npz["strings"])
+            _ent_matrix  = _npz["vecs"]
+            _precomputed_entity_vecs = {s: _ent_matrix[i] for i, s in enumerate(_ent_strings)}
+            _q_entities_by_id: dict[str, list[str]] = json.loads(_ent_ents_cache_path.read_text())
+            _precomputed_question_entities = [
+                _q_entities_by_id.get(q.get("id", f"q{i}"), []) for i, q in pending
+            ]
+
+        # Phase 1: vector search for all questions (sequential, DuckDB serialized)
+        _all_hits: list[tuple] = []
+        _all_expansion_stats: list = []
         for j, (i, q) in enumerate(pending):
-            qid  = q.get("id", f"q{i}")
+            _q_entities = _precomputed_question_entities[j] if _precomputed_question_entities is not None else None
             if use_enhanced and enhanced_search is not None:
-                scored = enhanced_search.search(q_vecs[j], k=fetch_k, query_text=q["question"])
+                scored = enhanced_search.search(
+                    q_vecs[j], k=fetch_k, query_text=q["question"],
+                    query_entities=_q_entities,
+                    precomputed_entity_vecs=_precomputed_entity_vecs,
+                )
                 hits   = [(sc.chunk_id, sc.score, sc.chunk) for sc in scored]
                 expansion_stats = enhanced_search.last_expansion_stats
             else:
@@ -1297,7 +1428,6 @@ def cmd_run(args: argparse.Namespace) -> None:
                 )
                 expansion_stats = None
 
-            # ── Enhancement #1: Retrieval Concentration Gating ────────────────
             if _conc_search is not None:
                 src_counts: dict[str, int] = defaultdict(int)
                 for _, _, _chunk in hits:
@@ -1306,9 +1436,101 @@ def cmd_run(args: argparse.Namespace) -> None:
                 if _k_hits > 0:
                     _max_frac = max(src_counts.values()) / _k_hits
                     if _max_frac >= concentration_threshold:
-                        scored_conc = _conc_search.search(q_vecs[j], k=fetch_k, query_text=q["question"])
+                        scored_conc = _conc_search.search(
+                            q_vecs[j], k=fetch_k, query_text=q["question"],
+                            query_entities=_q_entities,
+                            precomputed_entity_vecs=_precomputed_entity_vecs,
+                        )
                         hits = [(sc.chunk_id, sc.score, sc.chunk) for sc in scored_conc]
                         expansion_stats = _conc_search.last_expansion_stats
+
+            _all_hits.append(hits)
+            _all_expansion_stats.append(expansion_stats)
+            if (j + 1) % 100 == 0 or (j + 1) == len(pending):
+                print(f"  Vector search {j+1}/{len(pending)}", flush=True)
+
+        # Phase 2: batch reranking across all questions (GPU fully utilized)
+        if use_rerank and reranker is not None:
+            print(f"  Batch reranking {len(_all_hits)} questions...", flush=True)
+            # Move embedder off GPU/MPS so reranker has full VRAM for large batches
+            try:
+                import torch
+                import gc
+                if embed_model is not None:
+                    del embed_model
+                    embed_model = None
+                    gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    # FFN intermediate dominates peak activation: B × seq_len × 4096 × 4 bytes
+                    # Use 75% of free VRAM, accounting for other in-flight tensors
+                    _free_mib = torch.cuda.mem_get_info()[0] // (1024 * 1024)
+                    # Empirical: ~20 MiB/sample peak activation (model weights + FFN + attention)
+                    # at seq_len=512 on XLM-RoBERTa-large. Scale by actual seq_len.
+                    _seq_len = getattr(reranker, "max_length", 512)
+                    _mib_per_sample = 20.0 * _seq_len / 512
+                    _rerank_batch_size = max(16, min(512, int(_free_mib * 0.55 / _mib_per_sample) // 16 * 16))
+                    print(f"  CUDA: {_free_mib} MiB free, computed batch_size={_rerank_batch_size}.", flush=True)
+                else:
+                    _rerank_batch_size = 64
+                    print("  CPU reranking, batch_size=64.", flush=True)
+            except Exception:
+                _rerank_batch_size = 64
+            _RERANK_CHUNK = 200
+            _rerank_ckpt_path = results_dir / f"{run_name}_rerank_ckpt.json"
+            # Load existing checkpoint: qid -> [chunk_id, ...]
+            _rerank_ckpt: dict[str, list[str]] = {}
+            if _rerank_ckpt_path.exists():
+                try:
+                    _rerank_ckpt = json.loads(_rerank_ckpt_path.read_text())
+                    print(f"  Rerank checkpoint: {len(_rerank_ckpt)} questions already done.", flush=True)
+                except Exception:
+                    _rerank_ckpt = {}
+            _reranked_hits: list = [None] * len(_all_hits)
+            # Build per-question chunk_id->hit lookup for checkpoint restoration
+            _hit_by_cid: list[dict] = [
+                {cid: (cid, sc, chunk) for cid, sc, chunk in _all_hits[j]}
+                for j in range(len(_all_hits))
+            ]
+            # Restore already-checkpointed questions
+            _pending_rerank_indices = []
+            for j, (i, q) in enumerate(pending):
+                qid = q.get("id", f"q{i}")
+                if qid in _rerank_ckpt:
+                    ordered = [_hit_by_cid[j][cid] for cid in _rerank_ckpt[qid] if cid in _hit_by_cid[j]]
+                    _reranked_hits[j] = ordered
+                else:
+                    _pending_rerank_indices.append(j)
+            if len(_pending_rerank_indices) < len(_all_hits):
+                print(f"  Restored {len(_all_hits) - len(_pending_rerank_indices)} from rerank checkpoint.", flush=True)
+            for _ci, _chunk_start in enumerate(range(0, len(_pending_rerank_indices), _RERANK_CHUNK)):
+                _chunk_idx = _pending_rerank_indices[_chunk_start:_chunk_start + _RERANK_CHUNK]
+                _chunk_end_display = _chunk_start + len(_chunk_idx)
+                _pair_offsets = [0]
+                _chunk_pairs = []
+                for j in _chunk_idx:
+                    q = pending[j][1]
+                    pairs = [(q["question"], chunk.content) for _, _, chunk in _all_hits[j]]
+                    _chunk_pairs.extend(pairs)
+                    _pair_offsets.append(len(_chunk_pairs))
+                _chunk_scores = reranker.predict(_chunk_pairs, batch_size=_rerank_batch_size, show_progress_bar=False)
+                for _ji, j in enumerate(_chunk_idx):
+                    scores = _chunk_scores[_pair_offsets[_ji]:_pair_offsets[_ji + 1]]
+                    ranked = sorted(zip(scores, _all_hits[j]), key=lambda x: x[0], reverse=True)[:top_k]
+                    _reranked_hits[j] = [h for _, h in ranked]
+                    qid = pending[j][1].get("id", f"q{pending[j][0]}")
+                    _rerank_ckpt[qid] = [h[0] for h in _reranked_hits[j]]
+                _rerank_ckpt_path.write_text(json.dumps(_rerank_ckpt))
+                print(f"  Reranked {_chunk_end_display}/{len(_pending_rerank_indices)} pending", flush=True)
+            _all_hits = _reranked_hits
+            _rerank_ckpt_path.unlink(missing_ok=True)
+            print(f"  Reranking complete.", flush=True)
+
+        for j, (i, q) in enumerate(pending):
+            qid  = q.get("id", f"q{i}")
+            hits = _all_hits[j]
+            expansion_stats = _all_expansion_stats[j]
+
             if use_rerank and together_rerank_client is not None:
                 docs   = [chunk.content for _, _, chunk in hits]
                 resp   = together_rerank_client.rerank.create(
@@ -1327,11 +1549,6 @@ def cmd_run(args: argparse.Namespace) -> None:
                     top_n=top_k,
                 )
                 hits   = [hits[r.index] for r in resp.results]
-            elif use_rerank and reranker is not None:
-                pairs  = [(q["question"], chunk.content) for _, _, chunk in hits]
-                scores = reranker.predict(pairs)
-                ranked = sorted(zip(scores, hits), key=lambda x: x[0], reverse=True)[:top_k]
-                hits   = [h for _, h in ranked]
             elif not use_rerank:
                 hits = hits[:top_k]
             if redundancy_threshold is not None:
@@ -1395,7 +1612,7 @@ def cmd_run(args: argparse.Namespace) -> None:
             }])
             if (j + 1) % 100 == 0 or (j + 1) == len(pending):
                 pct = 100 * (j + 1) // len(pending)
-                print(f"  Retrieved {j+1}/{len(pending)} ({pct}%)", flush=True)
+                print(f"  Generated {j+1}/{len(pending)} ({pct}%)", flush=True)
 
     # Build one client per endpoint (round-robin for parallelism across multiple dedicated endpoints)
     endpoint_ids: list[str] = getattr(args, "endpoint_ids", None) or [args.gen_model]
@@ -1428,7 +1645,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         for attempt in range(3):
             try:
                 answer = _generate(item["question"], item["context"], client, model,
-                                   temperature=gen_temperature)
+                                   temperature=gen_temperature, structured=use_structured_gen)
                 break
             except Exception as exc:
                 if attempt == 2:
@@ -1456,7 +1673,8 @@ def cmd_run(args: argparse.Namespace) -> None:
                 for attempt in range(3):
                     try:
                         retry_answer = _generate(item["question"], item["context"], client, model,
-                                                 temperature=gen_temperature, retry_hint=hint)
+                                                 temperature=gen_temperature, retry_hint=hint,
+                                                 structured=use_structured_gen)
                         break
                     except Exception as exc:
                         if attempt == 2:
@@ -1531,6 +1749,7 @@ def cmd_run(args: argparse.Namespace) -> None:
             f.write(json.dumps(r) + "\n")
 
     _write_results_to_db(run_db, all_results)
+    _run_completed[0] = True
     print(f"\nComplete: {len(all_results)} results → {results_f} + {run_db}")
 
 
@@ -1745,18 +1964,18 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
         }
 
         semaphore = asyncio.Semaphore(args.concurrency)
-        eval_rpm: int | None = getattr(args, "eval_rpm", None)
+        _judge_model = getattr(args, "judge", GEN_MODEL)
+        eval_rpm: int = getattr(args, "eval_rpm", None) or _model_rpm_limit(_judge_model)
         nan_limit: int | None = getattr(args, "nan_limit", None)
         _nan_final = [0]  # count of items finalized as NaN (shared across coroutines)
 
         # Token-bucket throttle: at most eval_rpm tokens per 60s window.
-        _rpm_tokens   = [float(eval_rpm or 0)]
+        _rpm_tokens   = [float(eval_rpm)]
         _rpm_last_ts  = [time.monotonic()]
         _rpm_lock     = asyncio.Lock()
+        print(f"[eval] RPM limit: {eval_rpm} (judge={_judge_model})", flush=True)
 
         async def _acquire_rpm_token():
-            if not eval_rpm:
-                return
             async with _rpm_lock:
                 import asyncio as _aio
                 now = time.monotonic()
@@ -1781,8 +2000,8 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
                 # Hold semaphore only during the API call — release it before any retry sleep
                 # so other items can proceed while this one waits.
                 async with semaphore:
+                    _t0 = time.monotonic()
                     try:
-                        await _acquire_rpm_token()
                         tasks = {}
                         if "rouge_score" in metrics:
                             tasks["rouge_score"] = compute_rouge_score(r["generated_answer"], r["ground_truth"])
@@ -1798,24 +2017,22 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
                             tasks["faithfulness"] = compute_faithfulness_score(
                                 r["question"], r["generated_answer"], r["context"], llm
                             )
+                        # answer_correctness = 3 LLM calls; others = 1 each; rouge_score = 0
+                        _rpm_weights = {"answer_correctness": 3, "coverage_score": 1, "faithfulness": 1}
+                        api_count = sum(_rpm_weights.get(k, 0) for k in tasks)
+                        for _ in range(api_count):
+                            await _acquire_rpm_token()
                         vals = await asyncio.gather(*tasks.values(), return_exceptions=True)
                         for key, val in zip(tasks.keys(), vals):
                             if isinstance(val, BaseException):
                                 print(f"[eval] {r['id']} {key} exception: {type(val).__name__}: {val}", flush=True)
                             result[key] = float(val) if isinstance(val, (int, float)) else float("nan")
                         nan_metrics = [k for k in tasks if k != "rouge_score" and result.get(k) != result.get(k)]
-                        if nan_metrics and attempt < 4:
-                            # Skip retry if already at/below nan_limit — no point burning calls
-                            if nan_limit is not None and _nan_final[0] <= nan_limit:
-                                print(f"[eval] {r['id']} NaN but global NaN count ({_nan_final[0]}) ≤ limit ({nan_limit}), skipping retry", flush=True)
-                                _nan_final[0] += 1
-                                return result
-                            # Semaphore released here — other items run during the sleep
-                            print(f"[eval] {r['id']} all LLM metrics NaN, retrying (attempt {attempt+1}/5)", flush=True)
-                        else:
-                            if nan_metrics:
-                                _nan_final[0] += 1
-                            return result
+                        if nan_metrics:
+                            # Parse failure (API responded but non-compliant) — do not retry, deterministic
+                            _nan_final[0] += 1
+                        print(f"[eval] {r['id']} done in {time.monotonic()-_t0:.1f}s metrics={list(tasks.keys())}", flush=True)
+                        return result
                     except Exception as e:
                         is_rate = "429" in str(e) or "rate_limit" in str(e).lower() or "RateLimit" in type(e).__name__
                         print(f"[eval] {r['id']} attempt {attempt+1}/5 {'rate-limit' if is_rate else 'error'}: {e}", flush=True)
@@ -1844,56 +2061,69 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
 
         async def _run_all():
             import asyncio as _aio
-            batch_size = getattr(args, "eval_batch_size", 10)
-            for batch_start in range(0, len(pending), batch_size):
-                batch = pending[batch_start:batch_start + batch_size]
-                results_batch = await _aio.gather(*[_eval_one_safe(r) for r in batch], return_exceptions=True)
-                batch_items = [item for item in results_batch if isinstance(item, dict)]
-                with open(ckpt_f, "a") as f:
-                    for item in batch_items:
-                        done[item["id"]] = item
-                        f.write(json.dumps(item) + "\n")
-                if batch_items and run_db.exists():
-                    con = _connect_with_retry(run_db)
-                    for item in batch_items:
-                        con.execute("DELETE FROM eval_scores WHERE id = ?", [item.get("id")])
+            _run_all_start = time.monotonic()
+            _completed = [0]
+            _ckpt_lock = _aio.Lock()
+
+            async def _eval_and_save(r: dict):
+                result = await _eval_one_safe(r)
+                if not isinstance(result, dict):
+                    return
+                async with _ckpt_lock:
+                    done[result["id"]] = result
+                    with open(ckpt_f, "a") as f:
+                        f.write(json.dumps(result) + "\n")
+                    if run_db.exists():
+                        con = _connect_with_retry(run_db)
+                        con.execute("DELETE FROM eval_scores WHERE id = ?", [result.get("id")])
                         con.execute(
                             "INSERT INTO eval_scores VALUES (?,?,?,?,?,?)",
                             [
-                                item.get("id"), item.get("question_type"),
-                                item.get("answer_correctness"), item.get("rouge_score"),
-                                item.get("coverage_score"), item.get("faithfulness"),
+                                result.get("id"), result.get("question_type"),
+                                result.get("answer_correctness"), result.get("rouge_score"),
+                                result.get("coverage_score"), result.get("faithfulness"),
                             ],
                         )
-                    con.close()
-                completed = min(batch_start + batch_size, len(pending))
-                print(f"  {completed}/{len(pending)} evaluated", flush=True)
-                _es_target = getattr(args, "early_stop_target", None)
-                _es_min_n  = getattr(args, "early_stop_min_n", 500)
-                if _es_target is not None and len(done) >= _es_min_n:
-                    import math as _math
-                    _scores = [
-                        v["answer_correctness"] for v in done.values()
-                        if "answer_correctness" in v
-                        and isinstance(v["answer_correctness"], float)
-                        and not _math.isnan(v["answer_correctness"])
-                    ]
-                    if len(_scores) >= _es_min_n:
-                        _n    = len(_scores)
-                        _mean = sum(_scores) / _n
-                        _var  = sum((s - _mean) ** 2 for s in _scores) / _n
-                        _se   = _math.sqrt(_var / _n) if _var > 0 else 0.0
-                        _uci  = _mean + 1.645 * _se
-                        _n_remaining = len(pending) - completed
-                        _max_possible = (_n * _mean + _n_remaining) / (_n + _n_remaining) if (_n + _n_remaining) > 0 else 0.0
-                        print(f"  [early-stop] n={_n} mean={_mean:.4f} upper_95={_uci:.4f} max_possible={_max_possible:.4f} target={_es_target:.4f}", flush=True)
-                        if _max_possible < _es_target:
-                            print(f"\n=== EARLY STOP: max_possible {_max_possible:.4f} < target {_es_target:.4f} — mathematically impossible to win ===", flush=True)
-                            sys.exit(2)
-                        if _uci < _es_target:
-                            print(f"\n=== EARLY STOP: upper_95 CI {_uci:.4f} < target {_es_target:.4f} — aborting ===", flush=True)
-                            sys.exit(2)
-                await _aio.sleep(3)   # pace between batches to avoid TPM burst
+                        con.close()
+                    _completed[0] += 1
+                    _total_elapsed = time.monotonic() - _run_all_start
+                    _qpm = _completed[0] / (_total_elapsed / 60.0) if _total_elapsed > 0 else 0
+                    if _completed[0] % 20 == 0:
+                        print(f"  {_completed[0]}/{len(pending)} evaluated | elapsed={_total_elapsed:.0f}s | avg={_qpm:.1f}q/min", flush=True)
+                        await _check_early_stop()
+
+            _es_target = getattr(args, "early_stop_target", None)
+            _es_min_n  = getattr(args, "early_stop_min_n", 500)
+
+            async def _check_early_stop():
+                import math as _math
+                if _es_target is None or len(done) < _es_min_n:
+                    return
+                _scores = [
+                    v["answer_correctness"] for v in done.values()
+                    if "answer_correctness" in v
+                    and isinstance(v["answer_correctness"], float)
+                    and not _math.isnan(v["answer_correctness"])
+                ]
+                if len(_scores) < _es_min_n:
+                    return
+                completed = _completed[0]
+                _n    = len(_scores)
+                _mean = sum(_scores) / _n
+                _var  = sum((s - _mean) ** 2 for s in _scores) / _n
+                _se   = _math.sqrt(_var / _n) if _var > 0 else 0.0
+                _uci  = _mean + 1.645 * _se
+                _n_remaining = len(pending) - completed
+                _max_possible = (_n * _mean + _n_remaining) / (_n + _n_remaining) if (_n + _n_remaining) > 0 else 0.0
+                print(f"  [early-stop] n={_n} mean={_mean:.4f} upper_95={_uci:.4f} max_possible={_max_possible:.4f} target={_es_target:.4f}", flush=True)
+                if _max_possible < _es_target:
+                    print(f"\n=== EARLY STOP: max_possible {_max_possible:.4f} < target {_es_target:.4f} — mathematically impossible to win ===", flush=True)
+                    sys.exit(2)
+                if _uci < _es_target:
+                    print(f"\n=== EARLY STOP: upper_95 CI {_uci:.4f} < target {_es_target:.4f} — aborting ===", flush=True)
+                    sys.exit(2)
+
+            await _aio.gather(*[_eval_and_save(r) for r in pending], return_exceptions=True)
 
         asyncio.run(_run_all())
 
@@ -2282,6 +2512,89 @@ def cmd_provision(args: argparse.Namespace) -> None:
             print(f"  Stopped {eid}")
 
 
+def cmd_prime_cache(args: argparse.Namespace) -> None:
+    """Pre-compute and persist question + entity embedding caches."""
+    import hashlib
+    import numpy as np
+    from pathlib import Path
+    from sentence_transformers import SentenceTransformer
+    from chonk.ner import SpacyMatcher
+
+    out_dir   = Path(args.out_dir)
+    data_dir  = out_dir / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+
+    embed_model_name = args.embed_model or EMBED_MODEL
+    spacy_model_name = args.spacy_model or SPACY_MODEL
+
+    _embed_device = os.environ.get("EMBED_DEVICE") or None
+    if not _embed_device:
+        try:
+            import torch
+            if hasattr(torch.backends, "mps") and torch.backends.mps.is_available() and not torch.cuda.is_available():
+                _embed_device = "cpu"
+        except ImportError:
+            pass
+
+    print(f"Loading embed model: {embed_model_name}" + (f" [{_embed_device}]" if _embed_device else ""))
+    embed_model = SentenceTransformer(embed_model_name, device=_embed_device) if _embed_device else SentenceTransformer(embed_model_name)
+
+    # ── Question embeddings ───────────────────────────────────────────────────
+    corpus_qs  = _load_questions(data_dir)
+    corpus_ids = [q.get("id", f"q{i}") for i, q in enumerate(corpus_qs)]
+    q_vecs_cache = data_dir / "question_embeddings.npy"
+    q_ids_cache  = data_dir / "question_ids.json"
+
+    if q_vecs_cache.exists() and q_ids_cache.exists():
+        if json.loads(q_ids_cache.read_text()) == corpus_ids:
+            print(f"Question embeddings already cached ({len(corpus_ids)} questions). Skipping.")
+        else:
+            q_vecs_cache.unlink()
+            q_ids_cache.unlink()
+            print("Question ID mismatch — rebuilding question embeddings.")
+
+    if not q_vecs_cache.exists():
+        print(f"Embedding {len(corpus_qs)} questions...")
+        q_vecs = embed_model.encode(
+            [q["question"] for q in corpus_qs],
+            normalize_embeddings=True, show_progress_bar=True, batch_size=256,
+        ).astype("float32")
+        np.save(str(q_vecs_cache), q_vecs)
+        q_ids_cache.write_text(json.dumps(corpus_ids), encoding="utf-8")
+        print(f"Saved → {q_vecs_cache.name}")
+
+    # ── Entity embeddings ─────────────────────────────────────────────────────
+    cache_key    = hashlib.md5(
+        (embed_model_name + spacy_model_name + json.dumps(corpus_ids)).encode()
+    ).hexdigest()[:16]
+    ent_vecs_cache = data_dir / f"entity_vecs_{cache_key}.npz"
+    ent_ents_cache = data_dir / f"entity_ents_{cache_key}.json"
+
+    if ent_vecs_cache.exists() and ent_ents_cache.exists():
+        print(f"Entity caches already exist ({ent_vecs_cache.name}). Skipping.")
+    else:
+        print(f"Running NER on {len(corpus_qs)} questions (spaCy: {spacy_model_name})...")
+        ner = SpacyMatcher(model=spacy_model_name, strip_numeric=True)
+        q_entities_by_id: dict[str, list[str]] = {}
+        for i, q in enumerate(corpus_qs):
+            qid = corpus_ids[i]
+            q_entities_by_id[qid] = [m.name for m in ner.match(q["question"])]
+            if (i + 1) % 500 == 0 or (i + 1) == len(corpus_qs):
+                print(f"  NER {i+1}/{len(corpus_qs)}", flush=True)
+
+        all_unique_ents = list({e for ents in q_entities_by_id.values() for e in ents})
+        print(f"Batch-embedding {len(all_unique_ents)} unique entities...")
+        ent_vecs = embed_model.encode(
+            all_unique_ents, normalize_embeddings=True,
+            show_progress_bar=True, batch_size=256,
+        ).astype("float32")
+        np.savez(str(ent_vecs_cache), strings=np.array(all_unique_ents), vecs=ent_vecs)
+        ent_ents_cache.write_text(json.dumps(q_entities_by_id), encoding="utf-8")
+        print(f"Saved → {ent_vecs_cache.name}, {ent_ents_cache.name}")
+
+    print("prime-cache complete.")
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # CLI
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2404,6 +2717,8 @@ def _make_parser() -> argparse.ArgumentParser:
     g_misc = p.add_argument_group("misc")
     g_misc.add_argument("--entity-ref-retry", action="store_true", dest="entity_ref_retry",
                         help="On refusal answer, retry with partial-answer hint (max 1 retry)")
+    g_misc.add_argument("--structured-gen", action="store_true", dest="structured_gen",
+                        help="Require ANSWER: <text> format from generator; retry once if non-compliant; strip marker before judge")
     g_misc.add_argument("--top-k", type=int, default=None, dest="top_k", metavar="K",
                         help=f"Override retrieval top-k (default: {K})")
     g_misc.add_argument("--db-name", default=None, dest="db_name",
@@ -2494,6 +2809,15 @@ def _make_parser() -> argparse.ArgumentParser:
     p.add_argument("--output", default=None, metavar="PATH",
                    help="Output JSON path (default: {out_dir}/data/full_corpus_stratified_order.json)")
     p.set_defaults(func=cmd_make_order)
+
+    # prime-cache — pre-compute and persist all question + entity embeddings
+    p = sub.add_parser("prime-cache", help="Pre-compute question and entity embedding caches (run before 'run')")
+    p.add_argument("--out-dir", default="/tmp/grb", metavar="DIR")
+    p.add_argument("--embed-model", default=None, metavar="MODEL",
+                   help=f"Embedding model (default: {EMBED_MODEL})")
+    p.add_argument("--spacy-model", default=None, metavar="MODEL",
+                   help=f"spaCy NER model (default: {SPACY_MODEL})")
+    p.set_defaults(func=cmd_prime_cache)
 
     # report — combined matrix of all eval runs + leaderboard
     p = sub.add_parser("report", help="Combined matrix: our eval runs + leaderboard")

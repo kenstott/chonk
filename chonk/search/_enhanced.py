@@ -93,6 +93,8 @@ class EnhancedSearch:
         self._store = store
         self._entity_index = entity_index
         self._cluster_map = cluster_map
+        self._chunk_cache: dict[str, "DocumentChunk"] | None = None
+        self._embedding_cache: dict[str, list[float]] | None = None
         self._seed_multiplier = seed_pool_multiplier
         self._entity_top_n = entity_expansion_top_n
         self._cluster_budget = cluster_budget  # resolved to 2*k at call time if None
@@ -127,6 +129,7 @@ class EnhancedSearch:
         k: int = 5,
         query_text: str | None = None,
         query_entities: list[str] | None = None,
+        precomputed_entity_vecs: dict[str, "np.ndarray"] | None = None,
     ) -> list[ScoredChunk]:
         """Assemble a top-k cohort using all enabled expansion dimensions.
 
@@ -175,7 +178,7 @@ class EnhancedSearch:
         # ------ Step 3: Entity expansion ------------------------------------
         entity_source_ids = list(pool.keys())  # seed + structural
         expanded_entity_ids: set[str] = set()
-        query_vec_flat = list(query_embedding.flatten()) if self._lane_entity_min_sim is not None else None
+        query_vec_flat = query_embedding.flatten().astype("float32") if self._lane_entity_min_sim is not None else None
 
         if self._entity and self._entity_index is not None:
             for cid in entity_source_ids:
@@ -187,7 +190,7 @@ class EnhancedSearch:
                         if linked_chunk_id not in pool:
                             if query_vec_flat is not None:
                                 emb = self._get_embedding(linked_chunk_id)
-                                if emb and self._cosine_similarity(query_vec_flat, emb) < self._lane_entity_min_sim:
+                                if emb is not None and self._cosine_similarity(query_vec_flat, emb) < self._lane_entity_min_sim:
                                     continue
                             chunk = self._fetch_chunk(linked_chunk_id)
                             if chunk is not None:
@@ -234,30 +237,36 @@ class EnhancedSearch:
             and self._entity_index is not None
             and query_text
             and self._ner_fn is not None
-            and self._embed_fn is not None
+            and (self._embed_fn is not None or precomputed_entity_vecs is not None)
         ):
             import numpy as np
-            query_ents = self._ner_fn(query_text)
+            query_ents = query_entities if query_entities is not None else self._ner_fn(query_text)
             if query_ents:
-                q_ent_vecs = self._embed_fn(query_ents)  # (n_query_ents, dim)
-                scores = q_ent_vecs @ self._entity_embeddings.T  # (n_query_ents, n_entities)
-                max_scores = scores.max(axis=0)  # (n_entities,)
-                top_indices = np.argsort(-max_scores)[: self._entity_embed_top_k]
-                for idx in top_indices:
-                    eid = self._entity_embedding_ids[int(idx)]
-                    for linked_chunk_id, _ in self._entity_index.get_chunks_for_entity(
-                        eid, top_n=2
-                    ):
-                        if linked_chunk_id not in pool:
-                            chunk = self._fetch_chunk(linked_chunk_id)
-                            if chunk is not None:
-                                pool[linked_chunk_id] = ScoredChunk(
-                                    chunk_id=linked_chunk_id,
-                                    chunk=chunk,
-                                    score=0.0,
-                                    provenance="entity_adjacent",
-                                    linked_by=eid,
-                                )
+                if precomputed_entity_vecs is not None:
+                    vecs = [precomputed_entity_vecs[e] for e in query_ents if e in precomputed_entity_vecs]
+                    q_ent_vecs = np.stack(vecs) if vecs else None
+                    query_ents = [e for e in query_ents if e in precomputed_entity_vecs]
+                else:
+                    q_ent_vecs = self._embed_fn(query_ents)
+                if q_ent_vecs is not None and len(query_ents) > 0:
+                    scores = q_ent_vecs @ self._entity_embeddings.T  # (n_query_ents, n_entities)
+                    max_scores = scores.max(axis=0)  # (n_entities,)
+                    top_indices = np.argsort(-max_scores)[: self._entity_embed_top_k]
+                    for idx in top_indices:
+                        eid = self._entity_embedding_ids[int(idx)]
+                        for linked_chunk_id, _ in self._entity_index.get_chunks_for_entity(
+                            eid, top_n=2
+                        ):
+                            if linked_chunk_id not in pool:
+                                chunk = self._fetch_chunk(linked_chunk_id)
+                                if chunk is not None:
+                                    pool[linked_chunk_id] = ScoredChunk(
+                                        chunk_id=linked_chunk_id,
+                                        chunk=chunk,
+                                        score=0.0,
+                                        provenance="entity_adjacent",
+                                        linked_by=eid,
+                                    )
 
         # ------ Step 6: Score and select top-k ------------------------------
         candidates = list(pool.values())
@@ -270,7 +279,7 @@ class EnhancedSearch:
             if ents is None and self._query_ner_fn is not None and query_text:
                 ents = self._query_ner_fn(query_text)
             if ents:
-                results = self._entity_ref_expand(results, pool, query_embedding, ents, k, query_text)
+                results = self._entity_ref_expand(results, pool, query_embedding, ents, k, query_text, precomputed_entity_vecs)
 
         return results
 
@@ -286,6 +295,7 @@ class EnhancedSearch:
         query_entities: list[str],
         k: int,
         query_text: str | None,
+        precomputed_entity_vecs: dict[str, "np.ndarray"] | None = None,
     ) -> list[ScoredChunk]:
         """Post-selection: if query entities are absent from top-k, expand via semantic search."""
         result_text = " ".join((sc.chunk.content or "") for sc in results).lower()
@@ -298,15 +308,21 @@ class EnhancedSearch:
         new_pool = dict(existing_pool)
         found_entities: list[str] = []
 
-        if self._embed_fn is not None:
+        if self._embed_fn is not None or precomputed_entity_vecs is not None:
             # Semantic: per-entity vector search
             if self._entity_ref_expansion_per_k is not None:
                 per_k = self._entity_ref_expansion_per_k
             else:
                 per_k = max(3, self._entity_ref_expansion_k // max(len(missing), 1))
             min_sim = self._entity_ref_expansion_min_sim
-            entity_vecs = self._embed_fn(missing)
-            for i, entity in enumerate(missing):
+            if precomputed_entity_vecs is not None:
+                available = [e for e in missing if e in precomputed_entity_vecs]
+                entity_vecs = np.stack([precomputed_entity_vecs[e] for e in available]) if available else None
+                missing = available
+            else:
+                entity_vecs = self._embed_fn(missing)
+            _missing_iter = missing if (entity_vecs is not None and len(missing) > 0) else []
+            for i, entity in enumerate(_missing_iter):
                 hits = self._store.search(entity_vecs[i], limit=per_k, query_text=None)
                 for chunk_id, score, chunk in hits:
                     if min_sim is not None and score < min_sim:
@@ -386,9 +402,34 @@ class EnhancedSearch:
                     results.append((cid, chunk))
         return results
 
-    def _fetch_chunk(self, chunk_id: str) -> DocumentChunk | None:
-        """Fetch a single chunk by ID from the vector store."""
-        # DuckDB direct lookup
+    def preload_chunk_cache(self) -> None:
+        """Preload all chunk metadata and embeddings into memory."""
+        try:
+            rows = self._store.vector._conn.execute(
+                "SELECT chunk_id, document_name, content, section, chunk_index, "
+                "source_offset, source_length, embedding FROM embeddings"
+            ).fetchall()
+        except Exception:
+            return
+        self._chunk_cache = {}
+        self._embedding_cache = {}
+        for row in rows:
+            cid, doc, content, section, idx, off, length, emb = row
+            self._chunk_cache[cid] = DocumentChunk(
+                document_name=doc,
+                content=content,
+                section=section,
+                chunk_index=idx,
+                source_offset=off,
+                source_length=length,
+            )
+            if emb is not None:
+                self._embedding_cache[cid] = np.array(emb, dtype="float32")
+
+    def _fetch_chunk(self, chunk_id: str) -> "DocumentChunk | None":
+        """Fetch a single chunk by ID — from cache if available, else DuckDB."""
+        if self._chunk_cache is not None:
+            return self._chunk_cache.get(chunk_id)
         try:
             rows = self._store.vector._conn.execute(
                 "SELECT document_name, content, section, chunk_index, "
@@ -413,17 +454,17 @@ class EnhancedSearch:
     # Scoring and selection (greedy sequential MMR)
     # ------------------------------------------------------------------
 
-    def _cosine_similarity(self, a: list[float], b: list[float]) -> float:
+    def _cosine_similarity(self, a, b) -> float:
         """Cosine similarity between two embedding vectors."""
-        dot = sum(x * y for x, y in zip(a, b))
-        norm_a = math.sqrt(sum(x * x for x in a))
-        norm_b = math.sqrt(sum(x * x for x in b))
-        if norm_a == 0 or norm_b == 0:
-            return 0.0
-        return dot / (norm_a * norm_b)
+        a = np.asarray(a, dtype="float32")
+        b = np.asarray(b, dtype="float32")
+        denom = np.linalg.norm(a) * np.linalg.norm(b)
+        return float(np.dot(a, b) / denom) if denom > 0 else 0.0
 
-    def _get_embedding(self, chunk_id: str) -> list[float] | None:
-        """Fetch embedding vector for a chunk from DuckDB."""
+    def _get_embedding(self, chunk_id: str) -> "np.ndarray | list[float] | None":
+        """Fetch embedding vector for a chunk — from cache if available, else DuckDB."""
+        if self._embedding_cache is not None:
+            return self._embedding_cache.get(chunk_id)
         try:
             rows = self._store.vector._conn.execute(
                 "SELECT embedding FROM embeddings WHERE chunk_id = ?",
@@ -462,8 +503,8 @@ class EnhancedSearch:
         for sc in candidates:
             raw = self._get_embedding(sc.chunk_id)
             sc.embedding = raw
-            if raw and len(raw) == dim:
-                arr = np.array(raw, dtype=np.float32)
+            if raw is not None and len(raw) == dim:
+                arr = np.asarray(raw, dtype=np.float32)
                 norm = np.linalg.norm(arr)
                 unit = arr / norm if norm > 0 else arr
                 rel = float(np.dot(q_unit, unit))
