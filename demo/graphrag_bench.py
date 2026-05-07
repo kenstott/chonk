@@ -40,8 +40,7 @@ except ImportError:
     pass
 
 sys.path.insert(0, str(_PROJECT_ROOT))
-from chonk import DocumentLoader, NOVEL_STRUCTURAL_LEVELS
-from chonk import chunk_document, promote_plain_text_headers
+from chonk import NOVEL_STRUCTURAL_LEVELS, chunk_document, promote_plain_text_headers
 from chonk.context import enrich_chunks
 from chonk.storage._store import Store
 
@@ -201,7 +200,7 @@ def cmd_inspect(args: argparse.Namespace) -> None:
         print("  Datasets/ directory not found in cloned repo.")
 
     ev_chars = sum(len(str(p)) for q in questions for p in q.get("evidence", []))
-    print(f"\n  Evidence reconstruction fallback:")
+    print("\n  Evidence reconstruction fallback:")
     print(f"    Total evidence chars across all questions: {ev_chars:,}")
     seen: set[str] = set()
     for q in questions:
@@ -223,7 +222,7 @@ def cmd_inspect(args: argparse.Namespace) -> None:
         "corpus_source": "repo" if corpus_files else "evidence_reconstruction",
     }
     (out_dir / "corpus_info.json").write_text(json.dumps(info, indent=2), encoding="utf-8")
-    print(f"\nSaved corpus_info.json")
+    print("\nSaved corpus_info.json")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -432,6 +431,7 @@ def cmd_index_vanilla(args: argparse.Namespace) -> None:
     """Build vanilla RAG index: naive 256-token fixed chunks, no breadcrumbs."""
     import numpy as np
     from sentence_transformers import SentenceTransformer
+
     from chonk.models import DocumentChunk
 
     out_dir  = Path(args.out_dir)
@@ -596,12 +596,10 @@ def _generate(question: str, context: str, client, model: str = GEN_MODEL,
     return answer2 if answer2 is not None else raw2
 
 
-def _build_entity_index_from_store(store) -> "EntityIndex":
+def _build_entity_index_from_store(store) -> EntityIndex:
     """Run NER on all chunks in store and return a populated EntityIndex."""
-    from chonk.ner import SpacyMatcher, EntityIndex
+    from chonk.ner import EntityIndex, SpacyLabel, SpacyMatcher
     from chonk.storage._vector import DuckDBVectorBackend
-
-    from chonk.ner import SpacyLabel
     _NUMERIC_TYPES = {SpacyLabel.CARDINAL, SpacyLabel.ORDINAL, SpacyLabel.MONEY,
                       SpacyLabel.PERCENT, SpacyLabel.QUANTITY}
     _label_types = [t for t in SpacyLabel if t not in _NUMERIC_TYPES]
@@ -625,7 +623,6 @@ def _build_entity_index_from_store(store) -> "EntityIndex":
 
 def _persist_entity_index(entity_index, db_path: Path) -> None:
     """Write entity_index associations to chunk_entities/entities tables."""
-    import duckdb
 
     print("  Persisting to chunk_entities table...")
     data = entity_index.to_dict()
@@ -647,8 +644,6 @@ def _persist_entity_index(entity_index, db_path: Path) -> None:
 
 def _build_and_persist_entity_embeddings(entity_index, embed_model, db_path: Path) -> None:
     """Embed all unique entity name strings and store in entity_embeddings table."""
-    import duckdb
-    import numpy as np
 
     entity_ids = list(entity_index.entity_ids())
     if not entity_ids:
@@ -677,6 +672,7 @@ def cmd_build_community(args: argparse.Namespace) -> None:
     import duckdb
     import numpy as np
     from sentence_transformers import SentenceTransformer
+
     from chonk.community import CommunityIndex
 
     data_dir = Path(args.out_dir) / "data"
@@ -769,7 +765,9 @@ def cmd_build_community(args: argparse.Namespace) -> None:
 
 def _connect_with_retry(db_path, max_attempts: int = 30, delay: float = 2.0):
     """Open a DuckDB write connection, retrying on lock conflicts."""
-    import duckdb, time as _time
+    import time as _time
+
+    import duckdb
     for attempt in range(max_attempts):
         try:
             return duckdb.connect(str(db_path))
@@ -866,7 +864,9 @@ def _write_results_to_db(db_path: Path, results: list[dict]) -> None:
 
 
 def _read_results_from_db(db_path: Path) -> list[dict]:
-    import duckdb, json as _json
+    import json as _json
+
+    import duckdb
     con = duckdb.connect(str(db_path), read_only=True)
     rows = con.execute("SELECT * FROM results").fetchall()
     cols = ["id","question","source","question_type","context","evidence",
@@ -919,9 +919,10 @@ def _load_entity_embeddings(db_path: Path):
     return mat, ids
 
 
-def _load_entity_index_from_db(db_path: Path) -> "EntityIndex":
+def _load_entity_index_from_db(db_path: Path) -> EntityIndex:
     """Reconstruct EntityIndex from persisted chunk_entities table."""
     import duckdb
+
     from chonk.ner import EntityIndex
 
     con = duckdb.connect(str(db_path), read_only=True)
@@ -987,7 +988,8 @@ def _prune_redundant(hits, db_conn, threshold):
 def _build_enhanced_search(store, db_path: Path | None = None, use_ner_x: bool = False, embed_model=None, entity_ref_expansion: bool = False, entity_ref_expansion_k: int = 20, entity_ref_expansion_per_k: int | None = None, entity_ref_expansion_min_sim: float | None = None, use_cluster: bool = False, lane_entity_min_sim: float | None = None):
     """Load EnhancedSearch: from pre-built DB tables if available, else rebuild in memory."""
     import duckdb
-    from chonk.ner import SpacyMatcher, EntityIndex
+
+    from chonk.ner import EntityIndex, SpacyMatcher
     from chonk.search import EnhancedSearch
     from chonk.storage._vector import DuckDBVectorBackend
 
@@ -1085,9 +1087,10 @@ def _build_enhanced_search(store, db_path: Path | None = None, use_ner_x: bool =
 def cmd_run(args: argparse.Namespace) -> None:
     import threading
     from concurrent.futures import ThreadPoolExecutor, as_completed
+
     import numpy as np
-    from sentence_transformers import SentenceTransformer
     import openai
+    from sentence_transformers import SentenceTransformer
 
     out_dir     = Path(args.out_dir)
     data_dir    = out_dir / "data"
@@ -1096,7 +1099,8 @@ def cmd_run(args: argparse.Namespace) -> None:
     run_name     = getattr(args, "run_name", "contextual")
 
     # Kill any stale processes already running the same run-name
-    import signal, subprocess as _sp
+    import signal
+    import subprocess as _sp
     _my_pid = os.getpid()
     try:
         _procs = _sp.check_output(
@@ -1177,13 +1181,16 @@ def cmd_run(args: argparse.Namespace) -> None:
     _flags_path = results_dir / f"{run_name}_flags.json"
     _flags_path.write_text(json.dumps(_flags, indent=2), encoding="utf-8")
 
-    import signal as _signal, atexit as _atexit
+    import atexit as _atexit
+    import signal as _signal
     _run_completed = [False]
     def _cleanup_flags():
         if not _run_completed[0] and _flags_path.exists():
             _flags_path.unlink(missing_ok=True)
         try:
-            import torch, gc
+            import gc
+
+            import torch
             gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
@@ -1242,7 +1249,6 @@ def cmd_run(args: argparse.Namespace) -> None:
     # ── 1. Embed all questions (full-corpus cache — order-independent across runs)
     # Cache key is the full unfiltered corpus so any --question-ids subset or
     # reordering reuses the same cache file via ID lookup.
-    import numpy as np
     q_vecs_cache = data_dir / "question_embeddings.npy"
     q_ids_cache  = data_dir / "question_ids.json"
 
@@ -1314,8 +1320,9 @@ def cmd_run(args: argparse.Namespace) -> None:
             cohere_rerank_client = cohere.ClientV2(api_key=os.environ["COHERE_API_KEY"])
             print(f"Using Cohere reranker: {RERANK_MODEL_COHERE}")
         else:
-            from sentence_transformers import CrossEncoder
             import os as _os
+
+            from sentence_transformers import CrossEncoder
             _rerank_device = _os.environ.get("RERANKER_DEVICE") or None
             if not _rerank_device:
                 try:
@@ -1353,7 +1360,7 @@ def cmd_run(args: argparse.Namespace) -> None:
     if needs_ner_for_complexity or needs_ner_for_concentration:
         from chonk.ner import SpacyMatcher
         _complexity_matcher = SpacyMatcher(model=SPACY_MODEL, strip_numeric=True)
-        print(f"Loaded SpacyMatcher for query complexity / concentration gating.")
+        print("Loaded SpacyMatcher for query complexity / concentration gating.")
 
     work_items: list[dict] = []
     with Store(db_path, embedding_dim=EMBED_DIM, read_only=True) as store:
@@ -1384,7 +1391,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         print(f"  Embeddings preloaded ({store.vector.count()} chunks).", flush=True)
         if enhanced_search is not None:
             enhanced_search.preload_chunk_cache()
-            print(f"  Chunk cache preloaded.", flush=True)
+            print("  Chunk cache preloaded.", flush=True)
         if _conc_search is not None:
             _conc_search.preload_chunk_cache()
 
@@ -1454,8 +1461,9 @@ def cmd_run(args: argparse.Namespace) -> None:
             print(f"  Batch reranking {len(_all_hits)} questions...", flush=True)
             # Move embedder off GPU/MPS so reranker has full VRAM for large batches
             try:
-                import torch
                 import gc
+
+                import torch
                 if embed_model is not None:
                     del embed_model
                     embed_model = None
@@ -1476,7 +1484,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                     print("  CPU reranking, batch_size=64.", flush=True)
             except Exception:
                 _rerank_batch_size = 64
-            _RERANK_CHUNK = 200
+            _RERANK_CHUNK = args.rerank_chunk
             _rerank_ckpt_path = results_dir / f"{run_name}_rerank_ckpt.json"
             # Load existing checkpoint: qid -> [chunk_id, ...]
             _rerank_ckpt: dict[str, list[str]] = {}
@@ -1523,8 +1531,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                 _rerank_ckpt_path.write_text(json.dumps(_rerank_ckpt))
                 print(f"  Reranked {_chunk_end_display}/{len(_pending_rerank_indices)} pending", flush=True)
             _all_hits = _reranked_hits
-            _rerank_ckpt_path.unlink(missing_ok=True)
-            print(f"  Reranking complete.", flush=True)
+            print("  Reranking complete.", flush=True)
 
         for j, (i, q) in enumerate(pending):
             qid  = q.get("id", f"q{i}")
@@ -1655,7 +1662,6 @@ def cmd_run(args: argparse.Namespace) -> None:
 
         retry_stats: dict | None = None
         if use_entity_ref_retry and retry_ner_fn is not None:
-            import numpy as np
             q_entities = retry_ner_fn(item["question"])
             uncovered: list[str] = []
             if q_entities:
@@ -1676,7 +1682,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                                                  temperature=gen_temperature, retry_hint=hint,
                                                  structured=use_structured_gen)
                         break
-                    except Exception as exc:
+                    except Exception:
                         if attempt == 2:
                             retry_answer = answer
                         else:
@@ -1748,6 +1754,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         for r in all_results:
             f.write(json.dumps(r) + "\n")
 
+    _rerank_ckpt_path.unlink(missing_ok=True)
     _write_results_to_db(run_db, all_results)
     _run_completed[0] = True
     print(f"\nComplete: {len(all_results)} results → {results_f} + {run_db}")
@@ -1766,6 +1773,7 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
     """Run benchmark's native generation_eval.py on our output with checkpointing."""
     import asyncio
     import sys
+
     import numpy as np
 
     out_dir     = Path(args.out_dir)
@@ -1835,15 +1843,15 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
     else:
         # Add benchmark repo to path
         sys.path.insert(0, str(repo_dir))
-        from pydantic import SecretStr
-        from langchain_openai import ChatOpenAI
-        from Evaluation.metrics import (
-            compute_answer_correctness, compute_coverage_score,
-            compute_faithfulness_score, compute_rouge_score,
-        )
-
-        from tenacity import retry, wait_exponential, retry_if_exception_type, stop_after_attempt
         import httpx
+        from Evaluation.metrics import (
+            compute_answer_correctness,
+            compute_coverage_score,
+            compute_faithfulness_score,
+            compute_rouge_score,
+        )
+        from langchain_openai import ChatOpenAI
+        from pydantic import SecretStr
 
         judge_provider = getattr(args, "judge_provider", "openai")
         _http_client = httpx.AsyncClient(
@@ -1876,8 +1884,8 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
 
         # ── Pre-compute embeddings in one batched pass ──────────────────────
         # Ground truth embeddings are shared across runs; cache to disk.
-        from sentence_transformers import SentenceTransformer
         from langchain_core.embeddings import Embeddings as LCEmbeddings
+        from sentence_transformers import SentenceTransformer
 
         gt_cache_f = out_dir / "data" / "gt_embeddings.npy"
         gt_id_f    = out_dir / "data" / "gt_embedding_ids.json"
@@ -1894,7 +1902,7 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
             _cached_gt_ids = json.loads(gt_id_f.read_text())
             # Hit if cached IDs are a superset of what we need (common in full→grid direction)
             if set(_gt_ids_sorted).issubset(set(_cached_gt_ids)):
-                print(f"Loading cached ground-truth embeddings...")
+                print("Loading cached ground-truth embeddings...")
                 _all_gt_vecs = np.load(str(gt_cache_f))
                 _cached_id_idx = {qid: i for i, qid in enumerate(_cached_gt_ids)}
                 _gt_cache_vecs = np.stack([_all_gt_vecs[_cached_id_idx[qid]] for qid in _gt_ids_sorted])
@@ -1923,7 +1931,7 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
         all_ans_ids   = [r["id"] for r in bench_records]
         all_ans_texts = [r["generated_answer"] for r in bench_records]
         if ans_cache_f.exists() and ans_id_f.exists() and json.loads(ans_id_f.read_text()) == all_ans_ids:
-            print(f"Loading cached answer embeddings...")
+            print("Loading cached answer embeddings...")
             all_ans_vecs = np.load(str(ans_cache_f))
         else:
             print(f"Encoding {len(all_ans_texts)} answer texts (batched)...")
@@ -2053,7 +2061,7 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
             import asyncio as _aio
             try:
                 return await _aio.wait_for(_eval_one(r), timeout=300)
-            except _aio.TimeoutError:
+            except TimeoutError:
                 print(f"[eval] {r['id']} timed out after 300s — skipping", flush=True)
                 qtype = r.get("question_type", "?")
                 return {"id": r["id"], "question_type": qtype,
@@ -2399,9 +2407,9 @@ def cmd_bench_report(args: argparse.Namespace) -> None:
         ov  = f"{scores['overall']:.3f}" if scores["overall"] is not None else "   —"
         print(f"  {name:<28}  {med:>8}  {nov:>8}  {ov:>8}")
 
-    print(f"\n  * Leaderboard: gpt-4o-mini generator + gpt-4o-mini judge (arXiv:2506.05690).")
-    print(f"  * Our bench-eval: gpt-4o-mini generator + gpt-4o-mini judge, answer_correctness metric.")
-    print(f"  * Overall = mean(Med, Nov); Med/Nov = mean of 4 question-type ACC scores.")
+    print("\n  * Leaderboard: gpt-4o-mini generator + gpt-4o-mini judge (arXiv:2506.05690).")
+    print("  * Our bench-eval: gpt-4o-mini generator + gpt-4o-mini judge, answer_correctness metric.")
+    print("  * Overall = mean(Med, Nov); Med/Nov = mean of 4 question-type ACC scores.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2441,7 +2449,8 @@ def cmd_provision(args: argparse.Namespace) -> None:
     """Create N Together dedicated endpoints in parallel, run benchmark, stop all."""
     import time
     import types
-    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from concurrent.futures import ThreadPoolExecutor
+
     from together import Together
     from together.types.autoscaling_param import AutoscalingParam
 
@@ -2515,9 +2524,11 @@ def cmd_provision(args: argparse.Namespace) -> None:
 def cmd_prime_cache(args: argparse.Namespace) -> None:
     """Pre-compute and persist question + entity embedding caches."""
     import hashlib
-    import numpy as np
     from pathlib import Path
+
+    import numpy as np
     from sentence_transformers import SentenceTransformer
+
     from chonk.ner import SpacyMatcher
 
     out_dir   = Path(args.out_dir)
@@ -2666,6 +2677,8 @@ def _make_parser() -> argparse.ArgumentParser:
                         help=f"Rerank top-{K_FETCH} candidates to top-{K}")
     g_base.add_argument("--rerank-provider", default="local", choices=["local", "together", "cohere"],
                         help=f"Reranker: local={RERANK_MODEL}, together={RERANK_MODEL_TOGETHER} (default: local)")
+    g_base.add_argument("--rerank-chunk", type=int, default=200, metavar="N",
+                        help="Outer loop batch size for reranking + checkpoint interval (default: 200)")
 
     # ── Expansion ─────────────────────────────────────────────────────────────
     g_exp = p.add_argument_group(
