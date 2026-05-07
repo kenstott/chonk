@@ -81,7 +81,7 @@ class DuckDBVectorBackend:
             """
             SELECT chunk_id, document_name, section, chunk_index,
                    content, breadcrumb, chunk_type, source_offset, source_length,
-                   embedding
+                   namespace, embedding
             FROM embeddings
             """
         ).fetchall()
@@ -89,7 +89,7 @@ class DuckDBVectorBackend:
             return
         self._np_chunk_rows = rows
         self._np_embeddings = _np.array(
-            [r[9] for r in rows], dtype="float32"
+            [r[10] for r in rows], dtype="float32"
         )
 
     @property
@@ -323,11 +323,22 @@ class DuckDBVectorBackend:
         if self._np_embeddings is not None and _np is not None:
             # Fast numpy path: single matmul, no DuckDB round-trip
             sims = self._np_embeddings @ query_vec  # (n,)
+            ns_set = set(namespaces) if namespaces is not None else None
             top_idx = _np.argpartition(sims, -fetch_limit)[-fetch_limit:]
             top_idx = top_idx[_np.argsort(sims[top_idx])[::-1]]
+            if ns_set is not None:
+                top_idx = [i for i in top_idx if self._np_chunk_rows[i][9] in ns_set]
             rows = [(*self._np_chunk_rows[i][:9], float(sims[i])) for i in top_idx]
         else:
             query = query_vec.tolist()
+            if namespaces is not None:
+                placeholders = ", ".join("?" * len(namespaces))
+                ns_clause = f"WHERE e.namespace IN ({placeholders})"
+                params = [query, *namespaces, query, fetch_limit]
+            else:
+                ns_clause = ""
+                params = [query, query, fetch_limit]
+
             rows = self._conn.execute(
                 f"""
                 SELECT
@@ -342,10 +353,11 @@ class DuckDBVectorBackend:
                     e.source_length,
                     1.0 - array_cosine_distance(e.embedding, ?::FLOAT[{self._embedding_dim}]) AS similarity
                 FROM embeddings e
+                {ns_clause}
                 ORDER BY array_cosine_distance(e.embedding, ?::FLOAT[{self._embedding_dim}]) ASC
                 LIMIT ?
                 """,
-                [query, query, fetch_limit],
+                params,
             ).fetchall()
 
         vector_results = []
