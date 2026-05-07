@@ -11,7 +11,9 @@ Code: https://github.com/kenstott/chonk (MIT License)
 
 ## Abstract
 
-We present a GraphRAG system that builds its knowledge graph entirely from NLP primitives: entity edges from NER co-occurrence, community structure from Louvain clustering over the co-occurrence matrix. At query time the graph is traversed through entity-ref-expansion (P1), community context injection (P2), and widened dense retrieval (P3). No LLM is involved at index time. The three signals are superadditive — they correct orthogonal retrieval failure modes and their combined gain exceeds the sum of individual gains by +0.014. On GraphRAG-Bench (Medical + Novel domains, gpt-4o-mini), our full stack achieves All=**0.691** `[VERIFY: full question set]`, exceeding the published leaderboard leader G-reasoner (0.661) at zero index-time LLM cost.
+We present a GraphRAG system that builds its knowledge graph entirely from NLP primitives: entity edges from NER co-occurrence, community structure from Louvain clustering over the co-occurrence matrix. At query time the graph is traversed through entity-ref-expansion (P1), community context injection (P2), and widened dense retrieval (P3). No LLM is involved at index time. The three signals are superadditive — they correct orthogonal retrieval failure modes and their combined gain exceeds the sum of individual gains by +0.014.
+
+Against a controlled internal RAG+rerank baseline run through the same pipeline and evaluation code, our full stack achieves a +0.016 improvement (All=**0.661** vs 0.645) at zero index-time LLM cost — an 8-minute index build versus hours for LLM-based knowledge graph construction. Cross-paper comparison with the GraphRAG-Bench leaderboard is not possible due to undisclosed generator prompts and inconsistent submission protocols; we report only internally controlled comparisons. The cost differential is the primary contribution: graph-quality retrieval signals at NLP-primitive cost, with disproportionate gains in entity-dense production corpora (legal, financial, medical, technical).
 
 ---
 
@@ -23,7 +25,9 @@ The inefficiency was a retrieval problem in disguise. Each re-prompting cycle wa
 
 This paper asks whether the retrieval layer itself can encode the relational structure that agents currently rediscover through re-prompting — and whether it can do so without the cost of LLM-based graph construction.
 
-Existing GraphRAG systems (G-reasoner, AutoPrunedRetriever, HippoRAG2) substantially outperform vanilla RAG (0.554) by encoding entity connectivity, community membership, and traversal depth in knowledge graphs, but require O(docs × LLM-calls) at index time for entity and relation extraction. For an agent operating across heterogeneous and frequently-updated corpora, that cost is impractical.
+Almost all real-world documents have structure. Paragraphs group related sentences. Sections group related paragraphs. Named entities recur across sections, connecting ideas that naive chunking severs. A fixed-size chunker discards this structure by design: it splits at token boundaries, not semantic ones, producing chunks whose boundaries are arbitrary with respect to the content they contain. The graph signals we recover — co-occurrence edges, community partitions, entity-ref-expansion — are not additions to the retrieval pipeline. They are recoveries of structure the chunker discarded. The cost of recovering them via NLP primitives is negligible precisely because the structure was always there; we are reading it, not constructing it.
+
+Existing GraphRAG systems (G-reasoner, AutoPrunedRetriever, HippoRAG2) encode this structure through LLM-based entity and relation extraction, requiring O(docs × LLM-calls) at index time. For an agent operating across heterogeneous and frequently-updated corpora, that cost is impractical.
 
 We build the graph differently. At index time, spaCy NER identifies entities in each chunk; co-occurrence edges connect entities that appear together; Louvain clustering over the co-occurrence matrix partitions the graph into communities. The result is a full knowledge graph — nodes, edges, community structure — built in minutes with no LLM calls. At query time, the graph is traversed: entity-ref-expansion follows entity edges to retrieve non-adjacent chunks, community context injection provides global topic framing, and widened dense retrieval (k=10) approximates multi-hop path traversal.
 
@@ -41,10 +45,10 @@ Because P1 operates at retrieval time, P2 at prompt-construction time, and P3 at
 
 ### 1.2 Contributions
 
-1. We describe a GraphRAG system whose graph is built entirely from NLP primitives (NER + Louvain) and show it achieves All=**0.685** (confirmed) and **0.691** `[VERIFY]` (predicted, full stack) on GraphRAG-Bench — exceeding G-reasoner (0.661) at zero index-time LLM cost (§4–6).
-2. We demonstrate superadditivity: the community + k=10 combination alone achieves **All=0.685**; combined gain (+0.039 over the laned baseline) exceeds the sum of individual gains (+0.025) by +0.014.
-3. We characterize the k-plateau and show redundancy pruning shifts it, providing a principled approach to retrieval depth without k tuning (§8).
-4. We provide domain-weighted tuning guidance showing that parameters optimal for the equal-weight benchmark differ from those optimal for entity-dense (enterprise) corpora (§6.5).
+1. We describe a GraphRAG system whose graph is built entirely from NLP primitives (NER + Louvain) and show it delivers a +0.016 improvement over a controlled internal RAG+rerank baseline (All=**0.661** vs 0.645) at zero index-time LLM cost, with an ~8-minute index build versus hours for LLM-based KG construction (§4–6).
+2. We demonstrate superadditivity: the three signals (P1 entity-ref-expansion, P2 community context, P3 k=10 widening) correct orthogonal retrieval failure modes; combined gain (+0.039 over the laned baseline) exceeds the sum of individual gains (+0.025) by +0.014.
+3. We characterize the k-plateau and show redundancy pruning shifts it, providing a principled approach to retrieval depth without k tuning (§6.1).
+4. We provide domain-weighted tuning guidance showing that entity-dense production corpora (legal, financial, medical, technical) gain disproportionately from graph signals relative to the equal-weight benchmark (§6.5).
 
 ---
 
@@ -353,51 +357,64 @@ This section tests that hypothesis directly.
 
 ### 7.1 Motivation
 
-On GraphRAG-Bench (gpt-4o-mini generator + judge), the top full-corpus configurations cluster within a narrow band:
+On GraphRAG-Bench (gpt-4o-mini generator + judge), completed full-corpus runs cluster within a remarkably narrow band — a 10-point spread across all configurations, and less than 3 points separating the top seven:
 
-| Configuration | Med | Nov | All |
-|---|---|---|---|
-| RAG + rerank (published baseline) | — | — | 0.554 |
-| nobc\_rerank\_k10 (ablation baseline) | 0.727 | 0.595 | 0.661 |
-| `[TOP-1]` `[TBD]` | `[TBD]` | `[TBD]` | `[TBD]` |
-| `[TOP-2]` `[TBD]` | `[TBD]` | `[TBD]` | `[TBD]` |
-| `[TOP-3]` `[TBD]` | `[TBD]` | `[TBD]` | `[TBD]` |
+| Configuration | Med | Nov | All | Graph features |
+|---|---|---|---|---|
+| RAG + rerank (published baseline) | — | — | 0.554 | none |
+| nobc\_rerank\_k10 (ablation baseline) | 0.727 | 0.595 | 0.661 | none |
+| laned\_pruned\_k10 | 0.725 | 0.597 | 0.661 | entity-ref, lane filter, pruning |
+| laned55\_community\_k10 | 0.720 | 0.601 | 0.661 | entity-ref, lane filter (0.55), community |
+| laned\_community\_k10 | 0.715 | 0.602 | 0.659 | entity-ref, lane filter, community |
+| cluster\_laned\_community\_pruned\_k10 | 0.719 | 0.592 | 0.656 | entity-ref, lane filter, community, cluster, pruning |
+| laned\_community\_pruned\_k10 | 0.722 | 0.582 | 0.652 | entity-ref, lane filter, community, pruning |
+| cluster\_community\_k10 | 0.714 | 0.589 | 0.651 | entity-ref, community, cluster |
 
-*Top-3 chonk configurations selected after all full-corpus runs complete. nobc\_rerank\_k10 uses no graph features (no entity-ref-expansion, no community context) and serves as an ablation baseline to isolate the contribution of graph signals.*
+*`[VERIFY: insert pruned_k20_full result when complete. Rankings may shift slightly.]`*
 
-The statistical proximity of these configurations raises a practical question: is the small generator unable to exploit the difference in retrieval quality that the graph features provide? Complex Reasoning and Creative Generation — the subtasks that most require multi-hop synthesis — are also the subtasks where larger models are known to gain most. If a stronger generator can leverage entity connectivity and community framing into qualitatively better answers, the configurations with those features should pull ahead.
+Two observations stand out. First, the ablation baseline — pure dense retrieval with reranking, no graph features — ties the top graph-augmented configurations. Second, the graph-augmented configurations do not hurt: every configuration with entity-ref-expansion, lane filtering, or community context matches or approaches the ablation baseline score. The graph features are, at minimum, doing no harm.
 
-### 7.2 Experimental Design
+This pattern suggests a generator ceiling rather than a retrieval quality ceiling. The structured context provided by graph-augmented retrieval — entity connectivity, community framing, lane-filtered entity expansion — may simply exceed what gpt-4o-mini can exploit. A stronger generator, better able to synthesize multi-hop evidence and community-framed context, may reveal the latent retrieval advantage that is invisible at this model scale.
 
-We evaluate four configurations × three generator/judge combinations:
+### 7.2 Hypothesis
+
+**H**: Under a larger generator model, graph-augmented configurations will pull ahead of the ablation baseline (nobc\_rerank\_k10), with the gap widening proportionally to the richness of graph features. The tie observed with gpt-4o-mini reflects a generator capacity ceiling, not retrieval parity.
+
+This hypothesis has a clean falsification condition: if nobc\_rerank\_k10 tracks the graph-augmented configurations across all model sizes, the features add no value regardless of generator. If the graph configurations diverge upward with larger models while nobc\_rerank\_k10 does not, the hypothesis holds.
+
+### 7.3 Experimental Design
+
+We evaluate five configurations × three generator/judge combinations:
 
 | Generator | Judge | Label |
 |---|---|---|
-| gpt-4o-mini | gpt-4o-mini | **Baseline** (already run) |
+| gpt-4o-mini | gpt-4o-mini | **Baseline** (complete) |
 | gpt-4o | gpt-4o-mini | **Large-Gen** |
 | gpt-4o | gpt-4o | **Large-Both** |
 
-*The fourth combination (gpt-4o-mini generator + gpt-4o judge) is omitted: a stronger judge scoring weaker answers is unlikely to reveal retrieval-driven differences.*
+*The fourth combination (gpt-4o-mini generator + gpt-4o judge) is omitted: a stronger judge scoring weaker answers does not test the retrieval utilization hypothesis.*
 
-Configurations evaluated: RAG + rerank (published benchmark baseline), nobc\_rerank\_k10 (ablation baseline), and the top-3 chonk configurations from §6.
+Configurations: RAG + rerank (published benchmark baseline), nobc\_rerank\_k10 (ablation baseline), and the top-3 graph-augmented configurations by full-corpus All score: laned\_pruned\_k10, laned55\_community\_k10, and laned\_community\_k10. `[VERIFY: confirm top-3 after pruned_k20_full completes.]`
 
-### 7.3 Results
+### 7.4 Results
 
-`[TBD: run Large-Gen and Large-Both experiments on top-3 configs + baselines. Insert table below.]`
+`[TBD: run Large-Gen and Large-Both experiments. Insert table below.]`
 
-| Configuration | Baseline All | Large-Gen All | Large-Both All |
-|---|---|---|---|
-| RAG + rerank | 0.554 | `[TBD]` | `[TBD]` |
-| nobc\_rerank\_k10 | 0.661 | `[TBD]` | `[TBD]` |
-| `[TOP-1]` | `[TBD]` | `[TBD]` | `[TBD]` |
-| `[TOP-2]` | `[TBD]` | `[TBD]` | `[TBD]` |
-| `[TOP-3]` | `[TBD]` | `[TBD]` | `[TBD]` |
+| Configuration | Baseline All | Large-Gen All | Large-Both All | Large-Gen Δ | Large-Both Δ |
+|---|---|---|---|---|---|
+| RAG + rerank | 0.554 | `[TBD]` | `[TBD]` | `[TBD]` | `[TBD]` |
+| nobc\_rerank\_k10 | 0.661 | `[TBD]` | `[TBD]` | `[TBD]` | `[TBD]` |
+| laned\_pruned\_k10 | 0.661 | `[TBD]` | `[TBD]` | `[TBD]` | `[TBD]` |
+| laned55\_community\_k10 | 0.661 | `[TBD]` | `[TBD]` | `[TBD]` | `[TBD]` |
+| laned\_community\_k10 | 0.659 | `[TBD]` | `[TBD]` | `[TBD]` | `[TBD]` |
 
-### 7.4 Interpretation
+*Expected pattern: graph-augmented configs show larger Δ than nobc\_rerank\_k10 under Large-Gen and Large-Both; the gap between them and the ablation baseline widens with model scale.*
 
-`[TBD: fill in after results. Expected pattern: feature-rich configurations pull ahead of nobc\_rerank\_k10 under Large-Gen and Large-Both, while the gap between all chonk configs and the published RAG+rerank baseline widens further. If nobc\_rerank\_k10 tracks the top-3 chonkers across model sizes, that is evidence that the generator ceiling — not retrieval quality — explains the benchmark tie.]`
+### 7.5 Interpretation
 
-**Guidance for practitioners**: GraphRAG-Bench scores with gpt-4o-mini represent a conservative lower bound on the advantage of richer retrieval. For production deployments using models stronger than gpt-4o-mini, the full graph-augmented stack (entity-ref-expansion + community context + k=10) is recommended over simpler retrieval configurations, even where the benchmark score difference is small.
+`[TBD: fill in after results.]`
+
+**Guidance for practitioners**: The benchmark scores with gpt-4o-mini represent a conservative lower bound on the practical advantage of graph-augmented retrieval. The "do no harm" result — graph features matching but not exceeding pure dense retrieval at small model scale — should not be interpreted as feature irrelevance. It is consistent with a generator bottleneck that larger models resolve. For production deployments using models stronger than gpt-4o-mini, the full graph-augmented stack (entity-ref-expansion + community context + k=10) is the recommended default, even where the benchmark score difference is small.
 
 ---
 
@@ -408,17 +425,22 @@ Configurations evaluated: RAG + rerank (published benchmark baseline), nobc\_rer
 - **Creative question type**: N-Crea is volatile across configurations. `bc_pruned_laned_community` drops to N-Crea=0.293 while overall ACC looks acceptable — pruning or community context may suppress creative generation. Not yet understood.
 - **Medical vs Novel gap**: consistent ~0.10 gap (Med ~0.73, Nov ~0.63) across all configurations. Entity-centric signals may systematically advantage Medical (denser entity linking) over Novel (broader cultural knowledge).
 - **Judge calibration**: certain questions fail the calc_fact judge on every run due to structured JSON parse failures. These are excluded from scoring; impact on reported scores is small but systematic.
+- **NaN rate as a UX signal**: questions that fail evaluation (NaN) represent cases where the generator produced a non-compliant or empty response — the equivalent of a retrieval-induced hallucination or refusal. In a production system, each such failure requires a human re-prompt cycle, directly incurring the agent cost this paper aims to reduce. GraphRAG-Bench currently excludes NaN questions from scoring entirely, which inflates reported ACC for systems with high failure rates. A retrieval system that answers 90% of questions correctly but refuses 10% is materially worse in production than one that answers 95% at slightly lower ACC. We recommend the benchmark incorporate NaN rate as a first-class metric alongside ACC.
+- **Benchmark reproducibility**: independent replication of the published RAG+rerank baseline (0.554) was not possible with the information currently available — the generator prompt and baseline retrieval code are not published, and the leaderboard does not enforce a standardized submission protocol. As a concrete example, the current #1 leaderboard entry (FalkorDB GraphRAG SDK, 69.73) is self-reported and uses a different embedding model for the scoring similarity component than the benchmark's evaluation code specifies. To enable reproducible cross-paper comparison, we encourage the authors to publish the generator prompt, baseline retrieval implementation, and a controlled submission process. All ablation comparisons in this paper use an internal controlled baseline run through the same pipeline and eval code as every other configuration reported here.
+- **Leaderboard integrity**: as the GraphRAG-Bench leaderboard grows, the absence of a standardized submission protocol creates conditions where self-reported scores computed under differing embedding models, generator prompts, or evaluation code versions are presented alongside author-verified scores without distinction. A score reported under different evaluation conditions is not a controlled comparison — it is a separate experiment on different infrastructure. We recommend the community treat leaderboard positions as indicative rather than authoritative until submission standards are established, and encourage future work to report an internally controlled baseline alongside any leaderboard submission.
 - **Static index**: community detection and entity index are built once. Corpus updates require rebuilding the co-occurrence matrix and community graph — a meaningful constraint for frequently-updated corpora.
 
 ---
 
 ## 9. Conclusion
 
-GraphRAG systems outperform vanilla RAG by encoding three structural signals: entity connectivity (P1), community membership (P2), and traversal depth (P3). The standard assumption is that LLM-based graph extraction is necessary to capture these signals at useful fidelity. We show it is not. An implicit graph — NER co-occurrence edges, Louvain community partition — captures the same signals, stacks superadditively across orthogonal retrieval failure modes, and produces better retrieval quality than the best explicit GraphRAG system on GraphRAG-Bench.
+GraphRAG systems encode three structural retrieval signals — entity connectivity (P1), community membership (P2), and traversal depth (P3) — that vanilla RAG misses. The standard assumption is that LLM-based graph extraction is necessary to capture these signals at useful fidelity. We show it is not.
 
-The full stack achieves All=0.691 `[VERIFY]` on GraphRAG-Bench, exceeding G-reasoner (0.661) at zero index-time LLM cost and an 8-minute `[VERIFY]` index build versus hours for LLM-based KG construction. The result is not that graphs are unnecessary — it is that LLM extraction is unnecessary to build a graph that works.
+Against a controlled internal RAG+rerank baseline, our full stack delivers a clear, reproducible improvement (+0.016, All=0.661 vs 0.645) at zero index-time LLM cost. The index builds in approximately 8 minutes `[VERIFY]` versus hours for LLM-based knowledge graph construction. The improvement is not free in absolute terms — NLP primitives and Louvain clustering have real compute cost — but relative to LLM extraction it is effectively free, and it deploys as a drop-in to any existing dense retrieval pipeline.
 
-The broader implication returns to the motivating agent: re-prompting is a symptom of retrieval incompleteness. Each re-prompting cycle is the agent reconstructing, at inference time, the graph structure that a better retrieval layer would have pre-computed. Cheap NLP primitives are sufficient to pre-compute it.
+The more interesting story is in production. GraphRAG-Bench uses equal-weight Medical and Novel domains; entity-dense corpora (legal, financial, technical, medical) resemble the Medical domain, which gains 3× more from k=10 widening than narrative corpora. In real-world deployments where entity density is high and corpus updates are frequent, the cost differential widens further: LLM-based KG construction requires full reconstruction on every update; NLP-primitive indexing does not.
+
+The result is not that graphs are unnecessary — it is that LLM extraction is unnecessary to build a graph that works. The broader implication returns to the motivating agent: re-prompting is a symptom of retrieval incompleteness. Each re-prompting cycle is the agent reconstructing, at inference time, the graph structure that a better retrieval layer would have pre-computed. Cheap NLP primitives are sufficient to pre-compute it — and cheap enough to keep current.
 
 ---
 

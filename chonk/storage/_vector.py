@@ -28,8 +28,12 @@ except ImportError:
     _DUCKDB_AVAILABLE = False
 
 if TYPE_CHECKING:
-    import numpy as _np
     from .._pool import ThreadLocalDuckDB  # only for type hints
+
+try:
+    import numpy as _np
+except ImportError:
+    _np = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +71,26 @@ class DuckDBVectorBackend:
         self._db = db
         self._embedding_dim = embedding_dim
         self._fts_dirty = True
+        self._np_embeddings = None   # preloaded (n, dim) float32
+        self._np_chunk_rows = None   # preloaded metadata rows
         self._init_schema()
+
+    def preload_embeddings(self) -> None:
+        """Load all embeddings into RAM for fast batched numpy search."""
+        rows = self._conn.execute(
+            """
+            SELECT chunk_id, document_name, section, chunk_index,
+                   content, breadcrumb, chunk_type, source_offset, source_length,
+                   embedding
+            FROM embeddings
+            """
+        ).fetchall()
+        if not rows:
+            return
+        self._np_chunk_rows = rows
+        self._np_embeddings = _np.array(
+            [r[9] for r in rows], dtype="float32"
+        )
 
     @property
     def _conn(self):
@@ -94,9 +117,12 @@ class DuckDBVectorBackend:
             except Exception as e:
                 logger.debug(f"DDL skipped: {e}")
 
-        # VSS HNSW index — best-effort (requires empty table or existing data)
+        # Always drop and recreate HNSW index to ensure cosine metric
+        from ._schema import VSS_DROP_INDEX_DDL
         try:
+            self._conn.execute(VSS_DROP_INDEX_DDL).fetchall()
             self._conn.execute(VSS_INDEX_DDL).fetchall()
+            logger.debug("VSS HNSW cosine index ready")
         except Exception as e:
             logger.debug(f"VSS index creation skipped: {e}")
 
@@ -291,37 +317,36 @@ class DuckDBVectorBackend:
         """
         from ..models import DocumentChunk
 
-        query = query_embedding.flatten().tolist()
+        query_vec = query_embedding.flatten().astype("float32")
         fetch_limit = limit * 3 if query_text else limit
 
-        if namespaces is not None:
-            placeholders = ", ".join("?" * len(namespaces))
-            ns_clause = f"WHERE e.namespace IN ({placeholders})"
-            params = [query, *namespaces, fetch_limit]
+        if self._np_embeddings is not None and _np is not None:
+            # Fast numpy path: single matmul, no DuckDB round-trip
+            sims = self._np_embeddings @ query_vec  # (n,)
+            top_idx = _np.argpartition(sims, -fetch_limit)[-fetch_limit:]
+            top_idx = top_idx[_np.argsort(sims[top_idx])[::-1]]
+            rows = [(*self._np_chunk_rows[i][:9], float(sims[i])) for i in top_idx]
         else:
-            ns_clause = ""
-            params = [query, fetch_limit]
-
-        rows = self._conn.execute(
-            f"""
-            SELECT
-                e.chunk_id,
-                e.document_name,
-                e.section,
-                e.chunk_index,
-                e.content,
-                e.breadcrumb,
-                e.chunk_type,
-                e.source_offset,
-                e.source_length,
-                array_cosine_similarity(e.embedding, ?::FLOAT[{self._embedding_dim}]) AS similarity
-            FROM embeddings e
-            {ns_clause}
-            ORDER BY similarity DESC
-            LIMIT ?
-            """,
-            params,
-        ).fetchall()
+            query = query_vec.tolist()
+            rows = self._conn.execute(
+                f"""
+                SELECT
+                    e.chunk_id,
+                    e.document_name,
+                    e.section,
+                    e.chunk_index,
+                    e.content,
+                    e.breadcrumb,
+                    e.chunk_type,
+                    e.source_offset,
+                    e.source_length,
+                    1.0 - array_cosine_distance(e.embedding, ?::FLOAT[{self._embedding_dim}]) AS similarity
+                FROM embeddings e
+                ORDER BY array_cosine_distance(e.embedding, ?::FLOAT[{self._embedding_dim}]) ASC
+                LIMIT ?
+                """,
+                [query, query, fetch_limit],
+            ).fetchall()
 
         vector_results = []
         for row in rows:

@@ -9,6 +9,8 @@ dependencies = []
 dev = [
     "pytest>=9.0",
     "pytest-cov>=7.0",
+    "pytest-timeout>=2.3",
+    "bandit>=1.8",
     "ruff>=0.15",
     "black>=26.0",
 ]
@@ -44,6 +46,20 @@ packages = ["chonk"]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
+addopts = "-x --tb=short"
+timeout = 60
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests requiring real I/O",
+]
+
+[tool.coverage.run]
+source = ["chonk"]
+omit = ["tests/*", "demo/*", "work/*"]
+
+[tool.coverage.report]
+fail_under = 70
+show_missing = true
 
 [tool.ruff]
 target-version = "py311"
