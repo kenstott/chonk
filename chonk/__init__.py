@@ -6,6 +6,7 @@
 # permission from the copyright holder.
 
 """Chunky Monkey — a dairy-free RAG pipeline for delicious semantic similarity, clustering and NER."""
+from ._struct_inference import infer_csv, infer_json, infer_jsonl, infer_parquet
 from ._versioning import VersionedRef
 from .chunking import (
     NOVEL_STRUCTURAL_LEVELS,
@@ -124,6 +125,11 @@ __all__ = [
     "TableMeta",
     "FieldMeta",
     "EndpointMeta",
+    # Schema inference
+    "infer_csv",
+    "infer_json",
+    "infer_jsonl",
+    "infer_parquet",
     # Generation
     "AnswerContext",
     "PromptBuilder",
