@@ -530,25 +530,44 @@ results: list[ScoredChunk] = search.search(query_embedding, k=5)
 
 ### NER / vocabulary layer
 
-#### Two-pass NER: schema vocab + spaCy
+#### Three-layer NER pipeline
 
-`NerPipeline` is the high-level entry point. It runs schema-vocab matching
-(pass 1) and spaCy NER (pass 2) and merges the results — schema terms win on
-any span overlap so that column names are not mis-labelled as generic entities.
+`NerPipeline` runs up to three matcher layers and merges the results. Schema
+and data vocab both suppress overlapping spaCy hits.
+
+| Layer | What it matches | Normalisation |
+|-------|----------------|---------------|
+| **Schema vocab** (`db_enrich=True`) | Table/column/API identifier terms | camelCase / snake_case / SCREAMING_SNAKE → prose |
+| **Data vocab** (`add_from_db` / `add_entities`) | Actual values from your DBs: customer names, employee names, counterparties, tickers | Verbatim, case-insensitive |
+| **spaCy NER** (`spacy_entities=True`) | Generic statistical NER | — |
 
 ```python
 from chonk.ner import NerPipeline, SpacyLabel
 
 pipeline = NerPipeline(
-    db_enrich=True,         # match schema/column/API terms against prose
-    spacy_entities=True,    # run spaCy NER (default: all 18 labels)
+    db_enrich=True,         # match schema/column/API identifier terms
+    spacy_entities=True,    # run spaCy NER
     spacy_entity_types=[SpacyLabel.ORG, SpacyLabel.PERSON, SpacyLabel.GPE],
 )
 
-# Feed schema sources — any combination
-pipeline.add_tables(table_meta_list)            # TableMeta objects
-pipeline.add_sql(open("schema.sql").read())     # raw DDL
-pipeline.add_chunks(loader.load_schema(tables)) # chunks from load_schema()
+# --- Schema vocab: identifier names (normalised) ---
+pipeline.add_tables(table_meta_list)             # TableMeta objects
+pipeline.add_sql(open("schema.sql").read())      # raw DDL
+pipeline.add_chunks(loader.load_schema(tables))  # chunks from load_schema()
+
+# --- Data vocab: real values from your DB (reuse existing connection) ---
+pipeline.add_from_db(
+    engine,   # SQLAlchemy Engine, Connection, or URL string
+    queries={
+        "customer":     "SELECT name      FROM customers   WHERE active = true",
+        "employee":     "SELECT full_name FROM employees",
+        "counterparty": "SELECT name      FROM counterparties",
+    },
+    row_limit=50_000,   # max rows per query (default 10 000)
+)
+
+# --- Data vocab: plain list (CRM export, config file, spreadsheet, etc.) ---
+pipeline.add_entities(["Acme Corp", "Globex"], entity_type="customer")
 
 # Run against document chunks
 matches = pipeline.match(chunk.content)
@@ -557,17 +576,22 @@ matches = pipeline.match(chunk.content)
 pipeline.run_on_chunks(chunks, entity_index)
 ```
 
-All schema identifiers are normalised before matching:
-`firstName`, `first_name`, and `FIRST_NAME` all match the prose form
-`"first name"`. This surfaces structural connections between relational data
-models and the unstructured documents that describe or reference them.
+`add_from_db` rules:
+- Each SQL query **must return exactly one column** — `ValueError` is raised otherwise.
+- Nulls are dropped and values are deduplicated before being added.
+- Data values are matched verbatim (case-insensitive) — no camelCase splitting.
+  "Acme Corp" matches "Acme Corp", not "acme corp".
+
+Schema identifiers are normalised: `firstName`, `first_name`, and `FIRST_NAME`
+all match the prose form `"first name"`, surfacing connections between your
+relational data model and the documents that reference it.
 
 #### Primitives (for custom scenarios)
 
 | Name | Description |
 |---|---|
-| `NerPipeline` | Unified two-pass NER pipeline: schema vocab + spaCy, merged |
-| `SchemaVocabBuilder` | Builds a `SchemaMatcher` from `TableMeta`, SQL DDL, or `load_schema()` chunks |
+| `NerPipeline` | Three-layer NER pipeline: schema vocab + data vocab + spaCy |
+| `SchemaVocabBuilder` | Builds matchers from `TableMeta`, SQL DDL, `load_schema()` chunks, DB queries, or plain lists |
 | `VocabularyMatcher` | Rule-based entity matcher using a user-supplied vocabulary |
 | `EntityIndex` | Index mapping entity IDs to the chunks they appear in |
 | `SpacyMatcher` | spaCy-backed NER matcher — `entity_types` restricts to a label subset |
