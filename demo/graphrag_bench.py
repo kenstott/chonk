@@ -810,9 +810,14 @@ def _init_run_db(db_path: Path) -> None:
             answer_correctness REAL,
             rouge_score REAL,
             coverage_score REAL,
-            faithfulness REAL
+            faithfulness REAL,
+            nan_reason TEXT
         )
     """)
+    try:
+        con.execute("ALTER TABLE eval_scores ADD COLUMN nan_reason TEXT")
+    except Exception:
+        pass  # column already exists
     con.close()
 
 
@@ -1829,10 +1834,11 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
             for item in done.values():
                 con.execute("DELETE FROM eval_scores WHERE id = ?", [item.get("id")])
                 con.execute(
-                    "INSERT INTO eval_scores VALUES (?,?,?,?,?,?)",
+                    "INSERT INTO eval_scores VALUES (?,?,?,?,?,?,?)",
                     [item.get("id"), item.get("question_type"),
                      item.get("answer_correctness"), item.get("rouge_score"),
-                     item.get("coverage_score"), item.get("faithfulness")],
+                     item.get("coverage_score"), item.get("faithfulness"),
+                     item.get("nan_reason")],
                 )
             con.close()
             print(f"  Flushed {len(done)} checkpoint scores to DB")
@@ -2001,74 +2007,92 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
                 else:
                     _rpm_tokens[0] -= 1.0
 
-        async def _eval_one(r: dict) -> dict:
+        async def _eval_one(r: dict, attempt: int = 0) -> dict:
+            """Single attempt. Returns result dict, or {'_deferred': True, '_attempt': attempt} on timeout."""
             import asyncio as _aio
+            import random as _random
             qtype   = r["question_type"]
             metrics = METRIC_CONFIG.get(qtype, ["answer_correctness"])
             result  = {"id": r["id"], "question_type": qtype}
-            for attempt in range(5):
-                # Hold semaphore only during the API call — release it before any retry sleep
-                # so other items can proceed while this one waits.
-                async with semaphore:
-                    _t0 = time.monotonic()
-                    try:
-                        tasks = {}
-                        if "rouge_score" in metrics:
-                            tasks["rouge_score"] = compute_rouge_score(r["generated_answer"], r["ground_truth"])
-                        if "answer_correctness" in metrics:
-                            tasks["answer_correctness"] = compute_answer_correctness(
-                                r["question"], r["generated_answer"], r["ground_truth"], llm, embedding
-                            )
-                        if "coverage_score" in metrics:
-                            tasks["coverage_score"] = compute_coverage_score(
-                                r["question"], r["ground_truth"], r["generated_answer"], llm
-                            )
-                        if "faithfulness" in metrics:
-                            tasks["faithfulness"] = compute_faithfulness_score(
-                                r["question"], r["generated_answer"], r["context"], llm
-                            )
-                        # answer_correctness = 3 LLM calls; others = 1 each; rouge_score = 0
-                        _rpm_weights = {"answer_correctness": 3, "coverage_score": 1, "faithfulness": 1}
-                        api_count = sum(_rpm_weights.get(k, 0) for k in tasks)
-                        for _ in range(api_count):
-                            await _acquire_rpm_token()
-                        vals = await asyncio.gather(*tasks.values(), return_exceptions=True)
-                        for key, val in zip(tasks.keys(), vals):
-                            if isinstance(val, BaseException):
-                                print(f"[eval] {r['id']} {key} exception: {type(val).__name__}: {val}", flush=True)
-                            result[key] = float(val) if isinstance(val, (int, float)) else float("nan")
-                        nan_metrics = [k for k in tasks if k != "rouge_score" and result.get(k) != result.get(k)]
-                        if nan_metrics:
-                            # Parse failure (API responded but non-compliant) — do not retry, deterministic
-                            _nan_final[0] += 1
-                        print(f"[eval] {r['id']} done in {time.monotonic()-_t0:.1f}s metrics={list(tasks.keys())}", flush=True)
+            _rate_delay = [0.0]
+            _caught_rate = [False]
+
+            async with semaphore:
+                _t0 = time.monotonic()
+                try:
+                    tasks = {}
+                    if "rouge_score" in metrics:
+                        tasks["rouge_score"] = compute_rouge_score(r["generated_answer"], r["ground_truth"])
+                    if "answer_correctness" in metrics:
+                        tasks["answer_correctness"] = compute_answer_correctness(
+                            r["question"], r["generated_answer"], r["ground_truth"], llm, embedding
+                        )
+                    if "coverage_score" in metrics:
+                        tasks["coverage_score"] = compute_coverage_score(
+                            r["question"], r["ground_truth"], r["generated_answer"], llm
+                        )
+                    if "faithfulness" in metrics:
+                        tasks["faithfulness"] = compute_faithfulness_score(
+                            r["question"], r["generated_answer"], r["context"], llm
+                        )
+                    _rpm_weights = {"answer_correctness": 3, "coverage_score": 1, "faithfulness": 1}
+                    api_count = sum(_rpm_weights.get(k, 0) for k in tasks)
+                    for _ in range(api_count):
+                        await _acquire_rpm_token()
+                    vals = await asyncio.gather(*tasks.values(), return_exceptions=True)
+                    for key, val in zip(tasks.keys(), vals):
+                        if isinstance(val, BaseException):
+                            print(f"[eval] {r['id']} {key} exception: {type(val).__name__}: {val}", flush=True)
+                        result[key] = float(val) if isinstance(val, (int, float)) else float("nan")
+                    nan_metrics = [k for k in tasks if k != "rouge_score" and result.get(k) != result.get(k)]
+                    if nan_metrics:
+                        result["nan_reason"] = "parse"
+                        _nan_final[0] += 1
+                    print(f"[eval] {r['id']} done in {time.monotonic()-_t0:.1f}s metrics={list(tasks.keys())}", flush=True)
+                    return result
+                except Exception as e:
+                    is_rate    = "429" in str(e) or "rate_limit" in str(e).lower() or "RateLimit" in type(e).__name__
+                    is_timeout = "timeout" in str(e).lower() or "Timeout" in type(e).__name__
+                    kind = "rate-limit" if is_rate else "timeout" if is_timeout else "error"
+                    print(f"[eval] {r['id']} attempt {attempt+1}/5 {kind}: {e}", flush=True)
+                    if is_timeout:
+                        # Defer to back of queue — do not retry inline
+                        return {"id": r["id"], "question_type": qtype, "_deferred": True, "_attempt": attempt}
+                    elif is_rate:
+                        retry_after = None
+                        if hasattr(e, "response") and e.response is not None:
+                            retry_after = e.response.headers.get("Retry-After")
+                        _rate_delay[0] = float(retry_after) + _random.uniform(0, 1) if retry_after \
+                            else 15 * (2 ** attempt) + _random.uniform(0, 1)
+                        print(f"[eval] rate-limit backoff {_rate_delay[0]:.1f}s", flush=True)
+                        _caught_rate[0] = True
+                    else:
+                        for key in METRIC_CONFIG.get(qtype, ["answer_correctness"]):
+                            result.setdefault(key, float("nan"))
+                        result["nan_reason"] = "error"
+                        _nan_final[0] += 1
                         return result
-                    except Exception as e:
-                        is_rate = "429" in str(e) or "rate_limit" in str(e).lower() or "RateLimit" in type(e).__name__
-                        is_timeout = "timeout" in str(e).lower() or "Timeout" in type(e).__name__
-                        is_retryable = is_rate or is_timeout
-                        print(f"[eval] {r['id']} attempt {attempt+1}/5 {'rate-limit' if is_rate else 'timeout' if is_timeout else 'error'}: {e}", flush=True)
-                        if is_rate:
-                            delay = 15 * (2 ** attempt)
-                            print(f"[eval] backing off {delay}s", flush=True)
-                        elif not is_retryable:
-                            for key in METRIC_CONFIG.get(qtype, ["answer_correctness"]):
-                                result.setdefault(key, float("nan"))
-                            _nan_final[0] += 1
-                            return result
-                # Sleep outside the semaphore so other items can run
-                await _aio.sleep(5 * (attempt + 1))
-            _nan_final[0] += 1
+
+            # Rate limit: sleep outside semaphore then recurse with incremented attempt
+            if _caught_rate[0]:
+                await _aio.sleep(_rate_delay[0])
+                if attempt < 4:
+                    return await _eval_one(r, attempt + 1)
+                for key in METRIC_CONFIG.get(qtype, ["answer_correctness"]):
+                    result.setdefault(key, float("nan"))
+                result["nan_reason"] = "rate_exhausted"
+                _nan_final[0] += 1
             return result
 
-        async def _eval_one_safe(r: dict) -> dict:
+        async def _eval_one_safe(r: dict, attempt: int = 0) -> dict:
             import asyncio as _aio
             try:
-                return await _aio.wait_for(_eval_one(r), timeout=1800)
+                return await _aio.wait_for(_eval_one(r, attempt), timeout=1800)
             except TimeoutError:
-                print(f"[eval] {r['id']} timed out after 1800s — skipping", flush=True)
+                print(f"[eval] {r['id']} outer 1800s timeout — skipping", flush=True)
                 qtype = r.get("question_type", "?")
                 return {"id": r["id"], "question_type": qtype,
+                        "nan_reason": "outer_timeout",
                         **{k: float("nan") for k in METRIC_CONFIG.get(qtype, ["answer_correctness"])}}
 
         async def _run_all():
@@ -2076,11 +2100,9 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
             _run_all_start = time.monotonic()
             _completed = [0]
             _ckpt_lock = _aio.Lock()
+            _deferred: list[tuple[dict, int]] = []
 
-            async def _eval_and_save(r: dict):
-                result = await _eval_one_safe(r)
-                if not isinstance(result, dict):
-                    return
+            async def _save_result(result: dict):
                 async with _ckpt_lock:
                     done[result["id"]] = result
                     with open(ckpt_f, "a") as f:
@@ -2089,11 +2111,12 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
                         con = _connect_with_retry(run_db)
                         con.execute("DELETE FROM eval_scores WHERE id = ?", [result.get("id")])
                         con.execute(
-                            "INSERT INTO eval_scores VALUES (?,?,?,?,?,?)",
+                            "INSERT INTO eval_scores VALUES (?,?,?,?,?,?,?)",
                             [
                                 result.get("id"), result.get("question_type"),
                                 result.get("answer_correctness"), result.get("rouge_score"),
                                 result.get("coverage_score"), result.get("faithfulness"),
+                                result.get("nan_reason"),
                             ],
                         )
                         con.close()
@@ -2103,6 +2126,24 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
                     if _completed[0] % 20 == 0:
                         print(f"  {_completed[0]}/{len(pending)} evaluated | elapsed={_total_elapsed:.0f}s | avg={_qpm:.1f}q/min", flush=True)
                         await _check_early_stop()
+
+            async def _eval_and_save(r: dict, attempt: int = 0):
+                result = await _eval_one_safe(r, attempt)
+                if not isinstance(result, dict):
+                    return
+                if result.get("_deferred"):
+                    next_attempt = result.get("_attempt", attempt) + 1
+                    if next_attempt < 5:
+                        _deferred.append((r, next_attempt))
+                    else:
+                        qtype = r.get("question_type", "?")
+                        nan_result = {"id": r["id"], "question_type": qtype,
+                                     "nan_reason": "timeout_exhausted",
+                                     **{k: float("nan") for k in METRIC_CONFIG.get(qtype, ["answer_correctness"])}}
+                        await _save_result(nan_result)
+                        _nan_final[0] += 1
+                    return
+                await _save_result(result)
 
             _es_target = getattr(args, "early_stop_target", None)
             _es_min_n  = getattr(args, "early_stop_min_n", 500)
@@ -2137,6 +2178,26 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
 
             await _aio.gather(*[_eval_and_save(r) for r in pending], return_exceptions=True)
 
+            # Process deferred (timed-out) items in passes — back-of-queue retry
+            for _pass in range(5):
+                if not _deferred:
+                    break
+                print(f"\n[eval] Deferred pass {_pass+1}: {len(_deferred)} items — sleeping 30s before retry", flush=True)
+                await _aio.sleep(30)
+                current = _deferred[:]
+                _deferred.clear()
+                await _aio.gather(*[_eval_and_save(r, attempt) for r, attempt in current], return_exceptions=True)
+
+            if _deferred:
+                # Any still deferred after 5 passes: record as timeout_exhausted
+                for r, _ in _deferred:
+                    qtype = r.get("question_type", "?")
+                    nan_result = {"id": r["id"], "question_type": qtype,
+                                 "nan_reason": "timeout_exhausted",
+                                 **{k: float("nan") for k in METRIC_CONFIG.get(qtype, ["answer_correctness"])}}
+                    await _save_result(nan_result)
+                    _nan_final[0] += 1
+
         asyncio.run(_run_all())
 
     # Aggregate results by question type
@@ -2168,11 +2229,12 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
         con.execute("DELETE FROM eval_scores")
         for item in done.values():
             con.execute(
-                "INSERT INTO eval_scores VALUES (?,?,?,?,?,?)",
+                "INSERT INTO eval_scores VALUES (?,?,?,?,?,?,?)",
                 [
                     item.get("id"), item.get("question_type"),
                     item.get("answer_correctness"), item.get("rouge_score"),
                     item.get("coverage_score"), item.get("faithfulness"),
+                    item.get("nan_reason"),
                 ],
             )
         con.close()
@@ -2213,9 +2275,10 @@ def cmd_backfill_db(args: argparse.Namespace) -> None:
     for r in eval_rows:
         con.execute("DELETE FROM eval_scores WHERE id = ?", [r["id"]])
         con.execute(
-            "INSERT INTO eval_scores VALUES (?,?,?,?,?,?)",
+            "INSERT INTO eval_scores VALUES (?,?,?,?,?,?,?)",
             [r["id"], r.get("question_type"), r.get("answer_correctness"),
-             r.get("rouge_score"), r.get("coverage_score"), r.get("faithfulness")],
+             r.get("rouge_score"), r.get("coverage_score"), r.get("faithfulness"),
+             r.get("nan_reason")],
         )
     con.close()
     print(f"Backfilled {len(records)} results + {len(eval_rows)} eval_scores → {run_db}")
@@ -2334,7 +2397,7 @@ def cmd_bench_report(args: argparse.Namespace) -> None:
             try:
                 con = _ddb.connect(str(run_db), read_only=True)
                 rows = con.execute(
-                    "SELECT e.question_type, r.source, e.answer_correctness "
+                    "SELECT e.question_type, r.source, e.answer_correctness, e.nan_reason "
                     "FROM eval_scores e JOIN results r ON e.id = r.id"
                 ).fetchall()
                 total_results = con.execute("SELECT COUNT(*) FROM results").fetchone()[0]
@@ -2344,10 +2407,12 @@ def cmd_bench_report(args: argparse.Namespace) -> None:
             if not rows:
                 continue
             n_eval = len(rows)
-            n_nan = sum(1 for _, _, ac in rows if ac is None or ac != ac)
+            n_nan = sum(1 for _, _, ac, _ in rows if ac is None or ac != ac)
+            from collections import Counter as _Counter
+            nan_reasons = _Counter(nr for _, _, ac, nr in rows if (ac is None or ac != ac) and nr)
             # by_subset_type[(source, qtype)] -> [ac, ...]
             by_st: dict[tuple, list] = {}
-            for qtype, source, ac in rows:
+            for qtype, source, ac, _ in rows:
                 subset = "Med" if source and "medical" in source.lower() else "Nov"
                 for key in [(subset, qtype), ("All", qtype)]:
                     if key not in by_st:
@@ -2356,7 +2421,8 @@ def cmd_bench_report(args: argparse.Namespace) -> None:
                         by_st[key].append(ac)
             def _mean(lst): return float(_np.mean(lst)) if lst else float("nan")  # noqa
             scores_st = {k: _mean(v) for k, v in by_st.items()}
-            run_results[rn] = {"scores_st": scores_st, "n_eval": n_eval, "n_total": total_results, "n_nan": n_nan}
+            run_results[rn] = {"scores_st": scores_st, "n_eval": n_eval, "n_total": total_results,
+                               "n_nan": n_nan, "nan_reasons": dict(nan_reasons)}
 
     # Legacy bench_eval_*.json — no Med/Nov split, but load All-level scores for comparison
     import json as _json
@@ -2429,8 +2495,13 @@ def cmd_bench_report(args: argparse.Namespace) -> None:
         n_eval = info.get("n_eval", 0)
         n_total = info.get("n_total", 0)
         n_nan = info.get("n_nan", 0)
-        nan_str = f", {n_nan} NaN" if n_nan else ""
-        partial = f" ({n_eval}/{n_total}{nan_str})" if n_total and (n_eval < n_total or n_nan) else (f" ({n_nan} NaN)" if n_nan else "")
+        nan_reasons = info.get("nan_reasons", {})
+        if nan_reasons:
+            reason_str = " " + "+".join(f"{v}{k[0].upper()}" for k, v in sorted(nan_reasons.items()))
+        else:
+            reason_str = ""
+        nan_str = f", {n_nan} NaN{reason_str}" if n_nan else ""
+        partial = f" ({n_eval}/{n_total}{nan_str})" if n_total and (n_eval < n_total or n_nan) else (f" ({n_nan} NaN{reason_str})" if n_nan else "")
         parts = []
         for subset in SUBSETS:
             for qt, _ in QTYPES:
