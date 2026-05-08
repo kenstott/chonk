@@ -7,6 +7,7 @@
 
 """Document format extractors."""
 
+from ._attack import AttackRenderer
 from ._csv import CsvExtractor
 from ._cve import CveRenderer
 from ._docx import DocxExtractor
@@ -41,7 +42,7 @@ def _build_registry() -> list[Extractor]:
         XlsxExtractor(),
         PptxExtractor(),
         HtmlExtractor(),
-        JsonExtractor(renderers=[CveRenderer()]),
+        JsonExtractor(renderers=[CveRenderer(), AttackRenderer()]),
         YamlExtractor(),
         MarkdownExtractor(),
         CsvExtractor(),
@@ -111,4 +112,5 @@ __all__ = [
     "is_binary_type",
     "Renderer",
     "CveRenderer",
+    "AttackRenderer",
 ]
