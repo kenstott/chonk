@@ -14,11 +14,20 @@ Options:
     --api-key KEY        Bearer token for HTTP transport
     --db PATH            DuckDB file path (stdio transport)
     --dim N              Embedding dimension (default: 1024)
-    --db-config JSON     Multi-DB JSON config (overrides --db)
-    --python PATH        Python interpreter to use (default: auto-detect)
+    --db-config JSON     Multi-DB JSON config string (overrides --db)
+    --python PATH        Python interpreter to use (default: auto-detect venv)
     --server PATH        Path to mcp_chonk_server.py (default: auto-detect)
-    --host HOST          Config target: claude, cursor, vscode, or a file path
-                         (default: claude)
+    --host HOST          Config target (default: claude):
+
+                           claude            Claude Desktop
+                           claude-code       Claude Code CLI — project scope (.mcp.json)
+                           claude-code-user  Claude Code CLI — user scope (~/.claude.json)
+                           gemini            Google Gemini CLI (~/.gemini/settings.json)
+                           copilot           GitHub Copilot in VS Code (.vscode/mcp.json)
+                           cursor            Cursor
+                           vscode            VS Code (settings.json)
+                           <file path>       Any JSON config file
+
     --dry-run            Print what would be written without modifying anything
 """
 
@@ -41,17 +50,59 @@ def _claude_config_path() -> Path:
         return Path.home() / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
     if system == "Windows":
         return Path(os.environ["APPDATA"]) / "Claude" / "claude_desktop_config.json"
-    # Linux
     return Path.home() / ".config" / "Claude" / "claude_desktop_config.json"
+
+
+def _claude_code_project_path() -> Path:
+    return Path.cwd() / ".mcp.json"
+
+
+def _claude_code_user_path() -> Path:
+    return Path.home() / ".claude.json"
+
+
+def _gemini_config_path() -> Path:
+    return Path.home() / ".gemini" / "settings.json"
+
+
+def _copilot_config_path() -> Path:
+    return Path.cwd() / ".vscode" / "mcp.json"
 
 
 def _cursor_config_path() -> Path:
     system = platform.system()
     if system == "Darwin":
-        return Path.home() / "Library" / "Application Support" / "Cursor" / "User" / "globalStorage" / "rooveterinaryinc.roo-cline" / "settings" / "cline_mcp_settings.json"
+        return (
+            Path.home()
+            / "Library"
+            / "Application Support"
+            / "Cursor"
+            / "User"
+            / "globalStorage"
+            / "rooveterinaryinc.roo-cline"
+            / "settings"
+            / "cline_mcp_settings.json"
+        )
     if system == "Windows":
-        return Path(os.environ["APPDATA"]) / "Cursor" / "User" / "globalStorage" / "rooveterinaryinc.roo-cline" / "settings" / "cline_mcp_settings.json"
-    return Path.home() / ".config" / "Cursor" / "User" / "globalStorage" / "rooveterinaryinc.roo-cline" / "settings" / "cline_mcp_settings.json"
+        return (
+            Path(os.environ["APPDATA"])
+            / "Cursor"
+            / "User"
+            / "globalStorage"
+            / "rooveterinaryinc.roo-cline"
+            / "settings"
+            / "cline_mcp_settings.json"
+        )
+    return (
+        Path.home()
+        / ".config"
+        / "Cursor"
+        / "User"
+        / "globalStorage"
+        / "rooveterinaryinc.roo-cline"
+        / "settings"
+        / "cline_mcp_settings.json"
+    )
 
 
 def _vscode_config_path() -> Path:
@@ -63,11 +114,18 @@ def _vscode_config_path() -> Path:
     return Path.home() / ".config" / "Code" / "User" / "settings.json"
 
 
-_HOST_PATHS = {
+_HOST_PATHS: dict[str, object] = {
     "claude": _claude_config_path,
+    "claude-code": _claude_code_project_path,
+    "claude-code-user": _claude_code_user_path,
+    "gemini": _gemini_config_path,
+    "copilot": _copilot_config_path,
     "cursor": _cursor_config_path,
     "vscode": _vscode_config_path,
 }
+
+# Hosts whose entry format requires an explicit "type" field
+_TYPED_HOSTS = {"claude-code", "claude-code-user", "copilot", "vscode"}
 
 
 # ---------------------------------------------------------------------------
@@ -75,7 +133,6 @@ _HOST_PATHS = {
 # ---------------------------------------------------------------------------
 
 def _find_server_script() -> str:
-    # Same directory as this script
     candidate = Path(__file__).parent / "mcp_chonk_server.py"
     if candidate.exists():
         return str(candidate.resolve())
@@ -85,7 +142,6 @@ def _find_server_script() -> str:
 
 
 def _find_python() -> str:
-    # Prefer the venv that has chonk installed
     venv = Path(__file__).parent / ".venv" / "bin" / "python"
     if venv.exists():
         return str(venv)
@@ -96,20 +152,22 @@ def _find_python() -> str:
 # Config builders
 # ---------------------------------------------------------------------------
 
-def _build_http_entry(name: str, url: str, api_key: str | None) -> dict:
+def _build_http_entry(url: str, api_key: str | None, typed: bool) -> dict:
     entry: dict = {"url": url}
+    if typed:
+        entry = {"type": "http", **entry}
     if api_key:
         entry["headers"] = {"Authorization": f"Bearer {api_key}"}
     return entry
 
 
 def _build_stdio_entry(
-    name: str,
     server_path: str,
     python: str,
     db_path: str | None,
     db_config: str | None,
     dim: int,
+    typed: bool,
 ) -> dict:
     env: dict[str, str] = {"CHONK_EMBEDDING_DIM": str(dim)}
     if db_config:
@@ -118,11 +176,10 @@ def _build_stdio_entry(
         env["CHONK_DB_PATH"] = db_path
     else:
         raise ValueError("Stdio transport requires --db or --db-config")
-    return {
-        "command": python,
-        "args": [server_path],
-        "env": env,
-    }
+    entry: dict = {"command": python, "args": [server_path], "env": env}
+    if typed:
+        entry = {"type": "stdio", **entry}
+    return entry
 
 
 # ---------------------------------------------------------------------------
@@ -149,13 +206,25 @@ def _write_config(path: Path, data: dict, dry_run: bool) -> None:
 
 
 def _inject_entry(config: dict, name: str, entry: dict, host: str) -> dict:
-    """Insert the MCP entry at the correct key for the given host."""
+    """Insert the MCP entry at the correct key structure for each host."""
     if host == "vscode":
+        # VS Code settings.json: {"mcp": {"servers": {...}}}
         config.setdefault("mcp", {}).setdefault("servers", {})[name] = entry
+    elif host == "copilot":
+        # .vscode/mcp.json: {"servers": {...}}
+        config.setdefault("servers", {})[name] = entry
     else:
-        # Claude Desktop and Cursor both use {"mcpServers": {...}}
+        # Claude Desktop, Claude Code, Gemini, Cursor: {"mcpServers": {...}}
         config.setdefault("mcpServers", {})[name] = entry
     return config
+
+
+def _existing_entry(config: dict, name: str, host: str) -> dict | None:
+    if host == "vscode":
+        return config.get("mcp", {}).get("servers", {}).get(name)
+    if host == "copilot":
+        return config.get("servers", {}).get(name)
+    return config.get("mcpServers", {}).get(name)
 
 
 # ---------------------------------------------------------------------------
@@ -178,36 +247,37 @@ def main() -> None:
     parser.add_argument(
         "--host",
         default="claude",
-        help="Target host: claude, cursor, vscode, or a file path (default: claude)",
+        help=(
+            "Target: claude, claude-code, claude-code-user, "
+            "gemini, copilot, cursor, vscode, or a file path (default: claude)"
+        ),
     )
     parser.add_argument("--dry-run", action="store_true", help="Print without writing")
     args = parser.parse_args()
 
     # Resolve config file path
     if args.host in _HOST_PATHS:
-        config_path = _HOST_PATHS[args.host]()
+        config_path = _HOST_PATHS[args.host]()  # type: ignore[operator]
     else:
         config_path = Path(args.host)
 
-    # Build the entry
+    typed = args.host in _TYPED_HOSTS
+
+    # Build entry
     if args.url:
-        entry = _build_http_entry(args.name, args.url, args.api_key)
+        entry = _build_http_entry(args.url, args.api_key, typed=typed)
         transport_desc = f"http → {args.url}"
     else:
         server_path = args.server or _find_server_script()
         python = args.python or _find_python()
         entry = _build_stdio_entry(
-            args.name, server_path, python, args.db, args.db_config, args.dim
+            server_path, python, args.db, args.db_config, args.dim, typed=typed
         )
         transport_desc = f"stdio → {server_path}"
 
     # Read, patch, write
     config = _read_config(config_path)
-    existing = (
-        config.get("mcpServers", {}).get(args.name)
-        or config.get("mcp", {}).get("servers", {}).get(args.name)
-    )
-    if existing and not args.dry_run:
+    if _existing_entry(config, args.name, args.host) and not args.dry_run:
         print(f"Replacing existing '{args.name}' entry in {config_path}")
 
     config = _inject_entry(config, args.name, entry, args.host)
@@ -215,7 +285,10 @@ def main() -> None:
 
     if not args.dry_run:
         print(f"\nInstalled '{args.name}' ({transport_desc})")
-        print("Restart your MCP host to pick up the change.")
+        if args.host in ("claude-code", "claude-code-user"):
+            print("Run `claude mcp list` to verify.")
+        else:
+            print("Restart your MCP host to pick up the change.")
 
 
 if __name__ == "__main__":
