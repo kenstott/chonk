@@ -15,8 +15,9 @@ from .context import enrich_chunk, enrich_chunks
 from .loader import DocumentLoader
 from .schema import ColumnMeta, TableMeta, FieldMeta, EndpointMeta
 from .generation import AnswerContext, PromptBuilder, Answer, AnswerGenerator
-from .graph import SVOTriple, VERB_SET, RelationshipIndex, LLMClient, SVOExtractor
-from .community import CommunityIndex, CommunitySummarizer
+from .graph import SVOTriple, VERB_SET, RelationshipIndex, LLMClient, SVOExtractor, RelationshipIndexBuilder
+from .community import CommunityIndex, CommunitySummarizer, CommunityIndexBuilder
+from ._versioning import VersionedRef
 from .transports import (
     Transport,
     FetchResult,
@@ -94,7 +95,11 @@ __all__ = [
     "RelationshipIndex",
     "LLMClient",
     "SVOExtractor",
+    "RelationshipIndexBuilder",
     # Community
     "CommunityIndex",
     "CommunitySummarizer",
+    "CommunityIndexBuilder",
+    # Versioning
+    "VersionedRef",
 ]

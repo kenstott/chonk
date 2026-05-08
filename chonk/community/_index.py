@@ -9,7 +9,7 @@
 Workflow:
   1. Build weighted-average vectors: α * heading_emb + (1-α) * content_emb
   2. Construct sparse cosine-similarity graph (edges above threshold)
-  3. Run Louvain community detection
+  3. Run Leiden (default) or Louvain community detection (per resolution level)
   4. Extract topic labels per community (top-K frequent non-stopword terms)
 
 Usage::
@@ -19,15 +19,19 @@ Usage::
         heading_vecs=heading_vecs,   # optional
         alpha=0.2,
         sim_threshold=0.6,
+        n_levels=3,
     )
     label = idx.topic_label(chunk_id)   # "cardiovascular disease, thrombosis"
     cid   = idx.community_id(chunk_id)
+
+    # Multi-level access:
+    label = idx.topic_label(chunk_id, level=0)   # coarsest
+    label = idx.topic_label(chunk_id, level=-1)  # finest (same as None)
 """
 
 from __future__ import annotations
 
 import re
-import string
 from collections import Counter, defaultdict
 
 import numpy as np
@@ -101,14 +105,12 @@ def _ner_embedding_labels(
     entity_ids = [r[0] for r in rows]
     emb_list = [r[1] for r in rows]
     if any(e is None for e in emb_list):
-        # fall back to term freq if embeddings missing
         return ""
 
     vecs = np.array(emb_list, dtype="float32")
     norms = np.linalg.norm(vecs, axis=1, keepdims=True)
     vecs = vecs / np.maximum(norms, 1e-9)
 
-    # Greedy clustering by cosine similarity
     assigned: list[int] = [-1] * len(entity_ids)
     clusters: list[list[int]] = []
     for i in range(len(entity_ids)):
@@ -125,7 +127,6 @@ def _ner_embedding_labels(
                 clusters[cid].append(j)
                 assigned[j] = cid
 
-    # Per cluster: most-frequent surface form, cluster size
     cluster_info: list[tuple[int, str]] = []
     for members in clusters:
         freq: Counter = Counter()
@@ -138,6 +139,18 @@ def _ner_embedding_labels(
     return ", ".join(label for _, label in cluster_info[:n])
 
 
+class _LevelData:
+    __slots__ = ("resolution", "chunk_to_community", "community_to_label",
+                 "community_to_chunks", "community_to_coherence")
+
+    def __init__(self, resolution: float) -> None:
+        self.resolution = resolution
+        self.chunk_to_community: dict[str, int] = {}
+        self.community_to_label: dict[int, str] = {}
+        self.community_to_chunks: dict[int, list[str]] = defaultdict(list)
+        self.community_to_coherence: dict[int, float] = {}
+
+
 class CommunityIndex:
     """Chunk-to-community assignment with topic labels."""
 
@@ -146,6 +159,7 @@ class CommunityIndex:
         self._community_to_label: dict[int, str] = {}
         self._community_to_chunks: dict[int, list[str]] = defaultdict(list)
         self._community_to_coherence: dict[int, float] = {}
+        self._levels: list[_LevelData] = []
 
     # ------------------------------------------------------------------
     # Factory
@@ -164,6 +178,13 @@ class CommunityIndex:
         label_strategy: str = "term_freq",
         db_path=None,
         label_synonym_threshold: float = 0.85,
+        algorithm: str = "leiden",
+        resolutions: list[float] | None = None,
+        n_levels: int = 3,
+        resolution_min: float = 0.25,
+        resolution_max: float = 2.0,
+        n_iterations: int = 10,
+        seed: int | None = 42,
     ) -> "CommunityIndex":
         """Build a CommunityIndex from chunk embeddings.
 
@@ -178,12 +199,30 @@ class CommunityIndex:
             label_strategy: "term_freq" (default) or "ner_embedding".
             db_path: Path to DuckDB (required for "ner_embedding" strategy).
             label_synonym_threshold: Cosine similarity for merging synonyms (ner_embedding only).
+            algorithm: "leiden" (default) or "louvain". Leiden requires chonk[leiden].
+            resolutions: Explicit list of resolution values (takes priority over n_levels).
+            n_levels: Number of hierarchy levels when resolutions is None.
+            resolution_min: Coarsest resolution (level 0).
+            resolution_max: Finest resolution (level n_levels-1).
+            n_iterations: Leiden iterations per level.
+            seed: Random seed for reproducibility.
         """
-        import networkx as nx
-
         n = len(chunk_ids)
         if n == 0:
             return cls()
+
+        # ── Derive resolutions list ───────────────────────────────────
+        if resolutions is not None:
+            resolved = list(resolutions)
+        elif n_levels == 1:
+            resolved = [(resolution_min + resolution_max) / 2]
+        else:
+            # log spacing, coarsest first (level 0 = lowest resolution)
+            resolved = list(np.logspace(
+                np.log10(resolution_min),
+                np.log10(resolution_max),
+                num=n_levels,
+            ).tolist())
 
         # ── 1. Compute working vectors ────────────────────────────────
         if heading_vecs is not None and alpha > 0:
@@ -193,10 +232,8 @@ class CommunityIndex:
         else:
             vecs = content_vecs
 
-        # ── 2. Build sparse similarity graph ─────────────────────────
-        G = nx.Graph()
-        G.add_nodes_from(range(n))
-
+        # ── 2. Build sparse similarity graph (collect edges once) ─────
+        edges: list[tuple[int, int, float]] = []
         batch = 256
         for i in range(0, n, batch):
             sims = vecs[i:i + batch] @ vecs.T  # (batch, n)
@@ -204,52 +241,102 @@ class CommunityIndex:
                 gi = i + bi
                 js = np.where(sims[bi, gi + 1:] >= sim_threshold)[0] + gi + 1
                 for j in js:
-                    G.add_edge(gi, int(j), weight=float(sims[bi, int(j) - i]))
+                    edges.append((gi, int(j), float(sims[bi, int(j) - i])))
 
-        # ── 3. Louvain community detection ────────────────────────────
-        try:
-            import community as louvain_mod
-            partition: dict[int, int] = louvain_mod.best_partition(G, random_state=42)
-        except ImportError:
-            # Fallback: connected components as communities
-            partition = {}
-            for cid, component in enumerate(nx.connected_components(G)):
-                for node in component:
-                    partition[node] = cid
-
-        # ── 4. Assign and extract labels ──────────────────────────────
         instance = cls()
-        community_members: dict[int, list[int]] = defaultdict(list)
-        for idx, cid in partition.items():
-            instance._chunk_to_community[chunk_ids[idx]] = cid
-            instance._community_to_chunks[cid].append(chunk_ids[idx])
-            community_members[cid].append(idx)
 
-        if label_strategy == "ner_embedding" and db_path is not None:
-            for cid, indices in community_members.items():
-                cids = [chunk_ids[i] for i in indices if i < len(chunk_ids)]
-                label = _ner_embedding_labels(cids, db_path, n=top_label_terms,
-                                              synonym_threshold=label_synonym_threshold)
-                if not label and chunk_texts:
+        # ── 3. Per-resolution community detection ─────────────────────
+        for resolution in resolved:
+            partition: dict[int, int] = {}
+            active_algorithm = algorithm
+
+            if active_algorithm == "leiden":
+                try:
+                    import igraph as ig
+                    import leidenalg
+
+                    g = ig.Graph(n=n, edges=[(e[0], e[1]) for e in edges])
+                    g.es["weight"] = [e[2] for e in edges]
+                    result = leidenalg.find_partition(
+                        g,
+                        leidenalg.RBConfigurationVertexPartition,
+                        weights="weight" if edges else None,
+                        resolution_parameter=resolution,
+                        n_iterations=n_iterations,
+                        seed=seed,
+                    )
+                    for cid, members in enumerate(result):
+                        for node in members:
+                            partition[node] = cid
+                except ImportError:
+                    active_algorithm = "louvain"
+
+            if active_algorithm == "louvain":
+                import networkx as nx
+
+                G = nx.Graph()
+                G.add_nodes_from(range(n))
+                for gi, j, w in edges:
+                    G.add_edge(gi, j, weight=w)
+                try:
+                    import community as louvain_mod
+                    partition = louvain_mod.best_partition(
+                        G, random_state=seed if seed is not None else 42
+                    )
+                except ImportError:
+                    for cid, component in enumerate(nx.connected_components(G)):
+                        for node in component:
+                            partition[node] = cid
+
+            if not partition:
+                partition = {i: i for i in range(n)}
+
+            # ── Build _LevelData for this resolution ──────────────────
+            level_data = _LevelData(resolution)
+            community_members: dict[int, list[int]] = defaultdict(list)
+
+            for idx, cid in partition.items():
+                level_data.chunk_to_community[chunk_ids[idx]] = cid
+                level_data.community_to_chunks[cid].append(chunk_ids[idx])
+                community_members[cid].append(idx)
+
+            # Labels
+            if label_strategy == "ner_embedding" and db_path is not None:
+                for cid, indices in community_members.items():
+                    cids = [chunk_ids[i] for i in indices if i < len(chunk_ids)]
+                    label = _ner_embedding_labels(cids, db_path, n=top_label_terms,
+                                                  synonym_threshold=label_synonym_threshold)
+                    if not label and chunk_texts:
+                        texts = [chunk_texts[i] for i in indices if i < len(chunk_texts)]
+                        label = _top_terms(texts, top_label_terms)
+                    level_data.community_to_label[cid] = label
+            elif chunk_texts:
+                for cid, indices in community_members.items():
                     texts = [chunk_texts[i] for i in indices if i < len(chunk_texts)]
-                    label = _top_terms(texts, top_label_terms)
-                instance._community_to_label[cid] = label
-        elif chunk_texts:
-            for cid, indices in community_members.items():
-                texts = [chunk_texts[i] for i in indices if i < len(chunk_texts)]
-                instance._community_to_label[cid] = _top_terms(texts, top_label_terms)
+                    level_data.community_to_label[cid] = _top_terms(texts, top_label_terms)
 
-        # ── 5. Compute per-community coherence (mean intra-community cosine sim) ──
-        for cid, indices in community_members.items():
-            if len(indices) < 2:
-                instance._community_to_coherence[cid] = 0.0
-                continue
-            member_vecs = vecs[indices]  # (m, dim)
-            sims = member_vecs @ member_vecs.T  # (m, m)
-            m = len(indices)
-            # Mean of upper triangle (excluding diagonal)
-            upper = sims[np.triu_indices(m, k=1)]
-            instance._community_to_coherence[cid] = float(upper.mean()) if len(upper) > 0 else 0.0
+            # Coherence
+            for cid, indices in community_members.items():
+                if len(indices) < 2:
+                    level_data.community_to_coherence[cid] = 0.0
+                    continue
+                member_vecs = vecs[indices]
+                sims = member_vecs @ member_vecs.T
+                m = len(indices)
+                upper = sims[np.triu_indices(m, k=1)]
+                level_data.community_to_coherence[cid] = float(upper.mean()) if len(upper) > 0 else 0.0
+
+            instance._levels.append(level_data)
+
+        # ── 4. Populate flat attrs from finest level (_levels[-1]) ────
+        if instance._levels:
+            finest = instance._levels[-1]
+            instance._chunk_to_community = dict(finest.chunk_to_community)
+            instance._community_to_label = dict(finest.community_to_label)
+            instance._community_to_chunks = defaultdict(list, {
+                k: list(v) for k, v in finest.community_to_chunks.items()
+            })
+            instance._community_to_coherence = dict(finest.community_to_coherence)
 
         return instance
 
@@ -257,33 +344,63 @@ class CommunityIndex:
     # Lookup
     # ------------------------------------------------------------------
 
-    def community_id(self, chunk_id: str) -> int | None:
-        return self._chunk_to_community.get(chunk_id)
+    def community_id(self, chunk_id: str, level: int | None = None) -> int | None:
+        if level is None:
+            return self._chunk_to_community.get(chunk_id)
+        return self._levels[level].chunk_to_community.get(chunk_id)
 
-    def topic_label(self, chunk_id: str, min_coherence: float = 0.0) -> str | None:
-        cid = self._chunk_to_community.get(chunk_id)
+    def topic_label(self, chunk_id: str, min_coherence: float = 0.0, level: int | None = None) -> str | None:
+        if level is None:
+            cid = self._chunk_to_community.get(chunk_id)
+            if cid is None:
+                return None
+            if min_coherence > 0 and self._community_to_coherence.get(cid, 0.0) < min_coherence:
+                return None
+            return self._community_to_label.get(cid)
+        ld = self._levels[level]
+        cid = ld.chunk_to_community.get(chunk_id)
         if cid is None:
             return None
-        if min_coherence > 0 and self._community_to_coherence.get(cid, 0.0) < min_coherence:
+        if min_coherence > 0 and ld.community_to_coherence.get(cid, 0.0) < min_coherence:
             return None
-        return self._community_to_label.get(cid)
+        return ld.community_to_label.get(cid)
 
-    def coherence(self, chunk_id: str) -> float:
-        cid = self._chunk_to_community.get(chunk_id)
+    def coherence(self, chunk_id: str, level: int | None = None) -> float:
+        if level is None:
+            cid = self._chunk_to_community.get(chunk_id)
+            if cid is None:
+                return 0.0
+            return self._community_to_coherence.get(cid, 0.0)
+        ld = self._levels[level]
+        cid = ld.chunk_to_community.get(chunk_id)
         if cid is None:
             return 0.0
-        return self._community_to_coherence.get(cid, 0.0)
+        return ld.community_to_coherence.get(cid, 0.0)
 
-    def community_chunks(self, community_id: int) -> list[str]:
-        return list(self._community_to_chunks.get(community_id, []))
+    def community_chunks(self, community_id: int, level: int | None = None) -> list[str]:
+        if level is None:
+            return list(self._community_to_chunks.get(community_id, []))
+        return list(self._levels[level].community_to_chunks.get(community_id, []))
 
-    def community_ids(self) -> list[int]:
+    def community_ids(self, level: int | None = None) -> list[int]:
         """Return all community IDs present in this index."""
-        return list(self._community_to_chunks.keys())
+        if level is None:
+            return list(self._community_to_chunks.keys())
+        return list(self._levels[level].community_to_chunks.keys())
 
-    def topic_label_for_community(self, community_id: int) -> str:
+    def topic_label_for_community(self, community_id: int, level: int | None = None) -> str:
         """Return the topic label for *community_id*, or empty string if unknown."""
-        return self._community_to_label.get(community_id, "")
+        if level is None:
+            return self._community_to_label.get(community_id, "")
+        return self._levels[level].community_to_label.get(community_id, "")
+
+    def level_count(self) -> int:
+        """Return number of levels (minimum 1)."""
+        return max(len(self._levels), 1)
+
+    def resolutions_list(self) -> list[float]:
+        """Return list of resolution values per level."""
+        return [l.resolution for l in self._levels]
 
     def community_count(self) -> int:
         return len(self._community_to_label)
@@ -299,30 +416,50 @@ class CommunityIndex:
         """Write chunk_communities and communities tables to DuckDB."""
         import duckdb
         con = duckdb.connect(str(db_path))
-        con.execute(
-            "CREATE TABLE IF NOT EXISTS chunk_communities "
-            "(chunk_id TEXT PRIMARY KEY, community_id INTEGER)"
-        )
+
+        con.execute("DROP TABLE IF EXISTS chunk_communities")
         con.execute("DROP TABLE IF EXISTS communities")
         con.execute(
-            "CREATE TABLE communities "
-            "(community_id INTEGER PRIMARY KEY, topic_label TEXT, size INTEGER, coherence REAL)"
+            "CREATE TABLE chunk_communities "
+            "(chunk_id TEXT, level INTEGER, community_id INTEGER, "
+            "PRIMARY KEY (chunk_id, level))"
         )
-        con.execute("DELETE FROM chunk_communities")
-        con.execute("DELETE FROM communities")
+        con.execute(
+            "CREATE TABLE communities "
+            "(community_id INTEGER, level INTEGER, topic_label TEXT, "
+            "size INTEGER, coherence REAL, resolution REAL, "
+            "PRIMARY KEY (community_id, level))"
+        )
 
-        for chunk_id, cid in self._chunk_to_community.items():
-            con.execute(
-                "INSERT INTO chunk_communities VALUES (?, ?)",
-                [chunk_id, cid],
-            )
-        for cid, label in self._community_to_label.items():
-            size = len(self._community_to_chunks.get(cid, []))
-            coherence = self._community_to_coherence.get(cid, 0.0)
-            con.execute(
-                "INSERT INTO communities VALUES (?, ?, ?, ?)",
-                [cid, label, size, coherence],
-            )
+        if self._levels:
+            for level_idx, ld in enumerate(self._levels):
+                for chunk_id, cid in ld.chunk_to_community.items():
+                    con.execute(
+                        "INSERT INTO chunk_communities VALUES (?, ?, ?)",
+                        [chunk_id, level_idx, cid],
+                    )
+                for cid, label in ld.community_to_label.items():
+                    size = len(ld.community_to_chunks.get(cid, []))
+                    coherence = ld.community_to_coherence.get(cid, 0.0)
+                    con.execute(
+                        "INSERT INTO communities VALUES (?, ?, ?, ?, ?, ?)",
+                        [cid, level_idx, label, size, coherence, ld.resolution],
+                    )
+        else:
+            # Persist flat attrs as level 0
+            for chunk_id, cid in self._chunk_to_community.items():
+                con.execute(
+                    "INSERT INTO chunk_communities VALUES (?, ?, ?)",
+                    [chunk_id, 0, cid],
+                )
+            for cid, label in self._community_to_label.items():
+                size = len(self._community_to_chunks.get(cid, []))
+                coherence = self._community_to_coherence.get(cid, 0.0)
+                con.execute(
+                    "INSERT INTO communities VALUES (?, ?, ?, ?, ?, ?)",
+                    [cid, 0, label, size, coherence, 1.0],
+                )
+
         con.close()
 
     @classmethod
@@ -330,34 +467,82 @@ class CommunityIndex:
         """Load CommunityIndex from DuckDB tables."""
         import duckdb
         con = duckdb.connect(str(db_path), read_only=True)
-        try:
-            rows = con.execute(
-                "SELECT chunk_id, community_id FROM chunk_communities"
-            ).fetchall()
-            community_rows = con.execute(
-                "SELECT community_id, topic_label, coherence FROM communities"
-            ).fetchall()
-        except Exception:
-            try:
-                rows = con.execute(
-                    "SELECT chunk_id, community_id FROM chunk_communities"
-                ).fetchall()
-                community_rows = [
-                    (cid, lbl, 0.0)
-                    for cid, lbl in con.execute(
-                        "SELECT community_id, topic_label FROM communities"
-                    ).fetchall()
-                ]
-            except Exception:
-                con.close()
-                return cls()
-        con.close()
 
         instance = cls()
-        for chunk_id, cid in rows:
-            instance._chunk_to_community[chunk_id] = cid
-            instance._community_to_chunks[cid].append(chunk_id)
-        for cid, label, coherence in community_rows:
-            instance._community_to_label[cid] = label or ""
-            instance._community_to_coherence[cid] = coherence or 0.0
+
+        try:
+            # Try new multi-level schema first
+            chunk_rows = con.execute(
+                "SELECT chunk_id, level, community_id FROM chunk_communities ORDER BY level"
+            ).fetchall()
+            community_rows = con.execute(
+                "SELECT community_id, level, topic_label, coherence, resolution FROM communities ORDER BY level"
+            ).fetchall()
+            con.close()
+
+            # Group by level
+            levels_by_idx: dict[int, _LevelData] = {}
+            for chunk_id, level_idx, cid in chunk_rows:
+                if level_idx not in levels_by_idx:
+                    levels_by_idx[level_idx] = _LevelData(1.0)
+                ld = levels_by_idx[level_idx]
+                ld.chunk_to_community[chunk_id] = cid
+                ld.community_to_chunks[cid].append(chunk_id)
+
+            for cid, level_idx, label, coherence, resolution in community_rows:
+                if level_idx not in levels_by_idx:
+                    levels_by_idx[level_idx] = _LevelData(resolution or 1.0)
+                ld = levels_by_idx[level_idx]
+                ld.resolution = resolution or 1.0
+                ld.community_to_label[cid] = label or ""
+                ld.community_to_coherence[cid] = coherence or 0.0
+
+            for level_idx in sorted(levels_by_idx.keys()):
+                instance._levels.append(levels_by_idx[level_idx])
+
+        except Exception:
+            # Fall back to old schema (no level column)
+            try:
+                chunk_rows = con.execute(
+                    "SELECT chunk_id, community_id FROM chunk_communities"
+                ).fetchall()
+                try:
+                    community_rows_old = con.execute(
+                        "SELECT community_id, topic_label, coherence FROM communities"
+                    ).fetchall()
+                except Exception:
+                    community_rows_old = [
+                        (cid, lbl, 0.0)
+                        for cid, lbl in con.execute(
+                            "SELECT community_id, topic_label FROM communities"
+                        ).fetchall()
+                    ]
+                con.close()
+
+                ld = _LevelData(1.0)
+                for chunk_id, cid in chunk_rows:
+                    ld.chunk_to_community[chunk_id] = cid
+                    ld.community_to_chunks[cid].append(chunk_id)
+                for cid, label, coherence in community_rows_old:
+                    ld.community_to_label[cid] = label or ""
+                    ld.community_to_coherence[cid] = coherence or 0.0
+                instance._levels.append(ld)
+
+            except Exception:
+                try:
+                    con.close()
+                except Exception:
+                    pass
+                return instance
+
+        # Populate flat attrs from finest level
+        if instance._levels:
+            finest = instance._levels[-1]
+            instance._chunk_to_community = dict(finest.chunk_to_community)
+            instance._community_to_label = dict(finest.community_to_label)
+            instance._community_to_chunks = defaultdict(list, {
+                k: list(v) for k, v in finest.community_to_chunks.items()
+            })
+            instance._community_to_coherence = dict(finest.community_to_coherence)
+
         return instance

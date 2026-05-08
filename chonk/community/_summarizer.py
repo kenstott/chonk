@@ -98,6 +98,7 @@ class CommunitySummarizer:
         community_index: CommunityIndex,
         get_chunk_text: Callable[[str], str | None],
         min_chunks: int = 2,
+        level: int | None = None,
     ) -> list[DocumentChunk]:
         """Summarize all communities in *community_index*.
 
@@ -105,20 +106,22 @@ class CommunitySummarizer:
             community_index: Populated CommunityIndex.
             get_chunk_text: Callable mapping chunk_id → text (or None to skip).
             min_chunks: Skip communities with fewer than this many chunks.
+            level: Level to summarize. None = finest (default); 0 = coarsest.
 
         Returns:
             Flat list of community_summary DocumentChunks (one per eligible community).
         """
         results: list[DocumentChunk] = []
-        for cid in community_index.community_ids():
-            chunk_ids = community_index.community_chunks(cid)
+        for cid in community_index.community_ids(level=level):
+            chunk_ids = community_index.community_chunks(cid, level=level)
             if len(chunk_ids) < min_chunks:
                 continue
             texts = [t for cid_ in chunk_ids if (t := get_chunk_text(cid_)) is not None]
             if not texts:
                 continue
-            label = community_index.topic_label_for_community(cid)
-            chunk = self.summarize(cid, texts, topic_label=label)
+            label = community_index.topic_label_for_community(cid, level=level)
+            doc_community_id = f"{level}:{cid}" if level is not None else cid
+            chunk = self.summarize(doc_community_id, texts, topic_label=label)
             if chunk is not None:
                 results.append(chunk)
         return results

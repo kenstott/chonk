@@ -10,5 +10,6 @@ from ._svo import SVOTriple, VERB_SET
 from ._index import RelationshipIndex
 from ._llm import LLMClient
 from ._extractor import SVOExtractor
+from ._builder import RelationshipIndexBuilder
 
-__all__ = ["SVOTriple", "VERB_SET", "RelationshipIndex", "LLMClient", "SVOExtractor"]
+__all__ = ["SVOTriple", "VERB_SET", "RelationshipIndex", "LLMClient", "SVOExtractor", "RelationshipIndexBuilder"]
