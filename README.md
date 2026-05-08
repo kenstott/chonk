@@ -792,6 +792,63 @@ relational data model and the documents that reference it.
 
 ---
 
+## MCP server
+
+`mcp_chonk_server.py` exposes Chonk search over the
+[Model Context Protocol](https://modelcontextprotocol.io/) so any MCP-compatible
+host (Claude Desktop, Cursor, VS Code Copilot, etc.) can query your index directly.
+
+```bash
+pip install "chonk[storage]" mcp
+```
+
+### Single DB
+
+```bash
+export CHONK_DB_PATH=/data/index.duckdb
+export CHONK_EMBEDDING_DIM=1024   # default if omitted
+python mcp_chonk_server.py
+```
+
+### Multiple named DBs
+
+```bash
+export CHONK_DB_CONFIG='{
+  "main":    {"path": "/data/main.duckdb"},
+  "archive": {"path": "/data/archive.duckdb", "embedding_dim": 768}
+}'
+python mcp_chonk_server.py
+```
+
+When `CHONK_DB_CONFIG` is set it takes precedence over `CHONK_DB_PATH`.
+
+### Tools
+
+| Tool | Description |
+|------|-------------|
+| `search_chunks` | Hybrid vector + BM25 search. Accepts `query_embedding` (required), `query_text`, `limit`, `db`, `namespaces`, `chunk_types`. Omit `db` to search all stores and merge by score. |
+| `get_chunk` | Fetch a chunk by `chunk_id`, optionally with adjacent chunks (`include_neighbors`, `neighbor_radius`). |
+| `expand_chunk_graph` | Stub — wire to your `EntityIndex` / `RelationshipIndex` to expand a chunk into entity and relation overlays. |
+
+### Claude Desktop config example
+
+```json
+{
+  "mcpServers": {
+    "chonk": {
+      "command": "python",
+      "args": ["/path/to/mcp_chonk_server.py"],
+      "env": {
+        "CHONK_DB_PATH": "/data/index.duckdb",
+        "CHONK_EMBEDDING_DIM": "1024"
+      }
+    }
+  }
+}
+```
+
+---
+
 ## Demos
 
 ```bash
