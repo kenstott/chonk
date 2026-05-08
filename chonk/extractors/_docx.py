@@ -12,21 +12,26 @@ from __future__ import annotations
 from io import BytesIO
 
 try:
-    import docx as _docx_module
+    import docx  # noqa: F401
+
     _DOCX_AVAILABLE = True
 except ImportError:
     _DOCX_AVAILABLE = False
 
 
+def _style_name(para) -> str:
+    return para.style.name if para.style is not None else ""
+
+
 def _extract_docx_content(doc) -> str:
-    """Extract text content from a python-docx Document object."""
     paragraphs = []
 
     for para in doc.paragraphs:
         text = para.text.strip()
         if text:
-            if para.style and para.style.name.startswith("Heading"):
-                level = para.style.name.replace("Heading ", "")
+            name = _style_name(para)
+            if name.startswith("Heading"):
+                level = name.replace("Heading ", "")
                 try:
                     level_num = int(level)
                     paragraphs.append(f"{'#' * level_num} {text}")
@@ -47,18 +52,55 @@ def _extract_docx_content(doc) -> str:
 
 
 class DocxExtractor:
-    """Extract plain text from DOCX bytes."""
-
     def can_handle(self, doc_type: str) -> bool:
         return doc_type == "docx"
 
     def extract(self, data: bytes, source_path: str | None = None) -> str:
         if not _DOCX_AVAILABLE:
-            raise ImportError("pip install chonk[docx]")
+            raise ImportError(f"pip install chonk[docx] (loading {source_path or 'unknown'})")
+        import docx as _docx
 
-        doc = _docx_module.Document(BytesIO(data))
+        doc = _docx.Document(BytesIO(data))
         return _extract_docx_content(doc)
 
-
     def annotate(self, chunks: list, data: bytes, source_path: str | None = None) -> list:
+        if not _DOCX_AVAILABLE:
+            raise ImportError(f"pip install chonk[docx] (loading {source_path or 'unknown'})")
+        import docx as _docx
+
+        doc = _docx.Document(BytesIO(data))
+
+        para_records: list[tuple[int, str, list[str]]] = []
+        heading_stack: list[str] = []
+        for orig_idx, para in enumerate(doc.paragraphs):
+            text = para.text.strip()
+            if not text:
+                continue
+            name = _style_name(para)
+            if name.startswith("Heading"):
+                try:
+                    level = int(name.replace("Heading ", ""))
+                    heading_stack = heading_stack[: level - 1] + [text]
+                except ValueError:
+                    pass
+            para_records.append((orig_idx, text, list(heading_stack)))
+
+        for chunk in chunks:
+            content = chunk.content
+            start_idx: int | None = None
+            end_idx: int | None = None
+            section_at_start: list[str] = []
+            for orig_idx, text, section in para_records:
+                if len(text) >= 10 and text in content:
+                    if start_idx is None:
+                        start_idx = orig_idx
+                        section_at_start = section
+                    end_idx = orig_idx
+            if start_idx is not None:
+                chunk.source_detail = {
+                    "paragraph_start": start_idx,
+                    "paragraph_end": end_idx,
+                    "section": section_at_start,
+                }
+
         return chunks
