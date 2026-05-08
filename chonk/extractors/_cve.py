@@ -157,7 +157,8 @@ class CveRenderer:
 
     def render(self, obj: object) -> str:
         cves = _iter_cves(obj)
-        return "\n\n---\n\n".join(_render_one(c) for c in cves)
+        # H1 headings reset section context; no separator needed between records
+        return "\n\n".join(_render_one(c) for c in cves)
 
     def annotate(
         self,
@@ -180,10 +181,18 @@ class CveRenderer:
             meta[cve_id.upper()] = {k: v for k, v in detail.items() if v is not None}
 
         for chunk in chunks:
+            # Try content first, then section path (sub-sections lack the H1 text)
+            cve_id = None
             m = _CVE_ID_RE.search(chunk.content)
             if m:
                 cve_id = m.group(0).upper()
-                if cve_id in meta:
-                    chunk.source_detail = meta[cve_id]
+            if not cve_id:
+                for part in chunk.section or []:
+                    sm = _CVE_ID_RE.match(part.strip())
+                    if sm:
+                        cve_id = sm.group(0).upper()
+                        break
+            if cve_id and cve_id in meta:
+                chunk.source_detail = meta[cve_id]
 
         return chunks

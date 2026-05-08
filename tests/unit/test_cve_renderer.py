@@ -176,12 +176,11 @@ class TestCveRenderer:
     def test_cannot_render_unrelated_json(self):
         assert not self.r.can_render(None, {"name": "Alice", "age": 30})
 
-    def test_render_multiple_cves_separated(self):
+    def test_render_multiple_cves_present(self):
         two = {"vulnerabilities": [{"cve": _ONE_CVE}, {"cve": {**_ONE_CVE, "id": "CVE-2024-00002"}}]}
         md = self.r.render(two)
         assert "CVE-2024-99999" in md
         assert "CVE-2024-00002" in md
-        assert "---" in md  # separator between records
 
     def test_annotate_stamps_source_detail(self):
         from chonk import DocumentLoader
