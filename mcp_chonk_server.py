@@ -5,18 +5,45 @@ MCP server exposing Chonk search over one or more DuckDB indexes.
 Requirements:
     pip install "chonk[storage]" mcp
 
-Single DB (simple):
-    CHONK_DB_PATH         – path to DuckDB file
+Transport (CHONK_TRANSPORT):
+    stdio  (default) – local process; MCP host manages the subprocess
+    http             – Starlette/uvicorn HTTP server; clients connect by URL
+
+    stdio is for local/developer use. http is for centralised enterprise
+    deployment where end users point their MCP client at a URL.
+
+DB config:
+    CHONK_DB_PATH         – path to DuckDB file (single DB)
     CHONK_EMBEDDING_DIM   – embedding dimension (int, default 1024)
+    CHONK_DB_CONFIG       – JSON mapping name → {"path": "...", "embedding_dim": N}
+                            Takes precedence over CHONK_DB_PATH when set.
 
-Multiple DBs (named):
-    CHONK_DB_CONFIG       – JSON object mapping name → {"path": "...", "embedding_dim": N}
-                            e.g. '{"main": {"path": "/data/main.duckdb"},
-                                   "archive": {"path": "/data/archive.duckdb", "embedding_dim": 768}}'
+HTTP transport env vars:
+    CHONK_HOST            – bind host (default 0.0.0.0)
+    CHONK_PORT            – bind port (default 8000)
+    CHONK_API_KEY         – if set, all requests must carry
+                            Authorization: Bearer <key>
 
-    When CHONK_DB_CONFIG is set it takes precedence over CHONK_DB_PATH.
-    search_chunks accepts an optional "db" parameter to target a specific store;
-    omitting it searches all stores and merges results by score.
+Claude Desktop config (stdio):
+    {
+      "mcpServers": {
+        "chonk": {
+          "command": "python",
+          "args": ["/path/to/mcp_chonk_server.py"],
+          "env": {"CHONK_DB_PATH": "/data/index.duckdb"}
+        }
+      }
+    }
+
+Claude Desktop config (http — enterprise):
+    {
+      "mcpServers": {
+        "chonk": {
+          "url": "http://chonk.internal:8000/mcp",
+          "headers": {"Authorization": "Bearer <key>"}
+        }
+      }
+    }
 """
 
 from __future__ import annotations
@@ -55,9 +82,7 @@ def _load_stores() -> dict[str, Store]:
 
     db_path = os.environ.get("CHONK_DB_PATH")
     if not db_path:
-        raise RuntimeError(
-            "Either CHONK_DB_PATH or CHONK_DB_CONFIG env var is required"
-        )
+        raise RuntimeError("Either CHONK_DB_PATH or CHONK_DB_CONFIG env var is required")
     dim = int(os.environ.get("CHONK_EMBEDDING_DIM", str(_DEFAULT_DIM)))
     return {"default": Store(db_path, embedding_dim=dim, read_only=True)}
 
@@ -244,8 +269,7 @@ async def list_tools() -> list[Tool]:
                     "db": {
                         "type": "string",
                         "description": (
-                            f"Target a specific DB by name. One of: {db_names}. "
-                            "Omit to search all."
+                            f"Target a specific DB by name. One of: {db_names}. Omit to search all."
                         ),
                     },
                     "namespaces": {
@@ -412,14 +436,63 @@ async def _expand_chunk_graph(args: dict[str, Any]) -> list[TextContent]:
 # Entry point
 # ---------------------------------------------------------------------------
 
+_TRANSPORT = os.environ.get("CHONK_TRANSPORT", "stdio").lower()
 
-async def main() -> None:
+
+async def _run_stdio() -> None:
     async with stdio_server() as (read_stream, write_stream):
         await SERVER.run(
             read_stream,
             write_stream,
             SERVER.create_initialization_options(),
         )
+
+
+async def _run_http() -> None:
+    from contextlib import asynccontextmanager
+
+    import uvicorn
+    from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+    from starlette.applications import Starlette
+    from starlette.requests import Request
+    from starlette.responses import JSONResponse
+    from starlette.routing import Mount
+    from starlette.types import Receive, Scope, Send
+
+    _API_KEY = os.environ.get("CHONK_API_KEY")
+    _manager = StreamableHTTPSessionManager(app=SERVER, stateless=False)
+
+    async def handle_mcp(scope: Scope, receive: Receive, send: Send) -> None:
+        if _API_KEY and scope.get("type") == "http":
+            request = Request(scope, receive)
+            auth = request.headers.get("authorization", "")
+            if auth != f"Bearer {_API_KEY}":
+                response = JSONResponse({"error": "Unauthorized"}, status_code=401)
+                await response(scope, receive, send)
+                return
+        await _manager.handle_request(scope, receive, send)
+
+    @asynccontextmanager
+    async def lifespan(_app):
+        async with _manager.run():
+            yield
+
+    app = Starlette(
+        lifespan=lifespan,
+        routes=[Mount("/mcp", app=handle_mcp)],
+    )
+
+    host = os.environ.get("CHONK_HOST", "0.0.0.0")
+    port = int(os.environ.get("CHONK_PORT", "8000"))
+    config = uvicorn.Config(app, host=host, port=port)
+    await uvicorn.Server(config).serve()
+
+
+async def main() -> None:
+    if _TRANSPORT == "http":
+        await _run_http()
+    else:
+        await _run_stdio()
 
 
 if __name__ == "__main__":
