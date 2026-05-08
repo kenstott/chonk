@@ -2045,11 +2045,13 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
                         return result
                     except Exception as e:
                         is_rate = "429" in str(e) or "rate_limit" in str(e).lower() or "RateLimit" in type(e).__name__
-                        print(f"[eval] {r['id']} attempt {attempt+1}/5 {'rate-limit' if is_rate else 'error'}: {e}", flush=True)
+                        is_timeout = "timeout" in str(e).lower() or "Timeout" in type(e).__name__
+                        is_retryable = is_rate or is_timeout
+                        print(f"[eval] {r['id']} attempt {attempt+1}/5 {'rate-limit' if is_rate else 'timeout' if is_timeout else 'error'}: {e}", flush=True)
                         if is_rate:
                             delay = 15 * (2 ** attempt)
                             print(f"[eval] backing off {delay}s", flush=True)
-                        else:
+                        elif not is_retryable:
                             for key in METRIC_CONFIG.get(qtype, ["answer_correctness"]):
                                 result.setdefault(key, float("nan"))
                             _nan_final[0] += 1
