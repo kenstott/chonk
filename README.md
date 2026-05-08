@@ -132,6 +132,7 @@ pip install "chonk[pptx]"       # PPTX extraction
 pip install "chonk[yaml]"       # YAML file extraction
 pip install "chonk[odf]"        # ODF/ODS/ODT extraction
 pip install "chonk[storage]"    # DuckDB vector store
+pip install "chonk[pgvector]"  # PostgreSQL + pgvector vector store
 pip install "chonk[cluster]"    # Entity clustering (scikit-learn)
 pip install "chonk[leiden]"     # Leiden community detection (igraph + leidenalg)
 pip install "chonk[parquet]"    # Parquet/Arrow/Feather structured file support
@@ -502,10 +503,11 @@ data_chunks = loader.load_from_db(engine, queries={
 doc_chunks = loader.load_directory("./documents")
 pipeline.run_on_chunks(doc_chunks, entity_index)
 
-# Everything lands in one index
+# Everything lands in one index (DuckDB or PgVectorBackend — same interface)
 all_chunks = schema_chunks + data_chunks + doc_chunks
 with Store("index.duckdb", embedding_dim=1024) as store:
     store.add_document(all_chunks, embeddings)
+# or: PgVectorBackend("postgresql://prod-db/warehouse").add_chunks(all_chunks, embeddings)
 ```
 
 A query for "Acme Corp payment terms" now retrieves: the contract clause (unstructured
@@ -589,7 +591,14 @@ chunks = loader.load("sharepoint://site/document")
 
 ## Storage
 
-Requires `pip install "chonk[storage]"`.
+Chonk ships two vector backends. Both implement the same `VectorBackend` protocol and
+return identical `(chunk_id, score, DocumentChunk)` results.
+
+### DuckDB (default)
+
+Requires `pip install "chonk[storage]"`. Stores everything in a single local file.
+Uses DuckDB VSS (HNSW cosine index) for vector search and DuckDB FTS (BM25) for
+hybrid reranking.
 
 ```python
 import numpy as np
@@ -610,13 +619,44 @@ with Store("index.duckdb", embedding_dim=1024) as store:
         print(f"       {chunk.content[:80]}")
 ```
 
+### PostgreSQL + pgvector
+
+Requires `pip install "chonk[pgvector]"`. Stores chunks in a PostgreSQL table with
+a `vector(dim)` column. Uses pgvector's HNSW cosine index for ANN search. The right
+choice when your team is already running PostgreSQL and wants the vector index in the
+same managed database as the rest of your data.
+
+```python
+from chonk.storage import PgVectorBackend
+import numpy as np
+
+backend = PgVectorBackend(
+    dsn="postgresql://user:pass@prod-db:5432/warehouse",
+    embedding_dim=1024,
+    table="chonk_embeddings",   # default; created automatically
+)
+
+backend.add_chunks(chunks, np.array(embeddings, dtype=np.float32))
+
+results = backend.search(query_vec, limit=5, namespaces=["project_alpha"])
+for chunk_id, score, chunk in results:
+    print(f"{score:.3f}  {chunk.content[:80]}")
+
+backend.close()
+```
+
+`PgVectorBackend` implements the full `VectorBackend` protocol: `add_chunks`,
+`search`, `delete_by_document`, `count`, `clear`. The schema is created on
+first instantiation; subsequent connections reuse it. `namespace` and `chunk_type`
+filters work identically to the DuckDB backend.
+
 ### `Store.search()` parameters
 
 ```python
 store.search(
     query_embedding,          # np.ndarray shape (dim,)
     limit: int = 5,
-    query_text: str | None = None,       # enables hybrid FTS + vector search
+    query_text: str | None = None,       # enables hybrid FTS + vector (DuckDB only)
     namespaces: list[str] | None = None, # restrict to named partitions
     chunk_types: list[str] | None = None # restrict to specific chunk types
 ) -> list[tuple[str, float, DocumentChunk]]
@@ -625,14 +665,19 @@ store.search(
 Returns a list of `(chunk_id, score, DocumentChunk)` tuples. Each returned
 `DocumentChunk` includes `source_detail` (page, slide, paragraph, line numbers,
 etc.) when the original document was annotated — `source_detail` is persisted
-to the DuckDB store and round-trips through search.
+and round-trips through search on both backends.
+
+`query_text` hybrid BM25 reranking is supported by `DuckDBVectorBackend` only;
+`PgVectorBackend` accepts the parameter for API compatibility but performs
+pure vector search.
 
 ### `chonk.storage` exports
 
 | Name | Description |
 |---|---|
 | `Store` | High-level facade: vector search + relational entity storage over a single DuckDB file |
-| `DuckDBVectorBackend` | Low-level DuckDB VSS + FTS backend implementing `VectorBackend` |
+| `DuckDBVectorBackend` | Low-level DuckDB VSS (HNSW) + FTS (BM25) backend implementing `VectorBackend` |
+| `PgVectorBackend` | PostgreSQL + pgvector HNSW cosine backend implementing `VectorBackend` |
 | `RelationalStore` | SQLAlchemy-based relational store for entity and chunk-entity link tables |
 | `VectorBackend` | `typing.Protocol` — implement to plug in an alternative vector store |
 
