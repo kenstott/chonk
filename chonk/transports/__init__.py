@@ -17,6 +17,7 @@ from ._local import LocalTransport
 from ._protocol import FetchResult, Transport
 from ._s3 import S3Transport
 from ._sftp import SftpTransport
+from ._sql_query import SqlQueryTransport
 from ._sqlalchemy import SqlAlchemyTransport
 from ._web_crawler import WebCrawler
 
@@ -50,6 +51,7 @@ __all__ = [
     "DirectoryCrawler",
     "ImportCrawler",
     "SqlAlchemyTransport",
+    "SqlQueryTransport",
     "ImapTransport",
     "detect_transport",
 ]

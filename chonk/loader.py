@@ -234,6 +234,70 @@ class DocumentLoader:
         )
         return self._enrich(chunks)
 
+    def load_from_db(
+        self,
+        connection,
+        queries: dict[str, str] | list[tuple[str, str]],
+    ) -> list[DocumentChunk]:
+        """Execute SQL queries / views against a live DB connection and load results as chunks.
+
+        Reuses an existing connection — pass the same engine or connection used
+        for schema introspection or NerPipeline.add_from_db() so no second
+        authentication is needed.  Each query becomes a separate document whose
+        ``document_name`` is the dict key (or tuple first element).
+
+        Results are converted to CSV then chunked through the standard pipeline,
+        identical to loading a CSV file.
+
+        Args:
+            connection: SQLAlchemy URL string, Engine, Connection, or any
+                object with ``.execute()``.
+            queries: One of:
+
+                - ``dict[name, sql]`` —
+                  ``{"customer_summary": "SELECT * FROM v_customer_360"}``
+                - ``list[tuple[name, sql]]`` —
+                  ``[("customer_summary", "SELECT * FROM v_customer_360")]``
+
+        Returns:
+            Combined list of DocumentChunk objects from all queries.
+
+        Example::
+
+            chunks = loader.load_from_db(
+                engine,
+                queries={
+                    "customer_summary": "SELECT * FROM v_customer_360",
+                    "open_invoices":    "SELECT customer_name, amount "
+                                        "FROM invoices WHERE status = 'open'",
+                },
+            )
+        """
+        from .extractors._csv import CsvExtractor
+        from .transports._sql_query import SqlQueryTransport
+
+        if isinstance(queries, dict):
+            pairs = list(queries.items())
+        else:
+            pairs = list(queries)
+
+        transport = SqlQueryTransport(connection)
+        extractor = CsvExtractor()
+        all_chunks: list[DocumentChunk] = []
+
+        for name, sql in pairs:
+            result = transport.fetch(f"sqlquery://{name}", sql=sql)
+            text = extractor.extract(result.data, source_path=name)
+            chunks = chunk_document(
+                name, text,
+                self.min_chunk_size, self.max_chunk_size, self.overflow_margin,
+                include_breadcrumb=(self.context_strategy is not None),
+                include_doc_name=self.include_doc_name,
+            )
+            all_chunks.extend(self._enrich(chunks))
+
+        return all_chunks
+
     def load_imap(
         self,
         uri: str,

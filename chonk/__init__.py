@@ -64,6 +64,7 @@ from .transports import (
     S3Transport,
     SftpTransport,
     SqlAlchemyTransport,
+    SqlQueryTransport,
     Transport,
     WebCrawler,
 )
@@ -98,6 +99,7 @@ __all__ = [
     "FtpTransport",
     "SftpTransport",
     "SqlAlchemyTransport",
+    "SqlQueryTransport",
     "ImapTransport",
     # NER
     "VocabularyMatcher",
