@@ -10,6 +10,7 @@
 Shows how enrich_chunks() adds section breadcrumbs to embedding_content
 while leaving the original content untouched.
 """
+
 from chonk import chunk_document, enrich_chunks
 
 SAMPLE = """
@@ -37,7 +38,7 @@ Foreign exchange fluctuations pose significant risk.
 """.strip()
 
 if __name__ == "__main__":
-    chunks = chunk_document("report.md", SAMPLE, chunk_size=400, table_chunk_limit=600)
+    chunks = chunk_document("report.md", SAMPLE, min_chunk_size=400, max_chunk_size=1500)
     enriched = enrich_chunks(chunks, strategy="prefix")
 
     print("=" * 70)
@@ -47,6 +48,7 @@ if __name__ == "__main__":
         print(f"\nChunk {chunk.chunk_index} — section: {chunk.section!r}")
         print(f"  Original content ({len(chunk.content)} chars):")
         print(f"    {chunk.content[:80].replace(chr(10), ' ')!r}...")
-        print(f"  Embedding content ({len(chunk.embedding_content)} chars):")
-        print(f"    {chunk.embedding_content[:100].replace(chr(10), ' ')!r}...")
+        ec = chunk.embedding_content or ""
+        print(f"  Embedding content ({len(ec)} chars):")
+        print(f"    {ec[:100].replace(chr(10), ' ')!r}...")
     print()

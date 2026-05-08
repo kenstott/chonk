@@ -6,6 +6,7 @@
 # permission from the copyright holder.
 
 """Basic chunking example — no optional dependencies required."""
+
 from chonk import chunk_document
 
 SAMPLE = """
@@ -37,6 +38,6 @@ Text was normalized using standard NLP techniques.
 """.strip()
 
 if __name__ == "__main__":
-    chunks = chunk_document("example.md", SAMPLE, chunk_size=300, table_chunk_limit=500)
+    chunks = chunk_document("example.md", SAMPLE, min_chunk_size=300, max_chunk_size=1500)
     for chunk in chunks:
         print(f"[{chunk.chunk_index:02d}] section={chunk.section!r:40s} len={len(chunk.content)}")

@@ -29,7 +29,7 @@ WHY SECTION PATH:
   heading.
 
 TOGETHER:
-  embedding_content = "Document: {name}\nSection: {path}\n\n{content}"
+  embedding_content = "[doc_name > Ancestor > Section]\n\n{content}"
   gives every chunk a unique, human-readable address that survives any split
   boundary.
 """
@@ -37,6 +37,7 @@ TOGETHER:
 from __future__ import annotations
 
 import dataclasses
+
 from .models import DocumentChunk
 
 _STRATEGIES = ("prefix", "inline", "breadcrumb")
@@ -51,38 +52,45 @@ def enrich_chunk(chunk: DocumentChunk, strategy: str = "prefix") -> DocumentChun
     section path so that even chunks with generic headings can be distinguished
     across multiple documents.
 
+    All three strategies produce the same output format::
+
+        [doc_name > Ancestor > Section]
+
+        <content>
+
+    The breadcrumb is taken from ``chunk.breadcrumb`` when present (set by
+    ``chunk_document`` and respecting ``include_doc_name`` and
+    ``max_breadcrumb_chars``).  When ``breadcrumb`` is absent the function
+    rebuilds it from ``chunk.document_name`` and ``chunk.section``.
+
+    If no breadcrumb can be constructed (no document name, no section path),
+    ``embedding_content`` is set to ``chunk.content`` unchanged.
+
     Args:
         chunk: The source DocumentChunk to enrich.
-        strategy: One of:
-            "prefix" (default) — multi-line header block before content::
-
-                Document: techcorp_msa
-                Section: Limitation of Liability
-
-                IN NO EVENT SHALL EITHER PARTY'S AGGREGATE LIABILITY…
-
-            "inline" — compact single-line prefix::
-
-                [techcorp_msa > Limitation of Liability] IN NO EVENT…
+        strategy: One of ``"prefix"`` (default), ``"inline"``, or
+            ``"breadcrumb"``.  All three strategies currently use the same
+            ``[doc > section]\\n\\n<content>`` format; the parameter is
+            accepted for forward compatibility and to allow caller code to
+            signal intent.
 
     Returns:
         A new DocumentChunk with embedding_content populated.
 
     Raises:
-        ValueError: If strategy is not a known value.
+        ValueError: If strategy is not one of the known values.
     """
     if strategy not in _STRATEGIES:
-        raise ValueError(
-            f"Unknown enrichment strategy: {strategy!r}. "
-            f"Choose one of: {_STRATEGIES}"
-        )
+        raise ValueError(f"Unknown enrichment strategy: {strategy!r}. Choose one of: {_STRATEGIES}")
 
     # Use the breadcrumb already built by chunk_document (respects include_doc_name
     # and max_breadcrumb_chars).  Fall back to rebuilding from fields only if missing.
     crumb = chunk.breadcrumb
     if not crumb:
-        section_parts = chunk.section if isinstance(chunk.section, list) else (
-            [chunk.section] if chunk.section else []
+        section_parts = (
+            chunk.section
+            if isinstance(chunk.section, list)
+            else ([chunk.section] if chunk.section else [])
         )
         parts = [chunk.document_name] + section_parts if chunk.document_name else section_parts
         crumb = f"[{' > '.join(parts)}]" if parts else None
@@ -103,7 +111,8 @@ def enrich_chunks(
 
     Args:
         chunks: Source chunks to enrich.
-        strategy: "prefix" (default) or "inline".
+        strategy: One of ``"prefix"`` (default), ``"inline"``, or
+            ``"breadcrumb"``.  Passed through to :func:`enrich_chunk`.
 
     Returns:
         A new list of enriched DocumentChunks.
