@@ -152,3 +152,7 @@ class EmailExtractor:
         parts.extend(attachment_blocks)
 
         return "\n\n".join(parts)
+
+
+    def annotate(self, chunks: list, data: bytes, source_path: str | None = None) -> list:
+        return chunks

@@ -7,6 +7,7 @@
 """Unit tests for PythonExtractor, TypeScriptExtractor, and JavaExtractor."""
 
 import pytest
+
 from chonk.extractors._java import JavaExtractor
 from chonk.extractors._python import PythonExtractor
 from chonk.extractors._typescript import TypeScriptExtractor
@@ -183,3 +184,80 @@ class TestJavaExtractor:
         src = b"public record Point(int x, int y) {}\n"
         result = JavaExtractor().extract(src)
         assert "# Point" in result
+
+
+# =============================================================================
+# annotate() tests
+# =============================================================================
+
+class TestPythonAnnotate:
+    _SRC = b"""class MyClass:
+    def run(self):
+        pass
+"""
+
+    def _chunk_with_section(self, section: list[str]):
+        from chonk.models import DocumentChunk
+
+        return DocumentChunk(document_name="test", content="stub", section=section)
+
+    def test_python_annotate_stamps_line_start(self):
+        from chonk.extractors._python import PythonExtractor
+
+        chunk = self._chunk_with_section(["MyClass", "run"])
+        annotated = PythonExtractor().annotate([chunk], self._SRC)
+        assert annotated[0].source_detail is not None
+        assert annotated[0].source_detail["line_start"] > 0
+
+    def test_python_annotate_stamps_symbol(self):
+        from chonk.extractors._python import PythonExtractor
+
+        chunk = self._chunk_with_section(["MyClass", "run"])
+        annotated = PythonExtractor().annotate([chunk], self._SRC)
+        assert annotated[0].source_detail["symbol"] == "MyClass.run"
+
+
+class TestTypeScriptAnnotate:
+    _SRC = b"""class MyService {
+  run() {
+    return 1;
+  }
+}
+"""
+
+    def _chunk_with_section(self, section: list[str]):
+        from chonk.models import DocumentChunk
+
+        return DocumentChunk(document_name="test", content="stub", section=section)
+
+    def test_typescript_annotate_stamps_lines(self):
+        from chonk.extractors._typescript import TypeScriptExtractor
+
+        chunk = self._chunk_with_section(["MyService", "run"])
+        annotated = TypeScriptExtractor().annotate([chunk], self._SRC)
+        assert annotated[0].source_detail is not None
+        assert annotated[0].source_detail["line_start"] > 0
+        assert annotated[0].source_detail["symbol"] == "MyService.run"
+
+
+class TestJavaAnnotate:
+    _SRC = b"""public class MyClass {
+    public void run() {
+        int x = 1;
+    }
+}
+"""
+
+    def _chunk_with_section(self, section: list[str]):
+        from chonk.models import DocumentChunk
+
+        return DocumentChunk(document_name="test", content="stub", section=section)
+
+    def test_java_annotate_stamps_lines(self):
+        from chonk.extractors._java import JavaExtractor
+
+        chunk = self._chunk_with_section(["MyClass", "run"])
+        annotated = JavaExtractor().annotate([chunk], self._SRC)
+        assert annotated[0].source_detail is not None
+        assert annotated[0].source_detail["line_start"] > 0
+        assert annotated[0].source_detail["symbol"] == "MyClass.run"

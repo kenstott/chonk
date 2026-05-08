@@ -58,3 +58,7 @@ class DocxExtractor:
 
         doc = _docx_module.Document(BytesIO(data))
         return _extract_docx_content(doc)
+
+
+    def annotate(self, chunks: list, data: bytes, source_path: str | None = None) -> list:
+        return chunks

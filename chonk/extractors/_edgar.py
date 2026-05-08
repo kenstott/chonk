@@ -468,3 +468,7 @@ class EdgarExtractor:
         """Heuristic: returns True if the bytes look like EDGAR inline XBRL."""
         head = data[:4096].decode("utf-8", errors="replace").lower()
         return "xmlns:ix=" in head or "<ix:header" in head or "sec.gov" in head
+
+
+    def annotate(self, chunks: list, data: bytes, source_path: str | None = None) -> list:
+        return chunks

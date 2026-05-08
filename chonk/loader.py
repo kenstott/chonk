@@ -10,26 +10,24 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
 
-from .models import DocumentChunk
-from .schema import ColumnMeta, TableMeta, FieldMeta, EndpointMeta
 from ._struct_inference import infer_csv, infer_json, infer_jsonl, infer_parquet
+from .models import DocumentChunk
+from .schema import EndpointMeta, TableMeta
 
 _STRUCTURED_EXTENSIONS = frozenset({".parquet", ".arrow", ".feather", ".csv", ".jsonl", ".ndjson"})
 from .chunking import chunk_document
 from .extractors import detect_extractor, detect_type_from_source, normalize_type
 from .transports import (
-    detect_transport,
+    Crawler,
+    DirectoryCrawler,
     FetchResult,
-    LocalTransport,
-    HttpTransport,
-    S3Transport,
     FtpTransport,
+    HttpTransport,
+    LocalTransport,
+    S3Transport,
     SftpTransport,
     WebCrawler,
-    DirectoryCrawler,
-    Crawler,
 )
 
 logger = logging.getLogger(__name__)
@@ -154,6 +152,7 @@ class DocumentLoader:
             include_breadcrumb=(self.context_strategy is not None),
             include_doc_name=self.include_doc_name,
         )
+        chunks = extractor.annotate(chunks, result.data, result.source_path)
         return self._enrich(chunks)
 
     def load_bytes(
@@ -188,6 +187,7 @@ class DocumentLoader:
             include_breadcrumb=(self.context_strategy is not None),
             include_doc_name=self.include_doc_name,
         )
+        chunks = extractor.annotate(chunks, data, source_path)
         return self._enrich(chunks)
 
     def load_query(
@@ -219,8 +219,8 @@ class DocumentLoader:
                 name="articles",
             )
         """
-        from .transports._sqlalchemy import SqlAlchemyTransport
         from .extractors._csv import CsvExtractor
+        from .transports._sqlalchemy import SqlAlchemyTransport
 
         transport = SqlAlchemyTransport(connection_url, query=query, params=params)
         result = transport.fetch(f"sqlalchemy://{name}")
@@ -267,8 +267,8 @@ class DocumentLoader:
                 limit=100,
             )
         """
-        from .transports._imap import ImapTransport
         from .extractors._email import EmailExtractor
+        from .transports._imap import ImapTransport
 
         transport = ImapTransport()
         extractor = EmailExtractor(include_attachments=include_attachments)
@@ -480,7 +480,7 @@ class DocumentLoader:
     def load_crawl(
         self,
         uri: str,
-        crawler: "Crawler | None" = None,
+        crawler: Crawler | None = None,
         **crawler_kwargs,
     ) -> list[DocumentChunk]:
         """Crawl *uri* with *crawler*, then load each discovered document.
@@ -524,7 +524,7 @@ class DocumentLoader:
         same_domain: bool = True,
         exclude_patterns: list[str] | None = None,
         include_pattern: str | None = None,
-        crawler: "Crawler | None" = None,
+        crawler: Crawler | None = None,
     ) -> list[DocumentChunk]:
         """Crawl a website and load all discovered HTML pages.
 
@@ -565,7 +565,7 @@ class DocumentLoader:
         extensions: list[str] | None = None,
         recursive: bool = True,
         max_files: int = 1000,
-        crawler: "Crawler | None" = None,
+        crawler: Crawler | None = None,
     ) -> list[DocumentChunk]:
         """Load all documents in a local directory or S3 prefix.
 

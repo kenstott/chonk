@@ -9,6 +9,10 @@
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from chonk.models import DocumentChunk
 
 _IMPORT_RE = re.compile(r"^import\b")
 _CLASS_RE = re.compile(r"^(?:export\s+)?(?:abstract\s+)?class\s+(\w+)")
@@ -32,25 +36,23 @@ class TypeScriptExtractor:
     def can_handle(self, doc_type: str) -> bool:
         return doc_type in {"typescript", "javascript"}
 
-    def extract(self, data: bytes, source_path: str | None = None) -> str:
-        if not data:
-            return ""
-
-        try:
-            source = data.decode("utf-8")
-        except UnicodeDecodeError as exc:
-            raise ValueError(f"UTF-8 decode failed in {source_path or '<unknown>'}: {exc}") from exc
-
+    def _scan(self, source: str) -> tuple[str, dict[tuple[str, ...], dict]]:
+        """Return (markdown, section_map) where section_map maps section key → line metadata."""
         lines = source.splitlines()
         parts: list[str] = []
+        section_map: dict[tuple[str, ...], dict] = {}
 
-        # Collect import lines
-        import_lines = [ln for ln in lines if _IMPORT_RE.match(ln.strip())]
-        if import_lines:
+        import_line_indices = [idx for idx, ln in enumerate(lines) if _IMPORT_RE.match(ln.strip())]
+        if import_line_indices:
+            import_lines = [lines[idx] for idx in import_line_indices]
             parts.append("## Imports\n\n```typescript\n" + "\n".join(import_lines) + "\n```")
+            section_map[("Imports",)] = {
+                "line_start": import_line_indices[0] + 1,
+                "line_end": import_line_indices[-1] + 1,
+                "symbol": "Imports",
+            }
 
         brace_depth = 0
-        # Track open class contexts: list of (class_name, brace_depth_at_open)
         class_stack: list[tuple[str, int]] = []
         pending_jsdoc: list[str] = []
         in_jsdoc = False
@@ -60,7 +62,6 @@ class TypeScriptExtractor:
             line = lines[i]
             stripped = line.strip()
 
-            # JSDoc accumulation
             if stripped.startswith("/**"):
                 in_jsdoc = True
                 pending_jsdoc = [line]
@@ -75,7 +76,6 @@ class TypeScriptExtractor:
                 i += 1
                 continue
 
-            # Class declaration
             m = _CLASS_RE.match(stripped)
             if m:
                 name = m.group(1)
@@ -90,7 +90,6 @@ class TypeScriptExtractor:
                 i += 1
                 continue
 
-            # Interface declaration
             m = _INTERFACE_RE.match(stripped)
             if m:
                 name = m.group(1)
@@ -103,7 +102,6 @@ class TypeScriptExtractor:
                 i += 1
                 continue
 
-            # Top-level function
             m = _FUNCTION_RE.match(stripped)
             if m and not class_stack:
                 name = m.group(1)
@@ -112,12 +110,16 @@ class TypeScriptExtractor:
                 parts.append(f"# {name}")
                 if jsdoc:
                     parts.append(jsdoc)
-                # Collect body
+                line_start = i + 1
                 body, i, brace_depth = _collect_body(lines, i, brace_depth)
+                section_map[(name,)] = {
+                    "line_start": line_start,
+                    "line_end": i,
+                    "symbol": name,
+                }
                 parts.append(f"```typescript\n{body}\n```")
                 continue
 
-            # Arrow function (const foo = ...)
             m = _CONST_ARROW_RE.match(stripped)
             if m and not class_stack:
                 name = m.group(1)
@@ -126,12 +128,18 @@ class TypeScriptExtractor:
                 parts.append(f"# {name}")
                 if jsdoc:
                     parts.append(jsdoc)
+                line_start = i + 1
                 body, i, brace_depth = _collect_body(lines, i, brace_depth)
+                section_map[(name,)] = {
+                    "line_start": line_start,
+                    "line_end": i,
+                    "symbol": name,
+                }
                 parts.append(f"```typescript\n{body}\n```")
                 continue
 
-            # Method inside class (brace_depth == class depth + 1)
             if class_stack:
+                class_name = class_stack[-1][0]
                 class_depth = class_stack[-1][1]
                 if brace_depth == class_depth + 1:
                     m = _METHOD_RE.match(line)
@@ -143,24 +151,59 @@ class TypeScriptExtractor:
                             parts.append(f"## {mname}")
                             if jsdoc:
                                 parts.append(jsdoc)
+                            line_start = i + 1
                             body, i, brace_depth = _collect_body(lines, i, brace_depth)
+                            section_map[(class_name, mname)] = {
+                                "line_start": line_start,
+                                "line_end": i,
+                                "symbol": f"{class_name}.{mname}",
+                            }
                             parts.append(f"```typescript\n{body}\n```")
-                            # Check if class closed
                             if class_stack and brace_depth <= class_stack[-1][1]:
                                 class_stack.pop()
                             continue
 
-            # Update brace depth for other lines
             pending_jsdoc = []
             delta = line.count("{") - line.count("}")
             brace_depth += delta
-            # Pop class stack if we closed back to its depth
             while class_stack and brace_depth <= class_stack[-1][1]:
                 class_stack.pop()
 
             i += 1
 
-        return "\n\n".join(parts)
+        return "\n\n".join(parts), section_map
+
+    def extract(self, data: bytes, source_path: str | None = None) -> str:
+        if not data:
+            return ""
+
+        try:
+            source = data.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError(f"UTF-8 decode failed in {source_path or '<unknown>'}: {exc}") from exc
+
+        markdown, _ = self._scan(source)
+        return markdown
+
+    def annotate(
+        self,
+        chunks: list[DocumentChunk],
+        data: bytes,
+        source_path: str | None = None,
+    ) -> list[DocumentChunk]:
+        try:
+            source = data.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError(f"UTF-8 decode failed in {source_path or '<unknown>'}: {exc}") from exc
+
+        _, section_map = self._scan(source)
+
+        for chunk in chunks:
+            key = tuple(chunk.section)
+            if key in section_map:
+                chunk.source_detail = section_map[key]
+
+        return chunks
 
 
 def _collect_body(lines: list[str], start: int, current_depth: int) -> tuple[str, int, int]:

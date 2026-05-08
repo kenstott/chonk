@@ -7,13 +7,16 @@
 
 """Core data models for chonk."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any
 
 
 @dataclass
 class EntityAssociation:
     """Association between an entity and a chunk, with scoring metadata."""
+
     entity_id: str
     chunk_id: str
     frequency: int
@@ -25,6 +28,7 @@ class EntityAssociation:
 @dataclass
 class Entity:
     """A named entity from the vocabulary."""
+
     entity_id: str
     name: str
     display_name: str
@@ -35,6 +39,7 @@ class Entity:
 @dataclass
 class ClusterRecord:
     """A cluster of entities with cohesion score."""
+
     cluster_id: str
     entities: list[str]
     cohesion_score: float = 0.0
@@ -43,13 +48,14 @@ class ClusterRecord:
 @dataclass
 class ScoredChunk:
     """A chunk returned from enhanced search, with composite score and provenance."""
+
     chunk_id: str
-    chunk: "DocumentChunk"
+    chunk: DocumentChunk
     score: float
     provenance: str  # "seed" | "structural" | "entity_adjacent" | "cluster_adjacent"
-    linked_by: Optional[str] = None   # entity_id that linked this chunk
-    cluster: Optional[str] = None     # cluster_id for cluster-adjacent chunks
-    embedding: Optional[list] = None  # cached embedding for scoring
+    linked_by: str | None = None  # entity_id that linked this chunk
+    cluster: str | None = None  # cluster_id for cluster-adjacent chunks
+    embedding: list | None = None  # cached embedding for scoring
 
 
 @dataclass
@@ -66,15 +72,17 @@ class DocumentChunk:
         embedding_content: Set by enrich_chunks(); what actually gets embedded
         chunk_type: "document" | "db_table" | "db_column" | "api_endpoint" | etc.
     """
+
     document_name: str
     content: str
     section: list[str] = field(default_factory=list)
     chunk_index: int = 0
-    source_offset: Optional[int] = None
-    source_length: Optional[int] = None
-    embedding_content: Optional[str] = None
+    source_offset: int | None = None
+    source_length: int | None = None
+    source_detail: dict[str, Any] | None = None
+    embedding_content: str | None = None
     chunk_type: str = "document"
-    breadcrumb: Optional[str] = None
+    breadcrumb: str | None = None
     paragraph_continuation: bool = False
     source: str = ""
 
@@ -88,7 +96,10 @@ class DocumentChunk:
             if ct in ("db_table", "db_column", "db_schema"):
                 self.source = "schema"
             elif ct.startswith("api_") or ct in (
-                "graphql_query", "graphql_mutation", "graphql_type", "graphql_field"
+                "graphql_query",
+                "graphql_mutation",
+                "graphql_type",
+                "graphql_field",
             ):
                 self.source = "api"
             elif ct == "community_summary":
@@ -108,6 +119,7 @@ class LoadedDocument:
         source_uri: Original URI or path the document was fetched from
         sections: Ordered list of section headings found in the document
     """
+
     name: str
     content: str
     doc_format: str

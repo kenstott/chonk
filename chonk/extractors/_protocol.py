@@ -9,7 +9,10 @@
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
+
+if TYPE_CHECKING:
+    from chonk.models import DocumentChunk
 
 
 @runtime_checkable
@@ -21,3 +24,12 @@ class Extractor(Protocol):
     def can_handle(self, doc_type: str) -> bool:
         """Return True if this extractor handles the given doc_type short alias."""
         ...
+
+    def annotate(
+        self,
+        chunks: list[DocumentChunk],
+        data: bytes,
+        source_path: str | None = None,
+    ) -> list[DocumentChunk]:
+        """Stamp format-specific navigation metadata onto chunks. No-op default."""
+        return chunks

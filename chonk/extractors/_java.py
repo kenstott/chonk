@@ -9,6 +9,10 @@
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from chonk.models import DocumentChunk
 
 _IMPORT_RE = re.compile(r"^\s*import\s+")
 _TYPE_DECL_RE = re.compile(
@@ -32,29 +36,46 @@ def _strip_javadoc(lines: list[str]) -> str:
     return " ".join(text_lines)
 
 
+_SKIP_KEYWORDS = {
+    "if",
+    "for",
+    "while",
+    "switch",
+    "return",
+    "else",
+    "try",
+    "catch",
+    "finally",
+    "new",
+    "throw",
+    "assert",
+    "synchronized",
+    "super",
+    "this",
+}
+
+
 class JavaExtractor:
     def can_handle(self, doc_type: str) -> bool:
         return doc_type in {"java"}
 
-    def extract(self, data: bytes, source_path: str | None = None) -> str:
-        if not data:
-            return ""
-
-        try:
-            source = data.decode("utf-8")
-        except UnicodeDecodeError as exc:
-            raise ValueError(f"UTF-8 decode failed in {source_path or '<unknown>'}: {exc}") from exc
-
+    def _scan(self, source: str) -> tuple[str, dict[tuple[str, ...], dict]]:
+        """Return (markdown, section_map) where section_map maps section key → line metadata."""
         lines = source.splitlines()
         parts: list[str] = []
+        section_map: dict[tuple[str, ...], dict] = {}
 
-        # Collect import lines
-        import_lines = [ln for ln in lines if _IMPORT_RE.match(ln)]
-        if import_lines:
+        import_line_indices = [idx for idx, ln in enumerate(lines) if _IMPORT_RE.match(ln)]
+        if import_line_indices:
+            import_lines = [lines[idx] for idx in import_line_indices]
             parts.append("## Imports\n\n```java\n" + "\n".join(import_lines) + "\n```")
+            section_map[("Imports",)] = {
+                "line_start": import_line_indices[0] + 1,
+                "line_end": import_line_indices[-1] + 1,
+                "symbol": "Imports",
+            }
 
         brace_depth = 0
-        # Stack of (type_name, depth_before_open)
         type_stack: list[tuple[str, int]] = []
         pending_javadoc: list[str] = []
         in_javadoc = False
@@ -64,7 +85,6 @@ class JavaExtractor:
             line = lines[i]
             stripped = line.strip()
 
-            # Javadoc accumulation
             if stripped.startswith("/**"):
                 in_javadoc = True
                 pending_javadoc = [line]
@@ -79,14 +99,11 @@ class JavaExtractor:
                 i += 1
                 continue
 
-            # Skip import lines (already collected)
             if _IMPORT_RE.match(line):
                 pending_javadoc = []
                 i += 1
                 continue
 
-            # Top-level type declaration (class, interface, enum, record)
-            # Only at depth 0 or depth 1 (inner classes)
             if brace_depth <= 1:
                 m = _TYPE_DECL_RE.search(line)
                 if m:
@@ -102,37 +119,26 @@ class JavaExtractor:
                     i += 1
                     continue
 
-            # Method detection inside a type body
             if type_stack:
+                class_name = type_stack[-1][0]
                 class_depth = type_stack[-1][1]
                 if brace_depth == class_depth + 1:
                     m = _METHOD_RE.match(line)
                     if m:
                         mname = m.group(1)
-                        skip_keywords = {
-                            "if",
-                            "for",
-                            "while",
-                            "switch",
-                            "return",
-                            "else",
-                            "try",
-                            "catch",
-                            "finally",
-                            "new",
-                            "throw",
-                            "assert",
-                            "synchronized",
-                            "super",
-                            "this",
-                        }
-                        if mname not in skip_keywords:
+                        if mname not in _SKIP_KEYWORDS:
                             javadoc = _strip_javadoc(pending_javadoc) if pending_javadoc else ""
                             pending_javadoc = []
                             parts.append(f"## {mname}")
                             if javadoc:
                                 parts.append(javadoc)
+                            line_start = i + 1
                             body, i, brace_depth = _collect_java_body(lines, i, brace_depth)
+                            section_map[(class_name, mname)] = {
+                                "line_start": line_start,
+                                "line_end": i,
+                                "symbol": f"{class_name}.{mname}",
+                            }
                             parts.append(f"```java\n{body}\n```")
                             while type_stack and brace_depth <= type_stack[-1][1]:
                                 type_stack.pop()
@@ -144,7 +150,39 @@ class JavaExtractor:
                 type_stack.pop()
             i += 1
 
-        return "\n\n".join(parts)
+        return "\n\n".join(parts), section_map
+
+    def extract(self, data: bytes, source_path: str | None = None) -> str:
+        if not data:
+            return ""
+
+        try:
+            source = data.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError(f"UTF-8 decode failed in {source_path or '<unknown>'}: {exc}") from exc
+
+        markdown, _ = self._scan(source)
+        return markdown
+
+    def annotate(
+        self,
+        chunks: list[DocumentChunk],
+        data: bytes,
+        source_path: str | None = None,
+    ) -> list[DocumentChunk]:
+        try:
+            source = data.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValueError(f"UTF-8 decode failed in {source_path or '<unknown>'}: {exc}") from exc
+
+        _, section_map = self._scan(source)
+
+        for chunk in chunks:
+            key = tuple(chunk.section)
+            if key in section_map:
+                chunk.source_detail = section_map[key]
+
+        return chunks
 
 
 def _collect_java_body(lines: list[str], start: int, current_depth: int) -> tuple[str, int, int]:

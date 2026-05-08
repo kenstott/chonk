@@ -10,9 +10,14 @@
 from __future__ import annotations
 
 from io import BytesIO
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from chonk.models import DocumentChunk
 
 try:
     import pptx as _pptx_module
+
     _PPTX_AVAILABLE = True
 except ImportError:
     _PPTX_AVAILABLE = False
@@ -55,3 +60,35 @@ class PptxExtractor:
 
         prs = _pptx_module.Presentation(BytesIO(data))
         return _extract_pptx_content(prs)
+
+    def annotate(
+        self,
+        chunks: list[DocumentChunk],
+        data: bytes,
+        source_path: str | None = None,
+    ) -> list[DocumentChunk]:
+        if not _PPTX_AVAILABLE:
+            raise ImportError("pip install chonk[pptx]")
+
+        prs = _pptx_module.Presentation(BytesIO(data))
+
+        # Build per-slide shape index: slide_num → list of (shape_name_or_index, text)
+        slide_shapes: list[tuple[int, str, str]] = []
+        for slide_num, slide in enumerate(prs.slides, 1):
+            for shape_idx, shape in enumerate(slide.shapes):
+                shape_label = shape.name if shape.name else str(shape_idx)
+                if hasattr(shape, "text") and shape.text.strip():
+                    slide_shapes.append((slide_num, shape_label, shape.text.strip()))
+
+        for chunk in chunks:
+            content = chunk.content
+            for slide_num, shape_label, shape_text in slide_shapes:
+                if shape_text in content or any(
+                    line.strip() in shape_text
+                    for line in content.split("\n")
+                    if len(line.strip()) > 10
+                ):
+                    chunk.source_detail = {"slide": slide_num, "shape": shape_label}
+                    break
+
+        return chunks

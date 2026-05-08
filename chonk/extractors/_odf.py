@@ -106,3 +106,7 @@ class OdfExtractor:
             return _extract_odp(doc)
         # Default: treat as text/writer (ODT)
         return _extract_odt(doc)
+
+
+    def annotate(self, chunks: list, data: bytes, source_path: str | None = None) -> list:
+        return chunks

@@ -74,3 +74,7 @@ class JsonExtractor:
             _walk(obj, lines, depth=1, path="")
 
         return "\n\n".join(lines)
+
+
+    def annotate(self, chunks: list, data: bytes, source_path: str | None = None) -> list:
+        return chunks

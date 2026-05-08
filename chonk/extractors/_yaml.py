@@ -52,3 +52,6 @@ class YamlExtractor:
                 doc_blocks.append("\n\n".join(lines))
 
         return "\n\n---\n\n".join(doc_blocks)
+
+    def annotate(self, chunks: list, data: bytes, source_path: str | None = None) -> list:
+        return chunks

@@ -78,3 +78,7 @@ class ParquetExtractor:
             for i in range(table.num_rows)
         ]
         return "\n".join([header_row, sep_row] + data_rows)
+
+
+    def annotate(self, chunks: list, data: bytes, source_path: str | None = None) -> list:
+        return chunks

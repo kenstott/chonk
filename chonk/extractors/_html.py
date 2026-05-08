@@ -174,3 +174,7 @@ class HtmlExtractor:
     def extract(self, data: bytes, source_path: str | None = None) -> str:
         text = data.decode("utf-8", errors="replace")
         return _convert_html_to_markdown(text)
+
+
+    def annotate(self, chunks: list, data: bytes, source_path: str | None = None) -> list:
+        return chunks

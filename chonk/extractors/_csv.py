@@ -10,6 +10,10 @@ from __future__ import annotations
 
 import csv
 import io
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    pass
 
 
 class CsvExtractor:
@@ -49,9 +53,14 @@ class CsvExtractor:
 
         header_row = "| " + " | ".join(_cell(h) for h in headers) + " |"
         sep_row = "| " + " | ".join("---" for _ in headers) + " |"
-        data_rows = [
-            "| " + " | ".join(_cell(c) for c in row) + " |"
-            for row in body
-        ]
+        data_rows = ["| " + " | ".join(_cell(c) for c in row) + " |" for row in body]
 
         return "\n".join([header_row, sep_row] + data_rows)
+
+    def annotate(
+        self,
+        chunks: list[DocumentChunk],
+        data: bytes,
+        source_path: str | None = None,
+    ) -> list[DocumentChunk]:
+        return chunks

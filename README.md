@@ -2,9 +2,10 @@
 
 A pure-Python RAG/GraphRAG library for production-scale document corpora.
 
-Designed for large, frequently updated enterprise collections — where documents share
-structure, sections share vocabulary, and naive chunking produces retrievals that are
-technically correct but semantically wrong.
+Designed for large, heterogenous, frequently updated enterprise collections — real-world
+scenarios, not synthetic benchmarks or demos — where documents share structure, sections
+share vocabulary, and naive chunking produces retrievals that are technically correct but
+semantically wrong.
 
 Chonk covers the full pipeline: transport and extraction, semantic chunking, contextual
 enrichment, vector storage, entity and relationship indexing, community detection,
@@ -100,7 +101,7 @@ Chonk is a document chunking and contextual enrichment pipeline. It:
 
 The original `content` field is never modified. `embedding_content` is what you
 embed. Everything downstream — your embedding model, vector store, retrieval
-logic — is unchanged.
+logic ari— is unchanged.
 
 ---
 

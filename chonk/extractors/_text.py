@@ -23,3 +23,7 @@ class TextExtractor:
             return data.decode("utf-8")
         except UnicodeDecodeError:
             return data.decode("latin-1")
+
+
+    def annotate(self, chunks: list, data: bytes, source_path: str | None = None) -> list:
+        return chunks
