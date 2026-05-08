@@ -62,8 +62,8 @@ When sections share vocabulary, the embedding vectors for chunks from different
 documents — or different sections of the same document — are indistinguishable.
 Retrieval returns the wrong chunk, from the wrong document, for the wrong reason.
 
-The fix is simple: the document name and section path are known at chunk time.
-Put them in the text that gets embedded.
+There are two places to inject this context. The document name and section path are
+known at chunk time, so they can be prepended to the text that gets embedded:
 
 ```
 [techcorp_msa_2024 > Limitation of Liability]
@@ -71,10 +71,15 @@ Put them in the text that gets embedded.
 IN NO EVENT SHALL EITHER PARTY'S AGGREGATE LIABILITY…
 ```
 
-This is strictly better than embedding the chunk alone. If the content is already
-distinctive, the prefix adds a few redundant tokens and costs nothing. If the
-content is ambiguous — which it usually is — the prefix is the only thing that
-makes the embedding retrievable. There is no downside.
+Or they can be injected at answer generation time — included in the prompt context
+alongside the retrieved chunk rather than baked into the embedding itself.
+
+Which approach is better depends on the embedding model. Models that were trained on
+structured prefixes can use them as a disambiguation signal and produce meaningfully
+different vectors. Models that weren't may treat the prefix as noise, diluting the
+content signal rather than sharpening it. Chonk supports both strategies and lets you
+choose: `enrich_chunks()` handles embedding-time injection, and `AnswerGenerator` /
+`PromptBuilder` handle generation-time injection.
 
 ---
 
@@ -83,7 +88,9 @@ makes the embedding retrievable. There is no downside.
 Chonk is a document chunking and contextual enrichment pipeline. It:
 
 1. **Fetches** documents from local disk, HTTP/HTTPS, S3, FTP, SFTP, or any custom
-   source (SharePoint, Confluence, Google Drive, Notion)
+   source (SharePoint, Confluence, Google Drive, Notion). Built-in `WebCrawler` and
+   `DirectoryCrawler` discover documents recursively from a root URI; custom crawlers
+   plug in via the `Crawler` protocol.
 2. **Extracts** text from PDF, DOCX, XLSX, PPTX, HTML, Markdown, plain text, SEC
    EDGAR inline XBRL, or any custom format
 3. **Chunks** into semantically coherent pieces — never breaking mid-paragraph,
