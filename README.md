@@ -802,7 +802,16 @@ host (Claude Desktop, Cursor, VS Code Copilot, etc.) can query your index direct
 pip install "chonk[storage]" mcp
 ```
 
-### Single DB
+### Transports
+
+Two transports are supported via `CHONK_TRANSPORT`:
+
+| Value | When to use |
+|-------|-------------|
+| `stdio` (default) | Local / developer use. The MCP host manages the subprocess. Each user runs their own server process against a locally accessible DuckDB file. |
+| `http` | Enterprise / centralised deployment. One server process shared by all users. Users connect by URL — no Python install, no file access required on the user side. |
+
+### stdio — local use
 
 ```bash
 export CHONK_DB_PATH=/data/index.duckdb
@@ -810,27 +819,7 @@ export CHONK_EMBEDDING_DIM=1024   # default if omitted
 python mcp_chonk_server.py
 ```
 
-### Multiple named DBs
-
-```bash
-export CHONK_DB_CONFIG='{
-  "main":    {"path": "/data/main.duckdb"},
-  "archive": {"path": "/data/archive.duckdb", "embedding_dim": 768}
-}'
-python mcp_chonk_server.py
-```
-
-When `CHONK_DB_CONFIG` is set it takes precedence over `CHONK_DB_PATH`.
-
-### Tools
-
-| Tool | Description |
-|------|-------------|
-| `search_chunks` | Hybrid vector + BM25 search. Accepts `query_embedding` (required), `query_text`, `limit`, `db`, `namespaces`, `chunk_types`. Omit `db` to search all stores and merge by score. |
-| `get_chunk` | Fetch a chunk by `chunk_id`, optionally with adjacent chunks (`include_neighbors`, `neighbor_radius`). |
-| `expand_chunk_graph` | Stub — wire to your `EntityIndex` / `RelationshipIndex` to expand a chunk into entity and relation overlays. |
-
-### Claude Desktop config example
+Claude Desktop `claude_desktop_config.json`:
 
 ```json
 {
@@ -846,6 +835,59 @@ When `CHONK_DB_CONFIG` is set it takes precedence over `CHONK_DB_PATH`.
   }
 }
 ```
+
+### http — centralised enterprise deployment
+
+The enterprise team builds and maintains the index. End users connect to the
+server by URL with a shared API key — no local Python environment needed.
+
+```bash
+export CHONK_TRANSPORT=http
+export CHONK_DB_PATH=/data/index.duckdb
+export CHONK_API_KEY=your-secret-key   # omit to disable auth (not recommended)
+export CHONK_HOST=0.0.0.0              # default
+export CHONK_PORT=8000                 # default
+python mcp_chonk_server.py
+# → Uvicorn running on http://0.0.0.0:8000
+```
+
+Claude Desktop config for end users (no local server process):
+
+```json
+{
+  "mcpServers": {
+    "chonk": {
+      "url": "http://chonk.internal:8000/mcp",
+      "headers": {"Authorization": "Bearer your-secret-key"}
+    }
+  }
+}
+```
+
+All requests must carry `Authorization: Bearer <key>` when `CHONK_API_KEY` is set.
+Requests with a missing or wrong key are rejected with HTTP 401 before any MCP
+session is established.
+
+### Multiple named DBs
+
+`CHONK_DB_CONFIG` takes precedence over `CHONK_DB_PATH` and works with both
+transports. Each named DB is independently searchable; `search_chunks` merges
+results across all stores when no `db` parameter is supplied.
+
+```bash
+export CHONK_DB_CONFIG='{
+  "main":    {"path": "/data/main.duckdb"},
+  "archive": {"path": "/data/archive.duckdb", "embedding_dim": 768}
+}'
+```
+
+### Tools
+
+| Tool | Parameters | Description |
+|------|-----------|-------------|
+| `search_chunks` | `query_embedding` (required), `query_text`, `limit`, `db`, `namespaces`, `chunk_types` | Hybrid vector + BM25 search. Omit `db` to search all stores and merge by score. |
+| `get_chunk` | `chunk_id` (required), `db`, `include_neighbors`, `neighbor_radius` | Fetch a chunk by ID, optionally with adjacent chunks from the same document. |
+| `expand_chunk_graph` | `chunk_id` (required), `db` | Stub — wire to your `EntityIndex` / `RelationshipIndex` to expand a chunk into entity and relation overlays. |
 
 ---
 
