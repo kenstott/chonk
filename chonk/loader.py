@@ -274,7 +274,7 @@ class DocumentLoader:
             )
         """
         from .extractors._csv import CsvExtractor
-        from .transports._sql_query import SqlQueryTransport
+        from .transports._sql_query import SqlQueryTransport, db_provenance
 
         if isinstance(queries, dict):
             pairs = list(queries.items())
@@ -283,6 +283,7 @@ class DocumentLoader:
 
         transport = SqlQueryTransport(connection)
         extractor = CsvExtractor()
+        provenance = db_provenance(connection)
         all_chunks: list[DocumentChunk] = []
 
         for name, sql in pairs:
@@ -294,6 +295,12 @@ class DocumentLoader:
                 include_breadcrumb=(self.context_strategy is not None),
                 include_doc_name=self.include_doc_name,
             )
+            chunks = extractor.annotate(chunks, result.data, source_path=name)
+            for chunk in chunks:
+                detail = chunk.source_detail or {}
+                detail["query"] = sql
+                detail.update(provenance)
+                chunk.source_detail = detail
             all_chunks.extend(self._enrich(chunks))
 
         return all_chunks

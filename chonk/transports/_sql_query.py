@@ -63,6 +63,40 @@ def _resolve(connection):
     )
 
 
+def db_provenance(connection) -> dict:
+    """Return safe (no-credential) DB location info from a connection object.
+
+    Extracts dialect, host, port, and database name from SQLAlchemy Engine,
+    Connection, or URL string.  Returns an empty dict for DBAPI-only objects.
+    """
+    url = None
+    try:
+        if isinstance(connection, str):
+            import sqlalchemy as sa
+
+            url = sa.make_url(connection)
+        elif hasattr(connection, "url"):  # Engine
+            url = connection.url
+        elif hasattr(connection, "engine"):  # SQLAlchemy Connection
+            url = connection.engine.url
+    except Exception:
+        return {}
+
+    if url is None:
+        return {}
+
+    info: dict = {}
+    if getattr(url, "drivername", None):
+        info["db_dialect"] = url.drivername
+    if getattr(url, "host", None):
+        info["db_host"] = url.host
+    if getattr(url, "port", None):
+        info["db_port"] = url.port
+    if getattr(url, "database", None):
+        info["db_name"] = url.database
+    return info
+
+
 def _maybe_close(conn, original) -> None:
     if isinstance(original, str) or (
         hasattr(original, "connect") and not hasattr(original, "execute")

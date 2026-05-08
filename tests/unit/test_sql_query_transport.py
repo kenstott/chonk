@@ -176,3 +176,28 @@ class TestLoadFromDb:
             queries={"empty": "SELECT name FROM customers WHERE 1=0"},
         )
         assert chunks == []
+
+    def test_chunks_have_db_provenance(self, engine):
+        from chonk import DocumentLoader
+
+        loader = DocumentLoader(context_strategy=None)
+        chunks = loader.load_from_db(engine, queries={"c": "SELECT name FROM customers"})
+        assert chunks
+        detail = chunks[0].source_detail
+        assert detail is not None
+        assert detail.get("db_dialect") == "sqlite"
+        assert detail.get("db_name") == ":memory:"
+
+    def test_chunks_have_row_source_detail(self, engine):
+        from chonk import DocumentLoader
+
+        sql = "SELECT name FROM customers"
+        loader = DocumentLoader(context_strategy=None)
+        chunks = loader.load_from_db(engine, queries={"c": sql})
+        assert chunks, "expected chunks"
+        for chunk in chunks:
+            assert chunk.source_detail is not None
+            detail = chunk.source_detail
+            assert detail.get("query") == sql
+            assert detail.get("row_start", 0) >= 1
+            assert detail.get("row_end", 0) >= detail.get("row_start", 0)

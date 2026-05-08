@@ -297,6 +297,7 @@ enrichment and is only useful as a baseline for benchmarking.
 - `loader.load_api(endpoints)` — build N+1 `DocumentChunk` objects per `EndpointMeta`: one `"api_endpoint"` / `"api_graphql_query"` / `"api_graphql_mutation"` / `"api_graphql_type"` chunk plus one `"api_field"` chunk per field.
 - `loader.load_structured_file(path_or_uri, name=None)` — infer schema from `.csv`, `.json`, `.jsonl`/`.ndjson`, `.parquet`, `.arrow`, or `.feather` and delegate to `load_schema()`. Returns the same N+1 layout.
 - `loader.load_imap(uri, *, include_attachments=False, limit=None)` — fetch messages from an IMAP mailbox. `uri` format: `imaps://user:pass@host/MAILBOX`. Each message becomes a separate set of chunks; attachments are optionally extracted inline.
+- `loader.load_from_db(connection, queries)` — execute one or more SQL queries or views against a live DB connection and load the results as document chunks. Each query becomes a separate document. `queries` is a `dict[name, sql]` or `list[tuple[name, sql]]`. The same connection used for schema introspection and NER data vocab can be passed here — no second authentication needed.
 
 #### Crawl methods
 
@@ -351,6 +352,83 @@ chunks = loader.load_crawl("src/auth/token.py", crawler=crawler)
 seed file; `max_depth=1` adds its direct imports. Bare module specifiers (`react`,
 `java.util.*`) are skipped — only local relative imports and resolvable package paths
 are followed.
+
+---
+
+## Live DB queries as document chunks
+
+`load_from_db()` materialises SQL queries or views against an existing DB connection
+and feeds the results through the standard CSV extractor pipeline. This closes the loop
+on "find everything we know about customer X": structured docs, schema metadata, NER
+entity vocab, and now live relational data — all in one retrieval index.
+
+```python
+from chonk import DocumentLoader
+
+loader = DocumentLoader()
+
+# Same engine used for load_schema() and NerPipeline.add_from_db()
+chunks = loader.load_from_db(
+    connection=engine,          # SQLAlchemy Engine, Connection, URL string, or any .execute()
+    queries={
+        "customer_360":  "SELECT * FROM v_customer_360",
+        "open_invoices": "SELECT customer_name, amount, due_date "
+                         "FROM invoices WHERE status = 'open'",
+        "risk_flags":    "SELECT * FROM vw_customer_risk_flags",
+    },
+)
+# Each key becomes a separate document_name in the returned chunks
+```
+
+Accepts the same connection types as `NerPipeline.add_from_db()` and
+`load_schema()` — pass the same object, no second authentication needed.
+
+Queries that return zero rows produce no chunks (empty result sets are silently
+skipped). Column names become the CSV header row and appear in the chunk text.
+
+### Chunk provenance
+
+Every chunk produced by `load_from_db()` carries a `source_detail` dict with
+enough information to locate the original rows — without any credentials:
+
+```python
+chunk.source_detail == {
+    "db_dialect": "postgresql+psycopg2",  # SQLAlchemy drivername
+    "db_host":    "prod-db.internal",
+    "db_port":    5432,
+    "db_name":    "warehouse",
+    "query":      "SELECT * FROM v_customer_360",
+    "row_start":  12,   # 1-based data row index (header = row 0)
+    "row_end":    47,
+}
+```
+
+`row_start` / `row_end` are 1-based indices into the data rows (excluding the
+header). Re-run the query with `LIMIT`/`OFFSET` or `WHERE rownum BETWEEN` to
+retrieve exactly the rows the chunk came from.
+
+`db_host`, `db_port`, and `db_name` are omitted when not present in the connection
+(e.g. SQLite in-memory). Credentials (`username`, `password`) are never included.
+
+Plain CSV files loaded via `loader.load()` also receive `row_start` / `row_end`
+(but not the DB fields).
+
+### `SqlQueryTransport`
+
+`load_from_db()` is a convenience wrapper around `SqlQueryTransport`, which can be
+used directly when you need fine-grained control or want to integrate with the
+transport registry:
+
+```python
+from chonk.transports import SqlQueryTransport
+
+transport = SqlQueryTransport(engine)
+result = transport.fetch("sqlquery://customer_360",
+                         sql="SELECT * FROM v_customer_360")
+# result.data          — UTF-8 CSV bytes
+# result.detected_mime — "text/csv"
+# result.source_path   — "customer_360"
+```
 
 ---
 
