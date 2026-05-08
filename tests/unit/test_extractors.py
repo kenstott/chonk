@@ -9,12 +9,11 @@
 
 import pytest
 
-from chonk.extractors._html import HtmlExtractor
-from chonk.extractors._text import TextExtractor
-from chonk.extractors._markdown import MarkdownExtractor
-from chonk.extractors._yaml import YamlExtractor
 from chonk.extractors import detect_extractor
-
+from chonk.extractors._html import HtmlExtractor
+from chonk.extractors._markdown import MarkdownExtractor
+from chonk.extractors._text import TextExtractor
+from chonk.extractors._yaml import YamlExtractor
 
 # =============================================================================
 # HtmlExtractor
@@ -361,10 +360,10 @@ class TestCsvExtractor:
 def _make_odt(paragraphs: list[str], headings: list[tuple[int, str]] | None = None) -> bytes:
     """Build a minimal ODT document in memory using odfpy."""
     pytest.importorskip("odf")
-    from odf.opendocument import OpenDocumentText
-    from odf.text import P, H
-    from odf.style import Style, TextProperties
     import io
+
+    from odf.opendocument import OpenDocumentText
+    from odf.text import H, P
 
     doc = OpenDocumentText()
     for level, text in (headings or []):
@@ -381,10 +380,11 @@ def _make_odt(paragraphs: list[str], headings: list[tuple[int, str]] | None = No
 def _make_ods(sheets: dict[str, list[list[str]]]) -> bytes:
     """Build a minimal ODS document in memory using odfpy."""
     pytest.importorskip("odf")
-    from odf.opendocument import OpenDocumentSpreadsheet
-    from odf.table import Table, TableRow, TableCell
-    from odf.text import P
     import io
+
+    from odf.opendocument import OpenDocumentSpreadsheet
+    from odf.table import Table, TableCell, TableRow
+    from odf.text import P
 
     doc = OpenDocumentSpreadsheet()
     for sheet_name, rows in sheets.items():
@@ -405,10 +405,11 @@ def _make_ods(sheets: dict[str, list[list[str]]]) -> bytes:
 def _make_odp(slides: list[list[str]]) -> bytes:
     """Build a minimal ODP document in memory using odfpy."""
     pytest.importorskip("odf")
-    from odf.opendocument import OpenDocumentPresentation
-    from odf.draw import Page, TextBox, Frame
-    from odf.text import P
     import io
+
+    from odf.draw import Frame, Page, TextBox
+    from odf.opendocument import OpenDocumentPresentation
+    from odf.text import P
 
     doc = OpenDocumentPresentation()
     for slide_texts in slides:
@@ -506,10 +507,10 @@ def _make_email(
     attachments: list[tuple[str, bytes, str]] | None = None,
 ) -> bytes:
     """Build a minimal RFC 5322 email in memory using stdlib email."""
+    from email import encoders
+    from email.mime.base import MIMEBase
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
-    from email.mime.base import MIMEBase
-    from email import encoders
 
     if attachments:
         msg = MIMEMultipart()
@@ -614,3 +615,45 @@ class TestEmailExtractor:
     def test_detect_eml(self):
         from chonk.extractors._email import EmailExtractor
         assert isinstance(detect_extractor("eml"), EmailExtractor)
+
+
+# =============================================================================
+# MIME map — code extensions
+# =============================================================================
+
+
+class TestMimeCodeExtensions:
+    def test_mime_python_extension(self):
+        from chonk.extractors._mime import detect_type_from_source
+
+        assert detect_type_from_source("app.py", None) == "python"
+
+    def test_mime_typescript_extension(self):
+        from chonk.extractors._mime import detect_type_from_source
+
+        assert detect_type_from_source("index.ts", None) == "typescript"
+
+    def test_mime_java_extension(self):
+        from chonk.extractors._mime import detect_type_from_source
+
+        assert detect_type_from_source("Main.java", None) == "java"
+
+    def test_mime_tsx_extension(self):
+        from chonk.extractors._mime import detect_type_from_source
+
+        assert detect_type_from_source("Comp.tsx", None) == "typescript"
+
+    def test_registry_dispatches_python(self):
+        from chonk.extractors._python import PythonExtractor
+
+        assert isinstance(detect_extractor("python"), PythonExtractor)
+
+    def test_registry_dispatches_typescript(self):
+        from chonk.extractors._typescript import TypeScriptExtractor
+
+        assert isinstance(detect_extractor("typescript"), TypeScriptExtractor)
+
+    def test_registry_dispatches_java(self):
+        from chonk.extractors._java import JavaExtractor
+
+        assert isinstance(detect_extractor("java"), JavaExtractor)

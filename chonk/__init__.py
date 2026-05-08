@@ -6,31 +6,64 @@
 # permission from the copyright holder.
 
 """Chunky Monkey — a dairy-free RAG pipeline for delicious semantic similarity, clustering and NER."""
-from .chunking import chunk_document, extract_markdown_sections, is_list_line, is_table_line, merge_blocks, promote_plain_text_headers, NOVEL_STRUCTURAL_LEVELS
-from .models import DocumentChunk, LoadedDocument, EntityAssociation, Entity, ClusterRecord, ScoredChunk
-from .ner import VocabularyMatcher, EntityMatch, EntityIndex, SpacyMatcher, SpacyLabel, ALL_SPACY_LABELS, merge_matches, SchemaMatcher, normalize_schema_term
-from .cluster import CooccurrenceMatrix, cluster_entities, ClusterMap
-from .search import EnhancedSearch
-from .context import enrich_chunk, enrich_chunks
-from .loader import DocumentLoader
-from .schema import ColumnMeta, TableMeta, FieldMeta, EndpointMeta
-from .generation import AnswerContext, PromptBuilder, Answer, AnswerGenerator
-from .graph import SVOTriple, VERB_SET, RelationshipIndex, LLMClient, SVOExtractor, RelationshipIndexBuilder
-from .community import CommunityIndex, CommunitySummarizer, CommunityIndexBuilder
 from ._versioning import VersionedRef
+from .chunking import (
+    NOVEL_STRUCTURAL_LEVELS,
+    chunk_document,
+    extract_markdown_sections,
+    is_list_line,
+    is_table_line,
+    merge_blocks,
+    promote_plain_text_headers,
+)
+from .cluster import ClusterMap, CooccurrenceMatrix, cluster_entities
+from .community import CommunityIndex, CommunityIndexBuilder, CommunitySummarizer
+from .context import enrich_chunk, enrich_chunks
+from .generation import Answer, AnswerContext, AnswerGenerator, PromptBuilder
+from .graph import (
+    VERB_SET,
+    LLMClient,
+    RelationshipIndex,
+    RelationshipIndexBuilder,
+    SVOExtractor,
+    SVOTriple,
+)
+from .loader import DocumentLoader
+from .models import (
+    ClusterRecord,
+    DocumentChunk,
+    Entity,
+    EntityAssociation,
+    LoadedDocument,
+    ScoredChunk,
+)
+from .ner import (
+    ALL_SPACY_LABELS,
+    EntityIndex,
+    EntityMatch,
+    SchemaMatcher,
+    SpacyLabel,
+    SpacyMatcher,
+    VocabularyMatcher,
+    merge_matches,
+    normalize_schema_term,
+)
+from .schema import ColumnMeta, EndpointMeta, FieldMeta, TableMeta
+from .search import EnhancedSearch
 from .transports import (
-    Transport,
-    FetchResult,
     Crawler,
-    WebCrawler,
     DirectoryCrawler,
-    LocalTransport,
-    HttpTransport,
-    S3Transport,
+    FetchResult,
     FtpTransport,
+    HttpTransport,
+    ImapTransport,
+    ImportCrawler,
+    LocalTransport,
+    S3Transport,
     SftpTransport,
     SqlAlchemyTransport,
-    ImapTransport,
+    Transport,
+    WebCrawler,
 )
 
 __all__ = [
@@ -56,6 +89,7 @@ __all__ = [
     "Crawler",
     "WebCrawler",
     "DirectoryCrawler",
+    "ImportCrawler",
     "LocalTransport",
     "HttpTransport",
     "S3Transport",

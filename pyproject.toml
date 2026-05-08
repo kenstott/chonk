@@ -30,12 +30,14 @@ storage = ["duckdb>=1.4", "numpy>=2.0", "sqlalchemy>=2.0", "duckdb-engine>=0.13"
 cluster = ["scikit-learn>=1.5", "numpy>=2.0"]
 leiden  = ["igraph>=0.11", "leidenalg>=0.10"]
 parquet = ["pyarrow>=14.0"]
+code    = []  # Python/TS/JS/Java via stdlib ast + regex; no additional packages required
 full    = [
     "chonk[http,s3,sftp]",
     "chonk[pdf,docx,xlsx,pptx,yaml,odf]",
     "chonk[storage]",
     "chonk[cluster]",
     "chonk[parquet]",
+    "chonk[code]",
 ]
 
 [build-system]

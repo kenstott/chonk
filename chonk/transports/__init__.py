@@ -7,17 +7,18 @@
 
 """Document transport backends."""
 
-from ._protocol import Transport, FetchResult
 from ._crawler_protocol import Crawler
-from ._local import LocalTransport
-from ._http import HttpTransport
-from ._s3 import S3Transport
-from ._ftp import FtpTransport
-from ._sftp import SftpTransport
-from ._web_crawler import WebCrawler
 from ._directory_crawler import DirectoryCrawler
-from ._sqlalchemy import SqlAlchemyTransport
+from ._ftp import FtpTransport
+from ._http import HttpTransport
 from ._imap import ImapTransport
+from ._import_crawler import ImportCrawler
+from ._local import LocalTransport
+from ._protocol import FetchResult, Transport
+from ._s3 import S3Transport
+from ._sftp import SftpTransport
+from ._sqlalchemy import SqlAlchemyTransport
+from ._web_crawler import WebCrawler
 
 _DEFAULT_REGISTRY = [
     LocalTransport(),
@@ -47,6 +48,7 @@ __all__ = [
     "SftpTransport",
     "WebCrawler",
     "DirectoryCrawler",
+    "ImportCrawler",
     "SqlAlchemyTransport",
     "ImapTransport",
     "detect_transport",
