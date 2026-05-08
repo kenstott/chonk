@@ -165,6 +165,38 @@ def _convert_html_to_markdown(html: str) -> str:
     return converter.get_markdown()
 
 
+class _HeadingScanner(HTMLParser):
+    """Collects heading level, id-attribute, and text from HTML."""
+
+    def __init__(self):
+        super().__init__()
+        self.records: list[tuple[int, str | None, str]] = []
+        self._level: int | None = None
+        self._anchor: str | None = None
+        self._buf: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        tag = tag.lower()
+        if len(tag) == 2 and tag[0] == "h" and tag[1].isdigit():
+            self._level = int(tag[1])
+            self._anchor = dict(attrs).get("id")
+            self._buf = []
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = tag.lower()
+        if len(tag) == 2 and tag[0] == "h" and tag[1].isdigit() and self._level is not None:
+            text = "".join(self._buf).strip()
+            if text:
+                self.records.append((self._level, self._anchor, text))
+            self._level = None
+            self._anchor = None
+            self._buf = []
+
+    def handle_data(self, data: str) -> None:
+        if self._level is not None:
+            self._buf.append(data)
+
+
 class HtmlExtractor:
     """Extract plain text (as Markdown) from HTML documents."""
 
@@ -175,6 +207,57 @@ class HtmlExtractor:
         text = data.decode("utf-8", errors="replace")
         return _convert_html_to_markdown(text)
 
-
     def annotate(self, chunks: list, data: bytes, source_path: str | None = None) -> list:
+        html = data.decode("utf-8", errors="replace")
+
+        scanner = _HeadingScanner()
+        scanner.feed(html)
+        if not scanner.records:
+            return chunks
+
+        # Build (anchor, heading_path) for each heading in document order
+        heading_stack: list[tuple[int, str | None, str]] = []
+        section_anchors: list[tuple[str | None, list[str]]] = []
+        for level, anchor, text in scanner.records:
+            heading_stack = [(l, a, t) for l, a, t in heading_stack if l < level]
+            heading_stack.append((level, anchor, text))
+            path = [t for _, _, t in heading_stack]
+            top_anchor = next((a for _, a, _ in reversed(heading_stack) if a), None)
+            section_anchors.append((top_anchor, path))
+
+        # Convert to markdown and split into segments keyed by heading
+        markdown = _convert_html_to_markdown(html)
+        heading_idx = 0
+        segments: list[tuple[str | None, list[str], str]] = []
+        current_anchor: str | None = None
+        current_path: list[str] = []
+        current_buf: list[str] = []
+
+        for line in markdown.split("\n"):
+            m = re.match(r"^(#{1,6})\s+(.*)", line)
+            if m and heading_idx < len(section_anchors):
+                if current_buf:
+                    segments.append((current_anchor, current_path, "\n".join(current_buf)))
+                current_anchor, current_path = section_anchors[heading_idx]
+                heading_idx += 1
+                current_buf = [line]
+            else:
+                current_buf.append(line)
+        if current_buf:
+            segments.append((current_anchor, current_path, "\n".join(current_buf)))
+
+        for chunk in chunks:
+            content = chunk.content
+            for anchor, path, seg_text in segments:
+                if any(
+                    frag in seg_text
+                    for frag in content.split("\n")
+                    if len(frag.strip()) > 20
+                ):
+                    detail: dict = {"heading_path": path}
+                    if anchor:
+                        detail["anchor"] = anchor
+                    chunk.source_detail = detail
+                    break
+
         return chunks

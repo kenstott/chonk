@@ -28,7 +28,7 @@ except ImportError:
     _DUCKDB_AVAILABLE = False
 
 if TYPE_CHECKING:
-    from .._pool import ThreadLocalDuckDB  # only for type hints
+    pass  # only for type hints
 
 try:
     import numpy as _np
@@ -81,7 +81,7 @@ class DuckDBVectorBackend:
             """
             SELECT chunk_id, document_name, section, chunk_index,
                    content, breadcrumb, chunk_type, source_offset, source_length,
-                   namespace, embedding
+                   namespace, source_detail, embedding
             FROM embeddings
             """
         ).fetchall()
@@ -89,7 +89,7 @@ class DuckDBVectorBackend:
             return
         self._np_chunk_rows = rows
         self._np_embeddings = _np.array(
-            [r[10] for r in rows], dtype="float32"
+            [r[11] for r in rows], dtype="float32"
         )
 
     @property
@@ -101,7 +101,7 @@ class DuckDBVectorBackend:
     # ------------------------------------------------------------------
 
     def _init_schema(self) -> None:
-        from ._schema import get_ddl, VSS_INDEX_DDL
+        from ._schema import VSS_INDEX_DDL, get_ddl
 
         # Load extensions (best-effort — may already be loaded)
         for ext in ("vss", "fts"):
@@ -170,6 +170,8 @@ class DuckDBVectorBackend:
             )
             raw_section = getattr(chunk, "section", []) or []
             section_str = json.dumps(raw_section) if isinstance(raw_section, list) else raw_section
+            raw_detail = getattr(chunk, "source_detail", None)
+            source_detail_str = json.dumps(raw_detail) if raw_detail is not None else None
             records.append((
                 chunk_id,
                 chunk.document_name,
@@ -181,6 +183,7 @@ class DuckDBVectorBackend:
                 getattr(chunk, "source_offset", None),
                 getattr(chunk, "source_length", None),
                 namespace,
+                source_detail_str,
                 embedding,
             ))
 
@@ -188,8 +191,9 @@ class DuckDBVectorBackend:
             """
             INSERT INTO embeddings
                 (chunk_id, document_name, section, chunk_index, content,
-                 breadcrumb, chunk_type, source_offset, source_length, namespace, embedding)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 breadcrumb, chunk_type, source_offset, source_length, namespace,
+                 source_detail, embedding)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT DO NOTHING
             """,
             records,
@@ -233,6 +237,7 @@ class DuckDBVectorBackend:
                 """
                 SELECT e.chunk_id, e.document_name, e.section, e.chunk_index,
                        e.content, e.chunk_type, e.source_offset, e.source_length,
+                       e.source_detail,
                        fts_main_embeddings.match_bm25(e.chunk_id, ?) AS bm25_score
                 FROM embeddings e
                 WHERE bm25_score IS NOT NULL
@@ -245,7 +250,7 @@ class DuckDBVectorBackend:
             results = []
             for row in rows:
                 (chunk_id, doc_name, section, chunk_idx, content,
-                 chunk_type_str, source_offset, source_length, score) = row
+                 _chunk_type, source_offset, source_length, source_detail_str, score) = row
                 chunk = DocumentChunk(
                     document_name=doc_name,
                     content=content,
@@ -253,6 +258,7 @@ class DuckDBVectorBackend:
                     chunk_index=chunk_idx,
                     source_offset=source_offset,
                     source_length=source_length,
+                    source_detail=json.loads(source_detail_str) if source_detail_str else None,
                 )
                 results.append((chunk_id, float(score), chunk))
             return results
@@ -334,7 +340,10 @@ class DuckDBVectorBackend:
                 top_idx = [i for i in top_idx if self._np_chunk_rows[i][9] in ns_set]
             if ct_set is not None:
                 top_idx = [i for i in top_idx if self._np_chunk_rows[i][6] in ct_set]
-            rows = [(*self._np_chunk_rows[i][:9], float(sims[i])) for i in top_idx]
+            # indices: 0=chunk_id,1=doc_name,2=section,3=chunk_idx,4=content,
+            #          5=breadcrumb,6=chunk_type,7=source_offset,8=source_length,
+            #          9=namespace,10=source_detail
+            rows = [(*self._np_chunk_rows[i][:9], self._np_chunk_rows[i][10], float(sims[i])) for i in top_idx]
         else:
             query = query_vec.tolist()
             clauses: list[str] = []
@@ -362,6 +371,7 @@ class DuckDBVectorBackend:
                     e.chunk_type,
                     e.source_offset,
                     e.source_length,
+                    e.source_detail,
                     1.0 - array_cosine_distance(e.embedding, ?::FLOAT[{self._embedding_dim}]) AS similarity
                 FROM embeddings e
                 {where_clause}
@@ -374,7 +384,8 @@ class DuckDBVectorBackend:
         vector_results = []
         for row in rows:
             (chunk_id, doc_name, section, chunk_idx, content,
-             breadcrumb, chunk_type_str, source_offset, source_length, similarity) = row
+             breadcrumb, chunk_type_str, source_offset, source_length,
+             source_detail_str, similarity) = row
             displayed = (
                 f"{breadcrumb}\n\n{content}"
                 if include_breadcrumbs and breadcrumb
@@ -389,6 +400,7 @@ class DuckDBVectorBackend:
                 source_length=source_length,
                 breadcrumb=breadcrumb,
                 chunk_type=chunk_type_str or "document",
+                source_detail=json.loads(source_detail_str) if source_detail_str else None,
             )
             vector_results.append((chunk_id, float(similarity), chunk))
 
@@ -413,7 +425,7 @@ class DuckDBVectorBackend:
         rows = self._conn.execute(
             """
             SELECT document_name, content, section, chunk_index,
-                   source_offset, source_length, breadcrumb
+                   source_offset, source_length, breadcrumb, source_detail
             FROM embeddings
             ORDER BY document_name, chunk_index
             """
@@ -428,6 +440,7 @@ class DuckDBVectorBackend:
                 source_length=row[5],
                 breadcrumb=row[6],
                 embedding_content=f"{row[6]}\n\n{row[1]}" if row[6] else row[1],
+                source_detail=json.loads(row[7]) if row[7] else None,
             )
             for row in rows
         ]

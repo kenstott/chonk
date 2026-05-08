@@ -31,6 +31,10 @@ EMBEDDINGS_MIGRATE_NAMESPACE = """
 ALTER TABLE embeddings ADD COLUMN IF NOT EXISTS namespace TEXT
 """.strip()
 
+EMBEDDINGS_MIGRATE_SOURCE_DETAIL = """
+ALTER TABLE embeddings ADD COLUMN IF NOT EXISTS source_detail TEXT
+""".strip()
+
 ENTITIES_DDL = """
 CREATE TABLE IF NOT EXISTS entities (
     id           TEXT PRIMARY KEY,
@@ -63,6 +67,7 @@ def get_ddl(embedding_dim: int = 1024) -> list[str]:
         EMBEDDINGS_DDL.format(dim=embedding_dim),
         EMBEDDINGS_MIGRATE_BREADCRUMB,
         EMBEDDINGS_MIGRATE_NAMESPACE,
+        EMBEDDINGS_MIGRATE_SOURCE_DETAIL,
         ENTITIES_DDL,
         CHUNK_ENTITIES_DDL,
     ]

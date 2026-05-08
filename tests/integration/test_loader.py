@@ -7,8 +7,6 @@
 
 """Integration tests for DocumentLoader using LocalTransport + TextExtractor."""
 
-import pytest
-from pathlib import Path
 
 from chonk import DocumentLoader
 
@@ -136,6 +134,9 @@ class TestCustomExtractor:
             def extract(self, data, source_path=None):
                 return "fake content extracted"
 
+            def annotate(self, chunks, data, source_path=None):
+                return chunks
+
         f = tmp_path / "test.fake"
         f.write_bytes(b"raw")
         loader = DocumentLoader(extra_extractors=[FakeExtractor()], context_strategy=None)
@@ -149,6 +150,9 @@ class TestCustomExtractor:
 
             def extract(self, data, source_path=None):
                 return "override extracted"
+
+            def annotate(self, chunks, data, source_path=None):
+                return chunks
 
         loader = DocumentLoader(extra_extractors=[OverrideHtmlExtractor()], context_strategy=None)
         chunks = loader.load_bytes(b"<h1>ignored</h1>", "page.html", doc_type="html")
