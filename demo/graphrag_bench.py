@@ -1857,7 +1857,7 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
 
         judge_provider = getattr(args, "judge_provider", "openai")
         _http_client = httpx.AsyncClient(
-            timeout=httpx.Timeout(connect=10.0, read=60.0, write=10.0, pool=5.0),
+            timeout=httpx.Timeout(connect=15.0, read=180.0, write=15.0, pool=10.0),
             limits=httpx.Limits(max_connections=20, max_keepalive_connections=5),
         )
         _judge_kwargs = dict(
@@ -1867,8 +1867,8 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
             seed=42,
             presence_penalty=0,
             frequency_penalty=0,
-            max_retries=0,
-            timeout=90,
+            max_retries=5,
+            timeout=180,
             http_async_client=_http_client,
         )
         if judge_provider == "together":
