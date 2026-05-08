@@ -2244,6 +2244,59 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
         print(f"  {qtype}: " + ", ".join(f"{k}={v:.3f}" for k, v in scores.items()))
 
 
+def cmd_prep_nan_reeval(args: argparse.Namespace) -> None:
+    """Prepare a run for NaN-only re-evaluation.
+
+    Reads eval_scores from the run DuckDB, writes a checkpoint containing only
+    non-NaN results, and deletes the bench_eval JSON.  Running 'eval' afterwards
+    will skip the already-good questions and only evaluate the NaN ones.
+    """
+    import math as _math
+    out_dir     = Path(args.out_dir)
+    results_dir = out_dir / "results"
+    run_name    = args.run_name
+    run_db      = _run_db_path(out_dir / "data", run_name)
+    ckpt_f      = results_dir / f"bench_eval_ckpt_{run_name}.jsonl"
+    bench_eval  = results_dir / f"bench_eval_{run_name}.json"
+
+    if not run_db.exists():
+        print(f"Missing DB: {run_db}")
+        return
+
+    import duckdb as _ddb
+    con = _ddb.connect(str(run_db), read_only=True)
+    rows = con.execute(
+        "SELECT id, question_type, answer_correctness, rouge_score, "
+        "coverage_score, faithfulness, nan_reason FROM eval_scores"
+    ).fetchall()
+    con.close()
+
+    cols = ["id", "question_type", "answer_correctness", "rouge_score",
+            "coverage_score", "faithfulness", "nan_reason"]
+    good, nan_ids = [], []
+    for row in rows:
+        r = dict(zip(cols, row))
+        ac = r.get("answer_correctness")
+        if ac is None or (isinstance(ac, float) and _math.isnan(ac)):
+            nan_ids.append(r["id"])
+        else:
+            good.append(r)
+
+    if not nan_ids:
+        print(f"{run_name}: no NaN entries — nothing to do")
+        return
+
+    with open(ckpt_f, "w") as f:
+        for r in good:
+            f.write(json.dumps({k: v for k, v in r.items() if v is not None}) + "\n")
+
+    if bench_eval.exists():
+        bench_eval.unlink()
+
+    print(f"{run_name}: {len(good)} good kept in checkpoint, {len(nan_ids)} NaN queued for re-eval")
+    print(f"  Run: python demo/graphrag_bench.py eval --out-dir {out_dir} --run-name {run_name} ...")
+
+
 def cmd_backfill_db(args: argparse.Namespace) -> None:
     """Reconstruct a run DuckDB from results jsonl + eval checkpoint jsonl.
 
@@ -2935,6 +2988,12 @@ def _make_parser() -> argparse.ArgumentParser:
     p.add_argument("--out-dir",  default="/tmp/grb", metavar="DIR")
     p.add_argument("--run-name", required=True, help="Run name to backfill")
     p.set_defaults(func=cmd_backfill_db)
+
+    p = sub.add_parser("prep-nan-reeval",
+                       help="Prepare checkpoint keeping only non-NaN results so eval re-runs NaN questions only")
+    p.add_argument("--out-dir",  default="/tmp/grb", metavar="DIR")
+    p.add_argument("--run-name", required=True)
+    p.set_defaults(func=cmd_prep_nan_reeval)
 
     # make-order — generate stratified question order for full-corpus runs
     p = sub.add_parser("make-order", help="Generate stratified question order file for full-corpus runs")
