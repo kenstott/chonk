@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 try:
@@ -36,6 +37,25 @@ except ImportError:
     _np = None  # type: ignore
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class SyncResult:
+    """Result of a sync_document() call.
+
+    Attributes:
+        action:               "added" | "updated" | "skipped"
+        document_name:        Name of the document.
+        content_hash:         SHA-256 hex of the raw bytes that were checked.
+        chunk_count:          Chunks in the new version (0 if skipped).
+        previous_chunk_count: Chunks in the old version (0 if new/skipped).
+    """
+
+    action: str
+    document_name: str
+    content_hash: str = ""
+    chunk_count: int = 0
+    previous_chunk_count: int = 0
 
 
 def _deserialize_section(value) -> list[str]:
@@ -494,10 +514,138 @@ class DuckDBVectorBackend:
             "DELETE FROM embeddings WHERE document_name = ?",
             [document_name],
         ).fetchall()
+        self._conn.execute(
+            "DELETE FROM documents WHERE document_name = ?",
+            [document_name],
+        ).fetchall()
         self._fts_dirty = True
         return count_before
 
     def clear(self) -> None:
         """Delete all chunks from the embeddings table."""
         self._conn.execute("DELETE FROM embeddings").fetchall()
+        self._conn.execute("DELETE FROM documents").fetchall()
         self._fts_dirty = True
+
+    # ------------------------------------------------------------------
+    # Document registry
+    # ------------------------------------------------------------------
+
+    def get_document_hash(self, document_name: str) -> str | None:
+        """Return the stored content hash for *document_name*, or None if unknown."""
+        row = self._conn.execute(
+            "SELECT content_hash FROM documents WHERE document_name = ?",
+            [document_name],
+        ).fetchone()
+        return row[0] if row else None
+
+    def register_document(
+        self,
+        document_name: str,
+        content_hash: str,
+        source_uri: str = "",
+        chunk_count: int = 0,
+    ) -> None:
+        """Upsert a document record after indexing.
+
+        Call this after :meth:`add_chunks` to record that *document_name* is
+        up-to-date at *content_hash*.
+        """
+        self._conn.execute(
+            """
+            INSERT INTO documents (document_name, content_hash, source_uri, indexed_at, chunk_count)
+            VALUES (?, ?, ?, now(), ?)
+            ON CONFLICT (document_name) DO UPDATE SET
+                content_hash = excluded.content_hash,
+                source_uri   = excluded.source_uri,
+                indexed_at   = excluded.indexed_at,
+                chunk_count  = excluded.chunk_count
+            """,
+            [document_name, content_hash, source_uri, chunk_count],
+        ).fetchall()
+
+    def list_documents(self) -> list[dict]:
+        """Return all registered documents as a list of dicts.
+
+        Each dict has keys: ``document_name``, ``content_hash``,
+        ``source_uri``, ``indexed_at``, ``chunk_count``.
+        """
+        rows = self._conn.execute(
+            "SELECT document_name, content_hash, source_uri, indexed_at, chunk_count "
+            "FROM documents ORDER BY document_name"
+        ).fetchall()
+        return [
+            {
+                "document_name": r[0],
+                "content_hash": r[1],
+                "source_uri": r[2],
+                "indexed_at": r[3],
+                "chunk_count": r[4],
+            }
+            for r in rows
+        ]
+
+
+def sync_document(
+    backend: DuckDBVectorBackend,
+    document_name: str,
+    raw: bytes | None = None,
+    *,
+    content_hash: str | None = None,
+    source_uri: str = "",
+) -> SyncResult:
+    """Check whether a document needs reindexing and delete stale chunks if so.
+
+    Supports two calling patterns:
+
+    **1. Raw bytes supplied** — hash is computed from the bytes (sha256).
+    Use this when the document has already been downloaded::
+
+        result = sync_document(backend, "nvd-feed", raw_bytes)
+
+    **2. Hash supplied upfront** — no bytes needed.  Use this when the source
+    provides an ETag, ``Last-Modified`` header, or its own version identifier,
+    so you can skip downloading an unchanged document entirely::
+
+        etag = http_head(url).headers["ETag"]
+        result = sync_document(backend, "nvd-feed", content_hash=etag)
+        if result.action != "skipped":
+            raw_bytes = http_get(url).content
+            # ... embed and add_chunks ...
+
+    Either *raw* or *content_hash* must be provided.
+
+    Return values for ``action``:
+
+    * **"skipped"** — hash matches stored value; index is current, nothing changed.
+    * **"added"**   — document not previously indexed; no stale chunks existed.
+    * **"updated"** — document previously indexed with a different hash; all old
+      chunks have been deleted.
+
+    On any non-skipped result the caller must re-embed and call
+    :meth:`~DuckDBVectorBackend.add_chunks` then
+    :meth:`~DuckDBVectorBackend.register_document`.  Pass
+    ``result.content_hash`` to ``register_document`` — no need to hash again.
+    """
+    if content_hash is None:
+        if raw is None:
+            raise ValueError("Either raw or content_hash must be provided.")
+        content_hash = hashlib.sha256(raw).hexdigest()
+
+    stored_hash = backend.get_document_hash(document_name)
+
+    if stored_hash == content_hash:
+        return SyncResult(
+            action="skipped",
+            document_name=document_name,
+            content_hash=content_hash,
+        )
+
+    prev_count = backend.delete_by_document(document_name)
+    action = "updated" if stored_hash is not None else "added"
+    return SyncResult(
+        action=action,
+        document_name=document_name,
+        content_hash=content_hash,
+        previous_chunk_count=prev_count,
+    )

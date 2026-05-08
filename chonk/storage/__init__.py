@@ -12,7 +12,7 @@ from ._protocol import VectorBackend
 from ._relational import RelationalStore
 from ._schema import CHUNK_ENTITIES_DDL, EMBEDDINGS_DDL, ENTITIES_DDL, get_ddl
 from ._store import Store
-from ._vector import DuckDBVectorBackend
+from ._vector import DuckDBVectorBackend, SyncResult, sync_document
 
 __all__ = [
     "Store",
@@ -20,6 +20,8 @@ __all__ = [
     "PgVectorBackend",
     "RelationalStore",
     "VectorBackend",
+    "SyncResult",
+    "sync_document",
     "get_ddl",
     "EMBEDDINGS_DDL",
     "ENTITIES_DDL",

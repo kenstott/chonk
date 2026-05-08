@@ -85,6 +85,7 @@ class DocumentChunk:
     breadcrumb: str | None = None
     paragraph_continuation: bool = False
     source: str = ""
+    rendered_source: str | None = None  # per-record rendered markdown for visualization
 
     def __post_init__(self) -> None:
         if self.section is None:

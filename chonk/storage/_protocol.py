@@ -6,6 +6,7 @@
 # permission from the copyright holder.
 
 """VectorBackend protocol — implement this to plug in alternative vector stores."""
+
 from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
@@ -34,3 +35,15 @@ class VectorBackend(Protocol):
     def count(self) -> int: ...
 
     def clear(self) -> None: ...
+
+    def get_document_hash(self, document_name: str) -> str | None: ...
+
+    def register_document(
+        self,
+        document_name: str,
+        content_hash: str,
+        source_uri: str = "",
+        chunk_count: int = 0,
+    ) -> None: ...
+
+    def list_documents(self) -> list[dict]: ...

@@ -56,6 +56,16 @@ CREATE TABLE IF NOT EXISTS chunk_entities (
 )
 """.strip()
 
+DOCUMENTS_DDL = """
+CREATE TABLE IF NOT EXISTS documents (
+    document_name TEXT PRIMARY KEY,
+    content_hash  TEXT NOT NULL,
+    source_uri    TEXT NOT NULL DEFAULT '',
+    indexed_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    chunk_count   INTEGER NOT NULL DEFAULT 0
+)
+""".strip()
+
 VSS_INDEX_DDL = "CREATE INDEX IF NOT EXISTS embeddings_vss ON embeddings USING HNSW (embedding) WITH (metric = 'cosine')"
 VSS_DROP_INDEX_DDL = "DROP INDEX IF EXISTS embeddings_vss"
 
@@ -70,4 +80,5 @@ def get_ddl(embedding_dim: int = 1024) -> list[str]:
         EMBEDDINGS_MIGRATE_SOURCE_DETAIL,
         ENTITIES_DDL,
         CHUNK_ENTITIES_DDL,
+        DOCUMENTS_DDL,
     ]

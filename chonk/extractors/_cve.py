@@ -166,6 +166,7 @@ class CveRenderer:
         obj: object,
     ) -> list[DocumentChunk]:
         meta: dict[str, dict] = {}
+        rendered: dict[str, str] = {}
         for cve in _iter_cves(obj):
             cve_id = cve.get("id")
             if not cve_id:
@@ -179,6 +180,7 @@ class CveRenderer:
                 "vuln_status": cve.get("vulnStatus") or None,
             }
             meta[cve_id.upper()] = {k: v for k, v in detail.items() if v is not None}
+            rendered[cve_id.upper()] = _render_one(cve)
 
         for chunk in chunks:
             # Try content first, then section path (sub-sections lack the H1 text)
@@ -194,5 +196,6 @@ class CveRenderer:
                         break
             if cve_id and cve_id in meta:
                 chunk.source_detail = meta[cve_id]
+                chunk.rendered_source = rendered[cve_id]
 
         return chunks

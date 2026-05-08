@@ -547,6 +547,94 @@ Custom extractors populate `source_detail` by implementing `annotate()` (see
 
 ## Extending Chonk
 
+### Domain renderers
+
+`JsonExtractor` and `XmlExtractor` support a `Renderer` plug-in interface for
+domain-specific document formats that have known schemas. Instead of falling back
+to the generic key-path walk, a matching renderer takes over rendering and annotation
+entirely. This co-locates all fields that belong together in a single chunk, rather
+than splitting them across separate key-path sections.
+
+#### Renderer contract
+
+```python
+class Renderer(Protocol):
+    def can_render(self, source_path: str | None, obj: object) -> bool:
+        """Return True if this renderer handles the parsed document object."""
+
+    def render(self, obj: object) -> str:
+        """Convert the parsed object to Markdown. H1 headings mark record boundaries."""
+
+    def annotate(self, chunks: list[DocumentChunk], obj: object) -> list[DocumentChunk]:
+        """Stamp chunk.source_detail and chunk.rendered_source after chunking."""
+```
+
+`render()` returns Markdown with one `# Heading` per logical record (one CVE, one
+ATT&CK technique, one control, one trial).  `chunk_document()` splits at those
+headings, so each chunk maps to a complete record or a named subsection of one.
+
+`annotate()` receives chunks produced from the rendered Markdown and the original
+parsed object.  It sets two fields on each chunk:
+
+- **`source_detail`** — record-level metadata (IDs, scores, status) for filtering
+  and citation.  Not embedded.
+- **`rendered_source`** — the full per-record Markdown for that chunk's parent
+  record.  Useful for visualization: render it with any Markdown viewer to see
+  the complete record alongside the retrieved chunk.
+
+#### Built-in renderers
+
+| Renderer | Format | Source | `source_detail` keys |
+|---|---|---|---|
+| `CveRenderer` | NVD CVE JSON (API v2) | `JsonExtractor` | `cve_id`, `cvss_score`, `severity`, `published` |
+| `AttackRenderer` | MITRE ATT&CK STIX 2.x bundles | `JsonExtractor` | `attack_id`, `name`, `tactics`, `platforms`, `is_subtechnique`, `parent_id` |
+| `NistRenderer` | NIST SP 800-53 OSCAL JSON | `JsonExtractor` | `control_id`, `title`, `group` |
+| `ClinicalTrialRenderer` | ClinicalTrials.gov API v2 | `JsonExtractor` | `nct_id`, `title`, `status`, `phases`, `conditions` |
+| `FdaLabelRenderer` | openFDA drug label JSON | `JsonExtractor` | `application_id`, `brand_name`, `generic_name`, `manufacturer` |
+| `FhirRenderer` | FHIR R4 Bundle JSON | `JsonExtractor` | `resource_type`, `resource_id`, `code`, `subject` |
+| `CweRenderer` | MITRE CWE XML catalog | `XmlExtractor` | `cwe_id`, `name`, `platforms` |
+
+All renderers are pre-registered. Pass a document as `doc_type="json"` or
+`doc_type="xml"` and the right renderer is selected automatically.
+
+```python
+from chonk import DocumentLoader
+
+loader = DocumentLoader()
+
+# NVD CVE feed
+chunks = loader.load("https://services.nvd.nist.gov/rest/json/cves/2.0?keywordSearch=log4j")
+annotated = [c for c in chunks if c.source_detail]
+print(annotated[0].source_detail)      # {"cve_id": "CVE-2021-44228", "cvss_score": 10.0, ...}
+print(annotated[0].rendered_source)    # full Markdown for CVE-2021-44228
+
+# ATT&CK STIX bundle
+chunks = loader.load("https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/enterprise-attack.json")
+print(chunks[0].source_detail["attack_id"])   # "T1059.001"
+print(chunks[0].rendered_source[:200])         # # T1059.001 PowerShell ...
+```
+
+To add a custom renderer for a new JSON format:
+
+```python
+from chonk.extractors import JsonExtractor
+
+class MyRenderer:
+    def can_render(self, source_path, obj):
+        return isinstance(obj, dict) and "myKey" in obj
+
+    def render(self, obj):
+        return "\n\n".join(f"# {r['id']}\n\n{r['text']}" for r in obj["myKey"])
+
+    def annotate(self, chunks, obj):
+        for chunk in chunks:
+            chunk.source_detail = {"id": "..."}
+            chunk.rendered_source = "# ..."
+        return chunks
+
+loader = DocumentLoader(extra_extractors=[JsonExtractor(renderers=[MyRenderer()])])
+```
+
 ### Custom extractor
 
 All extractors implement three methods: `can_handle`, `extract`, and `annotate`.
@@ -649,6 +737,85 @@ backend.close()
 `search`, `delete_by_document`, `count`, `clear`. The schema is created on
 first instantiation; subsequent connections reuse it. `namespace` and `chunk_type`
 filters work identically to the DuckDB backend.
+
+### Document registry and incremental sync
+
+`DuckDBVectorBackend` maintains a `documents` table that tracks a content
+fingerprint for every indexed document.  Use it to avoid re-downloading and
+re-embedding content that hasn't changed.
+
+#### `sync_document()`
+
+```python
+from chonk.storage import sync_document
+
+result = sync_document(backend, document_name, raw_bytes)
+```
+
+Returns a `SyncResult(action, document_name, content_hash, chunk_count,
+previous_chunk_count)`.
+
+| `action` | Meaning |
+|---|---|
+| `"skipped"` | Stored hash matches; index is current. Nothing was changed. |
+| `"added"` | Document not previously indexed. |
+| `"updated"` | Document changed; all old chunks have been deleted. |
+
+On `"added"` or `"updated"` the caller re-embeds and calls
+`register_document()` to complete the update.  `result.content_hash` carries
+the hash so you don't compute it twice.
+
+#### Three calling patterns
+
+**1. Mutable document, no server hint** — download first, then check:
+
+```python
+raw = requests.get(url).content
+result = sync_document(backend, "nvd-feed", raw)
+if result.action != "skipped":
+    chunks = loader.load_bytes(raw, name="nvd-feed", doc_type="json")
+    embeddings = embed(chunks)
+    backend.add_chunks(chunks, embeddings)
+    backend.register_document("nvd-feed", result.content_hash,
+                               source_uri=url, chunk_count=len(chunks))
+```
+
+**2. Server provides ETag or Last-Modified** — skip the download entirely if
+the hash already matches:
+
+```python
+etag = requests.head(url).headers.get("ETag", "")
+result = sync_document(backend, "attack-enterprise", content_hash=etag)
+if result.action != "skipped":
+    raw = requests.get(url).content
+    chunks = loader.load_bytes(raw, name="attack-enterprise", doc_type="json")
+    # ... embed, add_chunks, register_document ...
+```
+
+**3. Immutable / versioned URL** — the URL itself is the fingerprint:
+
+```python
+versioned_url = "https://example.com/data/cwe-4.15.xml"
+result = sync_document(backend, "cwe", content_hash=versioned_url)
+if result.action != "skipped":
+    raw = requests.get(versioned_url).content
+    # ...
+```
+
+#### Detecting deleted documents
+
+`list_documents()` returns every registered document.  Compare against your
+source list to find documents that should be removed:
+
+```python
+known = {"nvd-feed", "attack-enterprise", "cwe"}
+for doc in backend.list_documents():
+    if doc["document_name"] not in known:
+        backend.delete_by_document(doc["document_name"])
+```
+
+`delete_by_document()` removes both the chunks and the registry entry.
+`clear()` removes everything.
 
 ### `Store.search()` parameters
 

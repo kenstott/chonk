@@ -53,7 +53,14 @@ from .ner import (
 )
 from .schema import ColumnMeta, EndpointMeta, FieldMeta, TableMeta
 from .search import EnhancedSearch
-from .storage import DuckDBVectorBackend, PgVectorBackend, Store, VectorBackend
+from .storage import (
+    DuckDBVectorBackend,
+    PgVectorBackend,
+    Store,
+    SyncResult,
+    VectorBackend,
+    sync_document,
+)
 from .transports import (
     Crawler,
     DirectoryCrawler,
@@ -154,4 +161,6 @@ __all__ = [
     "VectorBackend",
     "DuckDBVectorBackend",
     "PgVectorBackend",
+    "SyncResult",
+    "sync_document",
 ]

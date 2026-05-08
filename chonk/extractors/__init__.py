@@ -8,16 +8,21 @@
 """Document format extractors."""
 
 from ._attack import AttackRenderer
+from ._clinical_trial import ClinicalTrialRenderer
 from ._csv import CsvExtractor
 from ._cve import CveRenderer
+from ._cwe import CweRenderer
 from ._docx import DocxExtractor
 from ._edgar import EdgarExtractor
 from ._email import EmailExtractor
+from ._fda_label import FdaLabelRenderer
+from ._fhir import FhirRenderer
 from ._html import HtmlExtractor
 from ._java import JavaExtractor
 from ._json import JsonExtractor
 from ._markdown import MarkdownExtractor
 from ._mime import detect_type_from_source, is_binary_type, normalize_type
+from ._nist import NistRenderer
 from ._odf import OdfExtractor
 from ._parquet import ParquetExtractor
 from ._pdf import PdfExtractor
@@ -42,14 +47,23 @@ def _build_registry() -> list[Extractor]:
         XlsxExtractor(),
         PptxExtractor(),
         HtmlExtractor(),
-        JsonExtractor(renderers=[CveRenderer(), AttackRenderer()]),
+        JsonExtractor(
+            renderers=[
+                CveRenderer(),
+                AttackRenderer(),
+                NistRenderer(),
+                ClinicalTrialRenderer(),
+                FdaLabelRenderer(),
+                FhirRenderer(),
+            ]
+        ),
         YamlExtractor(),
         MarkdownExtractor(),
         CsvExtractor(),
         ParquetExtractor(),
         OdfExtractor(),
         EmailExtractor(),
-        XmlExtractor(),
+        XmlExtractor(renderers=[CweRenderer()]),
         PythonExtractor(),
         TypeScriptExtractor(),
         JavaExtractor(),
@@ -113,4 +127,9 @@ __all__ = [
     "Renderer",
     "CveRenderer",
     "AttackRenderer",
+    "CweRenderer",
+    "NistRenderer",
+    "ClinicalTrialRenderer",
+    "FdaLabelRenderer",
+    "FhirRenderer",
 ]

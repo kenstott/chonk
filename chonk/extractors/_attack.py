@@ -168,6 +168,7 @@ class AttackRenderer:
         techniques, index = _iter_techniques(obj)
 
         meta: dict[str, dict] = {}
+        rendered_map: dict[str, str] = {}
         for tech in techniques:
             attack_id = _ext_id(tech)
             if not attack_id:
@@ -191,6 +192,7 @@ class AttackRenderer:
             if parent_id:
                 detail["parent_id"] = parent_id
             meta[attack_id] = detail
+            rendered_map[attack_id] = _render_one(tech, index)
 
         for chunk in chunks:
             attack_id = None
@@ -205,5 +207,6 @@ class AttackRenderer:
                         break
             if attack_id and attack_id in meta:
                 chunk.source_detail = meta[attack_id]
+                chunk.rendered_source = rendered_map[attack_id]
 
         return chunks
