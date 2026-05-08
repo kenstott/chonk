@@ -432,6 +432,81 @@ result = transport.fetch("sqlquery://customer_360",
 
 ---
 
+## Unified DB pattern: find everything about entity X
+
+Most enterprise knowledge lives in three places simultaneously: unstructured documents
+(contracts, reports, emails, filings), relational database schema (what data exists and
+how it is structured), and relational database content (the actual records). Naive RAG
+pipelines index one of these. Chonk indexes all three through a single DB connection.
+
+```
+engine = create_engine("postgresql://prod-db/warehouse")
+
+┌─────────────────────────────────────────────────────────────┐
+│  1. Schema as chunks          loader.load_schema(tables)    │
+│     What data exists, column names, types, relationships    │
+│     chunk_type = "db_table" / "db_column"                   │
+├─────────────────────────────────────────────────────────────┤
+│  2. Entity vocab from DB      pipeline.add_from_db(engine)  │
+│     Known entity names → NER vocab for all document types   │
+│     "Acme Corp" tagged as customer in contracts, emails,    │
+│     filings — linked to the same entity ID everywhere       │
+├─────────────────────────────────────────────────────────────┤
+│  3. Live data as chunks       loader.load_from_db(engine)   │
+│     Query results materialised as searchable document chunks│
+│     Provenance: db_host, db_name, query, row_start, row_end │
+└─────────────────────────────────────────────────────────────┘
+```
+
+All three use the same connection object. No second authentication, no credential
+duplication.
+
+```python
+from sqlalchemy import create_engine
+from chonk import DocumentLoader
+from chonk.ner import NerPipeline, SpacyLabel
+from chonk.storage import Store
+
+engine = create_engine("postgresql+psycopg2://prod-db/warehouse")
+
+loader = DocumentLoader()
+pipeline = NerPipeline(db_enrich=True, spacy_entities=True)
+
+# 1. Schema chunks — index what data exists and how it is structured
+schema_chunks = loader.load_schema(tables)          # from TableMeta introspection
+
+# 2. Entity vocab — teach NER about your actual customers, employees, counterparties
+pipeline.add_from_db(engine, queries={
+    "customer":     "SELECT name      FROM customers   WHERE active = true",
+    "employee":     "SELECT full_name FROM employees",
+    "counterparty": "SELECT name      FROM counterparties",
+})
+pipeline.add_tables(tables)                         # schema identifiers normalised
+
+# 3. Live data chunks — make actual records searchable
+data_chunks = loader.load_from_db(engine, queries={
+    "customer_360":  "SELECT * FROM v_customer_360",
+    "open_invoices": "SELECT customer_name, amount, due_date "
+                     "FROM invoices WHERE status = 'open'",
+})
+
+# 4. Unstructured docs — NER now links these to the same entities as the DB data
+doc_chunks = loader.load_directory("./documents")
+pipeline.run_on_chunks(doc_chunks, entity_index)
+
+# Everything lands in one index
+all_chunks = schema_chunks + data_chunks + doc_chunks
+with Store("index.duckdb", embedding_dim=1024) as store:
+    store.add_document(all_chunks, embeddings)
+```
+
+A query for "Acme Corp payment terms" now retrieves: the contract clause (unstructured
+doc), the `payment_terms` column definition (schema chunk), and the matching rows from
+the invoices view (live data chunk) — all linked through the same `ent_acme_corp`
+entity ID in `EntityIndex`.
+
+---
+
 ## Source detail
 
 Every `DocumentChunk` already carries `section` (heading breadcrumb path) and, for
@@ -608,16 +683,50 @@ results: list[ScoredChunk] = search.search(query_embedding, k=5)
 
 ### NER / vocabulary layer
 
-#### Three-layer NER pipeline
+#### The problem with naive entity extraction
 
-`NerPipeline` runs up to three matcher layers and merges the results. Schema
-and data vocab both suppress overlapping spaCy hits.
+Generic NER models — spaCy, BERT-NER, cloud APIs — are trained on public corpora.
+They reliably find people and places in news articles. They are poor at the entities
+that actually matter in enterprise retrieval:
 
-| Layer | What it matches | Normalisation |
-|-------|----------------|---------------|
-| **Schema vocab** (`db_enrich=True`) | Table/column/API identifier terms | camelCase / snake_case / SCREAMING_SNAKE → prose |
-| **Data vocab** (`add_from_db` / `add_entities`) | Actual values from your DBs: customer names, employee names, counterparties, tickers | Verbatim, case-insensitive |
-| **spaCy NER** (`spacy_entities=True`) | Generic statistical NER | — |
+- **Schema identifiers**: `customerRiskScore`, `cpty_id`, `EFFECTIVE_DT` — your
+  internal column names appear in documents ("the customer risk score is reviewed
+  quarterly") but no generic model was trained on your data dictionary
+- **Known entities from your databases**: "Acme Corp" is in your CRM; spaCy may or
+  may not tag it as `ORG`; it will never tag it as `customer` with the right
+  canonical ID to join back to your database
+- **Ambiguous short names**: "Mercury" is a planet, a car brand, a record label,
+  and possibly your internal code name for a project — spaCy cannot distinguish them
+  without your context
+- **Domain vocabulary**: drug names, ticker symbols, legal clause labels, internal
+  project codes — statistical models generalise poorly to narrow domains
+
+The result: NER links the wrong chunks to the wrong entities, or misses the link
+entirely, producing entity graphs that look plausible but silently fail on real queries.
+
+#### How Chonk solves it: three-layer NER
+
+`NerPipeline` runs three matcher layers in order and merges the results. Both
+vocabulary layers suppress overlapping spaCy hits — your known entities take
+precedence over statistical guesses.
+
+| Layer | What it matches | Source |
+|-------|----------------|--------|
+| **Schema vocab** | Table names, column names, API field identifiers | Your DDL, `TableMeta`, `load_schema()` chunks |
+| **Data vocab** | Actual entity values: customer names, employee names, counterparties, tickers | Live DB queries or plain lists |
+| **spaCy NER** | Generic statistical NER for entities not covered above | Pre-trained spaCy model |
+
+Schema identifiers are normalised before matching: `customerRiskScore`,
+`customer_risk_score`, and `CUSTOMER_RISK_SCORE` all match the prose form
+`"customer risk score"`. This surfaces structural connections — a document that says
+"the customer risk score" and a table column called `CUSTOMER_RISK_SCORE` are linked
+through the same entity, without any manual synonym list.
+
+Data values are matched verbatim (case-insensitive). "Acme Corp" matches "Acme Corp"
+in text, and the match carries the entity type (`customer`) and a stable canonical ID
+that joins back to your database.
+
+#### Usage
 
 ```python
 from chonk.ner import NerPipeline, SpacyLabel
