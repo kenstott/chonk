@@ -2064,9 +2064,9 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
         async def _eval_one_safe(r: dict) -> dict:
             import asyncio as _aio
             try:
-                return await _aio.wait_for(_eval_one(r), timeout=300)
+                return await _aio.wait_for(_eval_one(r), timeout=1800)
             except TimeoutError:
-                print(f"[eval] {r['id']} timed out after 300s — skipping", flush=True)
+                print(f"[eval] {r['id']} timed out after 1800s — skipping", flush=True)
                 qtype = r.get("question_type", "?")
                 return {"id": r["id"], "question_type": qtype,
                         **{k: float("nan") for k in METRIC_CONFIG.get(qtype, ["answer_correctness"])}}
