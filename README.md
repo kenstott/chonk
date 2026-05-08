@@ -12,6 +12,14 @@ enrichment, vector storage, entity and relationship indexing, community detectio
 hybrid search, and answer generation. Every stage has tunable parameters and swappable
 implementations.
 
+**For teams that want to expose an existing index to LLM tooling:** Chonk ships an
+[MCP server](#mcp-server) (`mcp_chonk_server.py`) that speaks the
+[Model Context Protocol](https://modelcontextprotocol.io/). Run it locally with
+`CHONK_TRANSPORT=stdio` for individual use, or deploy it centrally with
+`CHONK_TRANSPORT=http` so every user in your organisation can point Claude Desktop,
+Cursor, or any MCP-compatible host at a shared index by URL — no local Python
+environment, no file access needed on the client side.
+
 Two capabilities distinguish it from simpler pipelines:
 
 **Semantic boundary chunking.** Naive pipelines handle split boundaries with overlap —
