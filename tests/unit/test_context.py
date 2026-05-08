@@ -161,3 +161,55 @@ class TestEnrichChunks:
         results = enrich_chunks(chunks)
         for r in results:
             assert "techcorp_msa" in r.embedding_content
+
+
+class TestDocumentChunkSectionNormalization:
+    def test_section_none_becomes_empty_list(self):
+        chunk = DocumentChunk(document_name="d", content="c", section=None, chunk_index=0)
+        assert chunk.section == []
+
+    def test_section_str_becomes_single_element_list(self):
+        chunk = DocumentChunk(document_name="d", content="c", section="Introduction", chunk_index=0)
+        assert chunk.section == ["Introduction"]
+
+    def test_section_empty_str_becomes_empty_list(self):
+        chunk = DocumentChunk(document_name="d", content="c", section="", chunk_index=0)
+        assert chunk.section == []
+
+    def test_section_list_unchanged(self):
+        chunk = DocumentChunk(document_name="d", content="c", section=["A", "B"], chunk_index=0)
+        assert chunk.section == ["A", "B"]
+
+    def test_section_default_is_empty_list(self):
+        chunk = DocumentChunk(document_name="d", content="c", chunk_index=0)
+        assert chunk.section == []
+
+
+class TestDocumentChunkSourceDerivation:
+    def test_default_chunk_type_is_document(self):
+        assert DocumentChunk(document_name="d", content="c", chunk_index=0).source == "document"
+
+    def test_db_table_yields_schema(self):
+        assert DocumentChunk(document_name="d", content="c", chunk_index=0, chunk_type="db_table").source == "schema"
+
+    def test_db_column_yields_schema(self):
+        assert DocumentChunk(document_name="d", content="c", chunk_index=0, chunk_type="db_column").source == "schema"
+
+    def test_db_schema_yields_schema(self):
+        assert DocumentChunk(document_name="d", content="c", chunk_index=0, chunk_type="db_schema").source == "schema"
+
+    def test_api_endpoint_yields_api(self):
+        assert DocumentChunk(document_name="d", content="c", chunk_index=0, chunk_type="api_endpoint").source == "api"
+
+    def test_api_graphql_query_yields_api(self):
+        assert DocumentChunk(document_name="d", content="c", chunk_index=0, chunk_type="api_graphql_query").source == "api"
+
+    def test_legacy_graphql_query_yields_api(self):
+        assert DocumentChunk(document_name="d", content="c", chunk_index=0, chunk_type="graphql_query").source == "api"
+
+    def test_legacy_graphql_mutation_yields_api(self):
+        assert DocumentChunk(document_name="d", content="c", chunk_index=0, chunk_type="graphql_mutation").source == "api"
+
+    def test_explicit_source_not_overridden(self):
+        chunk = DocumentChunk(document_name="d", content="c", chunk_index=0, chunk_type="db_table", source="custom")
+        assert chunk.source == "custom"

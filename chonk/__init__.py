@@ -8,11 +8,16 @@
 """Chunky Monkey — a dairy-free RAG pipeline for delicious semantic similarity, clustering and NER."""
 from .chunking import chunk_document, extract_markdown_sections, is_list_line, is_table_line, merge_blocks, promote_plain_text_headers, NOVEL_STRUCTURAL_LEVELS
 from .models import DocumentChunk, LoadedDocument, EntityAssociation, Entity, ClusterRecord, ScoredChunk
-from .ner import VocabularyMatcher, EntityMatch, EntityIndex, SpacyMatcher, SpacyLabel, ALL_SPACY_LABELS, merge_matches
+from .ner import VocabularyMatcher, EntityMatch, EntityIndex, SpacyMatcher, SpacyLabel, ALL_SPACY_LABELS, merge_matches, SchemaMatcher, normalize_schema_term
 from .cluster import CooccurrenceMatrix, cluster_entities, ClusterMap
 from .search import EnhancedSearch
 from .context import enrich_chunk, enrich_chunks
 from .loader import DocumentLoader
+from .schema import ColumnMeta, TableMeta, FieldMeta, EndpointMeta
+from .generation import AnswerContext, PromptBuilder, Answer, AnswerGenerator
+from .graph import SVOTriple, VERB_SET, RelationshipIndex, LLMClient, SVOExtractor, RelationshipIndexBuilder
+from .community import CommunityIndex, CommunitySummarizer, CommunityIndexBuilder
+from ._versioning import VersionedRef
 from .transports import (
     Transport,
     FetchResult,
@@ -66,10 +71,35 @@ __all__ = [
     "SpacyLabel",
     "ALL_SPACY_LABELS",
     "merge_matches",
+    "SchemaMatcher",
+    "normalize_schema_term",
     # Cluster
     "CooccurrenceMatrix",
     "cluster_entities",
     "ClusterMap",
     # Search
     "EnhancedSearch",
+    # Schema metadata
+    "ColumnMeta",
+    "TableMeta",
+    "FieldMeta",
+    "EndpointMeta",
+    # Generation
+    "AnswerContext",
+    "PromptBuilder",
+    "Answer",
+    "AnswerGenerator",
+    # Graph
+    "SVOTriple",
+    "VERB_SET",
+    "RelationshipIndex",
+    "LLMClient",
+    "SVOExtractor",
+    "RelationshipIndexBuilder",
+    # Community
+    "CommunityIndex",
+    "CommunitySummarizer",
+    "CommunityIndexBuilder",
+    # Versioning
+    "VersionedRef",
 ]

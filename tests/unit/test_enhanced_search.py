@@ -83,8 +83,13 @@ class FakeStore:
         self._results = results
         self.vector = self.FakeVector(results, all_chunks, conn)
 
-    def search(self, query_embedding, limit=5, query_text=None):
-        return self._results[:limit]
+    def search(self, query_embedding, limit=5, query_text=None, namespaces=None, chunk_types=None):
+        results = self._results
+        if chunk_types is not None:
+            ct_set = set(chunk_types)
+            results = [(cid, score, chunk) for cid, score, chunk in results
+                       if chunk.chunk_type in ct_set]
+        return results[:limit]
 
 
 # ---------------------------------------------------------------------------
@@ -218,3 +223,129 @@ class TestEnhancedSearchStructural:
         # With structural on, structural provenance may appear
         provenances = {r.provenance for r in results}
         assert provenances.issubset({"seed", "structural"})
+
+# ---------------------------------------------------------------------------
+# Phase 4.3 — Retrieval modes
+# ---------------------------------------------------------------------------
+
+def _make_community_store():
+    """Store with 3 regular + 2 community_summary chunks."""
+    from chonk.storage._store import Store
+    store = Store(":memory:", embedding_dim=DIM)
+
+    regular = [
+        DocumentChunk("doc1", "Alpha content.", chunk_index=0, chunk_type="document"),
+        DocumentChunk("doc1", "Beta content.", chunk_index=1, chunk_type="document"),
+        DocumentChunk("doc2", "Gamma content.", chunk_index=0, chunk_type="document"),
+    ]
+    summaries = [
+        DocumentChunk("community:0", "Community zero covers alpha topics.", chunk_type="community_summary"),
+        DocumentChunk("community:1", "Community one covers beta topics.", chunk_type="community_summary"),
+    ]
+    all_chunks = regular + summaries
+    embeddings = np.stack([_random_emb() for _ in all_chunks])
+    store.add_document(all_chunks, embeddings)
+    return store
+
+
+class TestSearchModeVectorFirst:
+    def test_mode_vector_first_is_default(self):
+        store, _, _ = _make_store_with_chunks()
+        s = EnhancedSearch(store, structural_expansion=False, entity_expansion=False, cluster_expansion=False)
+        results_default = s.search(_random_emb(), k=3)
+        results_explicit = s.search(_random_emb(), k=3, mode="vector_first")
+        assert len(results_default) == len(results_explicit)
+
+    def test_unknown_mode_raises(self):
+        store, _, _ = _make_store_with_chunks()
+        s = EnhancedSearch(store)
+        with pytest.raises(ValueError, match="Unknown search mode"):
+            s.search(_random_emb(), k=3, mode="invalid_mode")
+
+
+class TestSearchModeGlobal:
+    def test_global_returns_only_community_summary_chunks(self):
+        store = _make_community_store()
+        s = EnhancedSearch(store, structural_expansion=False, entity_expansion=False, cluster_expansion=False)
+        results = s.search(_random_emb(), k=5, mode="global")
+        assert len(results) > 0
+        for r in results:
+            assert r.chunk.chunk_type == "community_summary"
+
+    def test_global_excludes_regular_chunks(self):
+        store = _make_community_store()
+        s = EnhancedSearch(store, structural_expansion=False, entity_expansion=False, cluster_expansion=False)
+        results = s.search(_random_emb(), k=5, mode="global")
+        for r in results:
+            assert r.chunk.document_name.startswith("community:")
+
+    def test_global_respects_k(self):
+        store = _make_community_store()
+        s = EnhancedSearch(store, structural_expansion=False, entity_expansion=False, cluster_expansion=False)
+        results = s.search(_random_emb(), k=1, mode="global")
+        assert len(results) <= 1
+
+    def test_global_empty_when_no_summaries(self):
+        store, _, _ = _make_store_with_chunks()  # no community_summary chunks
+        s = EnhancedSearch(store, structural_expansion=False, entity_expansion=False, cluster_expansion=False)
+        results = s.search(_random_emb(), k=5, mode="global")
+        assert results == []
+
+
+class TestSearchModeGraphFirst:
+    def _make_relationship_index(self):
+        from chonk.graph import RelationshipIndex, SVOTriple
+        idx = RelationshipIndex()
+        idx.add(SVOTriple("ent_alpha", "governs", "ent_beta", 0.9))
+        return idx
+
+    def test_graph_first_falls_back_without_relationship_index(self):
+        store, _, _ = _make_store_with_chunks()
+        s = EnhancedSearch(store, structural_expansion=False, entity_expansion=False, cluster_expansion=False)
+        # No relationship_index — should fall back to vector_first and return results
+        results = s.search(_random_emb(), k=3, query_text="alpha beta", mode="graph_first")
+        assert isinstance(results, list)
+
+    def test_graph_first_falls_back_without_query_text(self):
+        store, _, _ = _make_store_with_chunks()
+        ri = self._make_relationship_index()
+        s = EnhancedSearch(store, relationship_index=ri,
+                           structural_expansion=False, entity_expansion=False, cluster_expansion=False)
+        # No query_text and no query_entities — falls back to vector_first
+        results = s.search(_random_emb(), k=3, mode="graph_first")
+        assert isinstance(results, list)
+
+    def test_graph_first_with_entity_index_uses_graph(self):
+        store, chunks, embeddings = _make_store_with_chunks()
+        # Build entity index
+        vocab = VocabularyMatcher(VOCAB)
+        entity_index = EntityIndex()
+        for i, chunk in enumerate(chunks):
+            matches = vocab.match(chunk.content)
+            entity_index.index_chunk(f"chunk_{i}", chunk.content, matches)
+
+        ri = self._make_relationship_index()
+        s = EnhancedSearch(
+            store, entity_index=entity_index, relationship_index=ri,
+            structural_expansion=False, cluster_expansion=False,
+        )
+        results = s.search(
+            _random_emb(), k=3, query_text="alpha", mode="graph_first",
+            query_entities=["ent_alpha"],
+        )
+        assert isinstance(results, list)
+        assert len(results) <= 3
+
+    def test_graph_first_returns_scored_chunks(self):
+        store, chunks, embeddings = _make_store_with_chunks()
+        ri = self._make_relationship_index()
+        s = EnhancedSearch(
+            store, relationship_index=ri,
+            structural_expansion=False, entity_expansion=False, cluster_expansion=False,
+        )
+        results = s.search(
+            _random_emb(), k=3, query_text="alpha",
+            query_entities=["ent_alpha"], mode="graph_first",
+        )
+        for r in results:
+            assert isinstance(r, ScoredChunk)
