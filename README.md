@@ -93,7 +93,7 @@ Chonk is a document chunking and contextual enrichment pipeline. It:
    `DirectoryCrawler` discover documents recursively from a root URI; custom crawlers
    plug in via the `Crawler` protocol.
 2. **Extracts** text from PDF, DOCX, XLSX, PPTX, HTML, Markdown, plain text, SEC
-   EDGAR inline XBRL, or any custom format
+   EDGAR inline XBRL, Python, TypeScript/JavaScript, Java, or any custom format
 3. **Chunks** into semantically coherent pieces — never breaking mid-paragraph,
    keeping tables and lists atomic, tracking the full heading hierarchy
 4. **Enriches** each chunk: sets `embedding_content` to
@@ -101,7 +101,7 @@ Chonk is a document chunking and contextual enrichment pipeline. It:
 
 The original `content` field is never modified. `embedding_content` is what you
 embed. Everything downstream — your embedding model, vector store, retrieval
-logic ari— is unchanged.
+logic — is unchanged.
 
 ---
 
@@ -127,6 +127,7 @@ pip install "chonk[storage]"    # DuckDB vector store
 pip install "chonk[cluster]"    # Entity clustering (scikit-learn)
 pip install "chonk[leiden]"     # Leiden community detection (igraph + leidenalg)
 pip install "chonk[parquet]"    # Parquet/Arrow/Feather structured file support
+pip install "chonk[code]"       # Python/TS/JS/Java code chunking (stdlib only, no extra packages)
 pip install "chonk[full]"       # Everything
 ```
 
@@ -208,6 +209,7 @@ enriched chunks is idempotent — it replaces `embedding_content` using the stor
 | `breadcrumb` | `str \| None` | Pre-formatted breadcrumb string (`"[doc > section]"`) used by `enrich_chunk` |
 | `paragraph_continuation` | `bool` | True when this chunk is a continuation of a split paragraph |
 | `source` | `str` | Origin class: `"document"`, `"schema"`, `"api"`, or `"community"` |
+| `source_detail` | `dict \| None` | Format-specific navigation metadata — see [Source detail](#source-detail) |
 
 ### `chunk_document`
 
@@ -299,8 +301,79 @@ enrichment and is only useful as a baseline for benchmarking.
 #### Crawl methods
 
 - `loader.load_site(url, max_pages=50, max_depth=3, same_domain=True, exclude_patterns=None, include_pattern=None, crawler=None)` — crawl a website and load all discovered HTML pages.
-- `loader.load_directory(path, extensions=None, recursive=True, max_files=1000, crawler=None)` — load all documents in a local directory or S3 prefix.
+- `loader.load_directory(path, extensions=None, recursive=True, max_files=1000, crawler=None)` — load all documents in a local directory or S3 prefix. Code extensions (`.py`, `.ts`, `.tsx`, `.js`, `.jsx`, `.java`) are included by default.
 - `loader.load_crawl(uri, crawler=None, **crawler_kwargs)` — generic entry point; `load_site` and `load_directory` are convenience wrappers.
+
+---
+
+## Code indexing
+
+Python, TypeScript/JavaScript, and Java files are first-class document types. The
+extractor converts source structure into Markdown headings — classes become `#`, methods
+become `##` — then feeds the result through the standard chunker unchanged.
+
+```python
+loader = DocumentLoader()
+
+# Single file
+chunks = loader.load("src/auth/token.py")
+
+# Entire repository
+chunks = loader.load_directory("./src")
+
+for chunk in chunks:
+    # chunk.section        — ["TokenService", "validate"]
+    # chunk.source_detail  — {"line_start": 42, "line_end": 67, "symbol": "TokenService.validate"}
+    embed(chunk.embedding_content)
+```
+
+Docstrings and JSDoc/Javadoc comments are emitted as plain-text paragraphs before the
+code fence, giving the embedding model natural language to anchor on. Import blocks are
+collected under a single `## Imports` heading so they do not dilute the method-level
+chunks.
+
+### `ImportCrawler`
+
+Discovers transitive dependencies starting from a seed file, bounded by depth or
+repository root. Use it to index a module and everything it imports without having to
+enumerate files manually.
+
+```python
+from chonk.transports import ImportCrawler
+
+crawler = ImportCrawler(root_path="./src", max_depth=3)
+uris = crawler.crawl("src/auth/token.py")   # seed + all reachable imports within src/
+
+chunks = loader.load_crawl("src/auth/token.py", crawler=crawler)
+```
+
+`root_path` prevents crawling outside the repository. `max_depth=0` returns only the
+seed file; `max_depth=1` adds its direct imports. Bare module specifiers (`react`,
+`java.util.*`) are skipped — only local relative imports and resolvable package paths
+are followed.
+
+---
+
+## Source detail
+
+Every extractor that knows the internal structure of its format stamps
+`chunk.source_detail` with format-specific navigation metadata after chunking. The
+field is `dict | None`; keys vary by format.
+
+| Format | Keys |
+|--------|------|
+| Python | `line_start`, `line_end`, `symbol` (e.g. `"MyClass.run"`) |
+| TypeScript / JavaScript | `line_start`, `line_end`, `symbol` |
+| Java | `line_start`, `line_end`, `symbol` |
+| XLSX | `sheet`, `row_start`, `row_end` |
+| PDF | `page` or `page_start` / `page_end` |
+| PPTX | `slide`, `shape` |
+
+`source_detail` is not embedded — it lives on the chunk as metadata only. Use it to
+build source links, IDE jump-to-definition integrations, or citation footnotes.
+
+Custom extractors populate `source_detail` by implementing `annotate()` (see
+[Extending Chonk](#extending-chonk)).
 
 ---
 
@@ -308,15 +381,28 @@ enrichment and is only useful as a baseline for benchmarking.
 
 ### Custom extractor
 
-```python
-class CsvExtractor:
-    def can_handle(self, doc_type): return doc_type == "csv"
-    def extract(self, data, source_path=None):
-        return data.decode()  # return plain text
+All extractors implement three methods: `can_handle`, `extract`, and `annotate`.
 
-loader = DocumentLoader(extra_extractors=[CsvExtractor()])
-chunks = loader.load_bytes(csv_bytes, name="data.csv", doc_type="csv")
+```python
+class MyExtractor:
+    def can_handle(self, doc_type: str) -> bool:
+        return doc_type == "myformat"
+
+    def extract(self, data: bytes, source_path: str | None = None) -> str:
+        return data.decode()  # return plain text for chunk_document()
+
+    def annotate(self, chunks: list, data: bytes, source_path: str | None = None) -> list:
+        # Optionally stamp chunk.source_detail with navigation metadata.
+        # Called by the loader after chunking; return chunks unchanged if not needed.
+        return chunks
+
+loader = DocumentLoader(extra_extractors=[MyExtractor()])
+chunks = loader.load_bytes(raw_bytes, name="doc", doc_type="myformat")
 ```
+
+`annotate()` receives the chunks produced by `chunk_document()` and the original raw
+bytes. It runs after chunking and before enrichment. The no-op implementation (just
+`return chunks`) is correct for formats where source navigation is not meaningful.
 
 ### Custom transport
 
