@@ -36,6 +36,87 @@ from __future__ import annotations
 import re
 
 from ._schema import SchemaMatcher
+from ._vocabulary import VocabularyMatcher, _auto_id
+
+# ---------------------------------------------------------------------------
+# DB connection helpers
+# ---------------------------------------------------------------------------
+
+
+def _resolve_connection(connection):
+    """Return a usable connection object from a URL string or engine/connection."""
+    if isinstance(connection, str):
+        try:
+            import sqlalchemy as sa
+        except ImportError as exc:
+            raise ImportError(
+                "sqlalchemy is required for add_from_db(). Install with: pip install sqlalchemy"
+            ) from exc
+        engine = sa.create_engine(connection)
+        return engine.connect()
+    # Engine: has connect() but not execute()
+    if hasattr(connection, "connect") and not hasattr(connection, "execute"):
+        return connection.connect()
+    # Already a connection or duck-typed object with execute()
+    if hasattr(connection, "execute"):
+        return connection
+    raise TypeError(
+        f"add_from_db() connection must be a URL string, SQLAlchemy Engine, "
+        f"or an object with .execute(). Got: {type(connection)}"
+    )
+
+
+def _execute(conn, sql: str) -> list[str]:
+    """Execute *sql*, validate single-column result, deduplicate, drop nulls.
+
+    Raises:
+        ValueError: if the query returns more than one column.
+    """
+    try:
+        import sqlalchemy as sa
+
+        result = conn.execute(sa.text(sql))
+    except Exception:
+        result = conn.execute(sql)
+
+    rows = list(result)
+    if not rows:
+        return []
+
+    # Validate single column
+    try:
+        col_count = len(rows[0])
+    except TypeError:
+        col_count = 1  # scalar rows
+    if col_count != 1:
+        raise ValueError(
+            f"add_from_db() queries must return exactly one column (got {col_count}). SQL: {sql!r}"
+        )
+
+    # Drop nulls, stringify, deduplicate preserving order
+    seen: set[str] = set()
+    values: list[str] = []
+    for row in rows:
+        val = row[0]
+        if val is None:
+            continue
+        s = str(val).strip()
+        if s and s not in seen:
+            seen.add(s)
+            values.append(s)
+    return values
+
+
+def _maybe_close(conn, original) -> None:
+    """Close conn only if we created it (i.e. original was a URL string or Engine)."""
+    if isinstance(original, str) or (
+        hasattr(original, "connect") and not hasattr(original, "execute")
+    ):
+        try:
+            conn.close()
+        except Exception:
+            pass
+
 
 # ---------------------------------------------------------------------------
 # SQL DDL parsing helpers
@@ -156,6 +237,10 @@ class SchemaVocabBuilder:
         self._tables: set[str] = set()
         self._columns: set[str] = set()
         self._api_terms: set[str] = set()
+        # Data-value vocab: list of (display_name, entity_type) tuples.
+        # Uses VocabularyMatcher (plain case-insensitive), not SchemaMatcher
+        # (which normalises camelCase/snake_case — wrong for "Acme Corp").
+        self._data_terms: list[tuple[str, str]] = []
 
     # ------------------------------------------------------------------
     # Ingestion
@@ -248,12 +333,85 @@ class SchemaVocabBuilder:
 
         return self
 
+    def add_entities(
+        self,
+        names: list[str],
+        entity_type: str = "term",
+    ) -> SchemaVocabBuilder:
+        """Add a plain list of entity names as data-value vocab.
+
+        Unlike schema terms, these are matched verbatim (case-insensitive)
+        — no camelCase or snake_case splitting.  Use for customer names,
+        employee names, counterparty names, product names, etc.
+
+        Args:
+            names: Display-form strings (e.g. ``["Acme Corp", "John Smith"]``).
+            entity_type: Label stored on matching ``EntityMatch`` objects
+                (e.g. ``"customer"``, ``"employee"``).  Default ``"term"``.
+        """
+        for name in names:
+            name = name.strip()
+            if len(name) >= self._min:
+                self._data_terms.append((name, entity_type))
+        return self
+
+    def add_from_db(
+        self,
+        connection,
+        queries: dict[str, str] | list[str] | list[tuple[str, str]],
+        entity_type: str = "term",
+        row_limit: int = 10_000,
+    ) -> SchemaVocabBuilder:
+        """Execute SQL queries and add result values as data-value vocab.
+
+        Unlike schema terms (table/column names), these values are matched
+        verbatim — no camelCase splitting.  Suitable for customer names,
+        employee names, counterparty names, ticker symbols, etc.
+
+        Args:
+            connection: One of:
+                - SQLAlchemy connection URL string
+                - SQLAlchemy ``Engine`` (has ``.connect()``)
+                - SQLAlchemy ``Connection`` or any object with ``.execute()``
+            queries: One of:
+                - ``dict[entity_type, sql]`` — e.g.
+                  ``{"customer": "SELECT name FROM customers"}``
+                - ``list[str]`` — SQL strings; all use ``entity_type`` arg
+                - ``list[tuple[str, str]]`` — ``[(sql, entity_type), ...]``
+            entity_type: Default entity type when ``queries`` is a list of strings.
+            row_limit: Maximum rows fetched per query (default 10 000).
+
+        Returns:
+            ``self`` for chaining.
+        """
+        # Normalise queries to list of (sql, entity_type)
+        if isinstance(queries, dict):
+            pairs: list[tuple[str, str]] = [(sql, etype) for etype, sql in queries.items()]
+        elif queries and isinstance(queries[0], tuple):
+            pairs = list(queries)  # type: ignore[arg-type]
+        else:
+            pairs = [(sql, entity_type) for sql in queries]  # type: ignore[union-attr]
+
+        conn = _resolve_connection(connection)
+        try:
+            for sql, etype in pairs:
+                limited = f"SELECT * FROM ({sql}) _q LIMIT {row_limit}"
+                # _execute validates single column, drops nulls, deduplicates
+                values = _execute(conn, limited)
+                for val in values:
+                    if len(val) >= self._min:
+                        self._data_terms.append((val, etype))
+        finally:
+            _maybe_close(conn, connection)
+
+        return self
+
     # ------------------------------------------------------------------
     # Build
     # ------------------------------------------------------------------
 
     def build(self) -> SchemaMatcher:
-        """Return a SchemaMatcher populated with all accumulated terms.
+        """Return a SchemaMatcher for schema/column/API identifier terms.
 
         SchemaMatcher applies normalize_schema_term internally, so
         ``firstName``, ``first_name``, and ``FIRST_NAME`` all produce the
@@ -262,6 +420,26 @@ class SchemaVocabBuilder:
         return SchemaMatcher(
             schema_terms=list(self._tables) + list(self._columns),
             api_terms=list(self._api_terms),
+        )
+
+    def build_data_matcher(self) -> VocabularyMatcher:
+        """Return a VocabularyMatcher for data-value terms (plain matching).
+
+        Data values (customer names, employee names, etc.) are matched
+        verbatim and case-insensitively — no camelCase normalisation.
+        """
+        entities = [
+            {
+                "id": _auto_id(name),
+                "name": name.lower(),
+                "display_name": name,
+                "type": etype,
+                "aliases": [],
+            }
+            for name, etype in self._data_terms
+        ]
+        return VocabularyMatcher(
+            entities, match_mode="case_insensitive", min_entity_length=self._min
         )
 
     # ------------------------------------------------------------------
@@ -276,3 +454,6 @@ class SchemaVocabBuilder:
 
     def api_term_count(self) -> int:
         return len(self._api_terms)
+
+    def data_term_count(self) -> int:
+        return len(self._data_terms)

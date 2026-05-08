@@ -41,7 +41,7 @@ from typing import TYPE_CHECKING
 
 from ._merge import merge_matches
 from ._schema_vocab import SchemaVocabBuilder
-from ._vocabulary import EntityMatch
+from ._vocabulary import EntityMatch, VocabularyMatcher
 
 if TYPE_CHECKING:
     from ._index import EntityIndex
@@ -51,17 +51,28 @@ if TYPE_CHECKING:
 
 
 class NerPipeline:
-    """Unified NER pipeline: schema vocab + spaCy, merged.
+    """Unified NER pipeline: schema vocab + data vocab + spaCy, all merged.
+
+    Three matcher layers, applied in priority order (highest first):
+
+    1. **Schema vocab** (``db_enrich=True``) — table/column/API identifier
+       terms, normalised from camelCase/snake_case to prose form.
+    2. **Data vocab** (``add_from_db()`` / ``add_entities()``) — actual values
+       from database tables: customer names, employee names, counterparty names,
+       ticker symbols, etc.  Matched verbatim (case-insensitive).
+    3. **spaCy NER** (``spacy_entities=True``) — generic statistical NER.
+
+    Schema and data vocab both suppress overlapping spaCy hits.
 
     Args:
-        db_enrich: Match schema/column/API terms against document text.
-            Feed terms via ``add_tables()``, ``add_sql()``, ``add_chunks()``.
-        spacy_entities: Run spaCy NER on document text.
+        db_enrich: Match schema/column/API identifier terms.
+            Feed via ``add_tables()``, ``add_sql()``, ``add_chunks()``.
+        spacy_entities: Run spaCy NER.
         spacy_model: spaCy model name (default ``"en_core_web_sm"``).
-        spacy_entity_types: Whitelist of spaCy label strings
-            (e.g. ``["ORG", "PERSON", "GPE"]``). ``None`` keeps all labels.
-        min_schema_term_length: Ignore schema identifiers shorter than this
-            (default 2 — filters noise like ``id`` column abbreviations).
+        spacy_entity_types: Label whitelist for spaCy
+            (e.g. ``["ORG", "PERSON", "GPE"]``). ``None`` keeps all 18 labels.
+        min_schema_term_length: Drop schema identifiers shorter than this
+            (default 2).
     """
 
     def __init__(
@@ -77,36 +88,91 @@ class NerPipeline:
         self._spacy_model = spacy_model
         self._spacy_entity_types = spacy_entity_types
         self._builder = SchemaVocabBuilder(min_term_length=min_schema_term_length)
-        self._schema_matcher: SchemaMatcher | None = None  # lazily built
-        self._spacy_matcher: SpacyMatcher | None = None  # lazily built
-        self._dirty = False  # True when new terms added after first match()
+        self._schema_matcher: SchemaMatcher | None = None
+        self._data_matcher: VocabularyMatcher | None = None
+        self._spacy_matcher: SpacyMatcher | None = None
+        self._schema_dirty = False
+        self._data_dirty = False
 
     # ------------------------------------------------------------------
-    # Schema vocabulary population
+    # Schema identifier vocabulary
     # ------------------------------------------------------------------
 
     def add_tables(self, tables: list) -> NerPipeline:
         """Add table/column names from a list of TableMeta objects."""
         self._builder.add_tables(tables)
-        self._dirty = True
+        self._schema_dirty = True
         return self
 
     def add_endpoints(self, endpoints: list) -> NerPipeline:
         """Add path/field names from a list of EndpointMeta objects."""
         self._builder.add_endpoints(endpoints)
-        self._dirty = True
+        self._schema_dirty = True
         return self
 
     def add_sql(self, ddl: str) -> NerPipeline:
         """Extract table and column names from raw SQL DDL text."""
         self._builder.add_sql(ddl)
-        self._dirty = True
+        self._schema_dirty = True
         return self
 
     def add_chunks(self, chunks: list) -> NerPipeline:
         """Extract terms from DocumentChunk objects from load_schema()/load_api()."""
         self._builder.add_chunks(chunks)
-        self._dirty = True
+        self._schema_dirty = True
+        return self
+
+    # ------------------------------------------------------------------
+    # Data-value vocabulary
+    # ------------------------------------------------------------------
+
+    def add_entities(
+        self,
+        names: list[str],
+        entity_type: str = "term",
+    ) -> NerPipeline:
+        """Add a plain list of known entity names (verbatim, case-insensitive).
+
+        Use for any list you already have: customer names from a CRM export,
+        ticker symbols from a spreadsheet, counterparty names from a config.
+
+        Args:
+            names: Display-form strings, e.g. ``["Acme Corp", "John Smith"]``.
+            entity_type: Label on matching ``EntityMatch`` objects
+                (e.g. ``"customer"``, ``"employee"``).
+        """
+        self._builder.add_entities(names, entity_type=entity_type)
+        self._data_dirty = True
+        return self
+
+    def add_from_db(
+        self,
+        connection,
+        queries: dict[str, str] | list[str] | list[tuple[str, str]],
+        entity_type: str = "term",
+        row_limit: int = 10_000,
+    ) -> NerPipeline:
+        """Execute SQL queries against a live DB and add results as data vocab.
+
+        Reuse an existing connection — pass the same engine or connection used
+        to introspect the schema so no second connection is needed.
+
+        Args:
+            connection: SQLAlchemy URL string, Engine, Connection, or any
+                object with ``.execute()``.
+            queries: One of:
+
+                - ``dict[entity_type, sql]`` —
+                  ``{"customer": "SELECT name FROM customers"}``
+                - ``list[str]`` — SQL strings; all use the ``entity_type`` arg
+                - ``list[tuple[str, str]]`` —
+                  ``[("SELECT name FROM customers", "customer")]``
+
+            entity_type: Default label when ``queries`` is a plain list.
+            row_limit: Maximum rows fetched per query (default 10 000).
+        """
+        self._builder.add_from_db(connection, queries, entity_type=entity_type, row_limit=row_limit)
+        self._data_dirty = True
         return self
 
     # ------------------------------------------------------------------
@@ -114,27 +180,27 @@ class NerPipeline:
     # ------------------------------------------------------------------
 
     def match(self, text: str) -> list[EntityMatch]:
-        """Run enabled matchers against *text* and return merged results.
+        """Run all enabled matchers and return merged results.
 
-        Schema vocab wins on any span overlap with spaCy (schema entities
+        Priority: schema vocab = data vocab > spaCy.  Both vocab layers
         suppress overlapping spaCy hits; spaCy hits on non-overlapping spans
-        are kept).
-
-        Returns an empty list if neither ``db_enrich`` nor ``spacy_entities``
-        is enabled.
+        survive.  Returns ``[]`` if no matchers are enabled.
         """
-        schema_hits: list[EntityMatch] = []
-        spacy_hits: list[EntityMatch] = []
+        vocab_hits: list[EntityMatch] = []
 
         if self._db_enrich:
-            schema_hits = self._get_schema_matcher().match(text)
+            vocab_hits.extend(self._get_schema_matcher().match(text))
 
+        if self._builder.data_term_count():
+            vocab_hits.extend(self._get_data_matcher().match(text))
+
+        spacy_hits: list[EntityMatch] = []
         if self._spacy_entities:
             spacy_hits = self._get_spacy_matcher().match(text)
 
-        if schema_hits and spacy_hits:
-            return merge_matches(schema_hits, spacy_hits, source_text=text)
-        return schema_hits or spacy_hits
+        if vocab_hits and spacy_hits:
+            return merge_matches(vocab_hits, spacy_hits, source_text=text)
+        return vocab_hits or spacy_hits
 
     def run_on_chunks(
         self,
@@ -151,15 +217,15 @@ class NerPipeline:
                 uses ``chunk.document_name + ":" + str(chunk.chunk_index)``.
 
         Returns:
-            Mapping of ``chunk_id -> list[EntityMatch]`` for every chunk
-            that produced at least one match.
+            Mapping of ``chunk_id -> list[EntityMatch]`` for chunks with matches.
         """
         results: dict[str, list[EntityMatch]] = {}
         for i, chunk in enumerate(chunks):
-            if chunk_ids is not None:
-                cid = chunk_ids[i]
-            else:
-                cid = f"{chunk.document_name}:{chunk.chunk_index}"
+            cid = (
+                chunk_ids[i]
+                if chunk_ids is not None
+                else (f"{chunk.document_name}:{chunk.chunk_index}")
+            )
             content = chunk.content or ""
             matches = self.match(content)
             if matches:
@@ -171,23 +237,34 @@ class NerPipeline:
     # Introspection
     # ------------------------------------------------------------------
 
-    def schema_term_counts(self) -> dict[str, int]:
-        """Return counts of accumulated schema terms by category."""
+    def term_counts(self) -> dict[str, int]:
+        """Return counts of accumulated terms by category."""
         return {
             "tables": self._builder.table_count(),
             "columns": self._builder.column_count(),
             "api_terms": self._builder.api_term_count(),
+            "data_terms": self._builder.data_term_count(),
         }
+
+    # kept for backwards compatibility
+    def schema_term_counts(self) -> dict[str, int]:
+        return self.term_counts()
 
     # ------------------------------------------------------------------
     # Internal lazy initialisation
     # ------------------------------------------------------------------
 
     def _get_schema_matcher(self) -> SchemaMatcher:
-        if self._schema_matcher is None or self._dirty:
+        if self._schema_matcher is None or self._schema_dirty:
             self._schema_matcher = self._builder.build()
-            self._dirty = False
+            self._schema_dirty = False
         return self._schema_matcher
+
+    def _get_data_matcher(self) -> VocabularyMatcher:
+        if self._data_matcher is None or self._data_dirty:
+            self._data_matcher = self._builder.build_data_matcher()
+            self._data_dirty = False
+        return self._data_matcher
 
     def _get_spacy_matcher(self) -> SpacyMatcher:
         if self._spacy_matcher is None:
