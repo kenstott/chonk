@@ -356,20 +356,25 @@ are followed.
 
 ## Source detail
 
-Every extractor that knows the internal structure of its format stamps
-`chunk.source_detail` with format-specific navigation metadata after chunking. The
-field is `dict | None`; keys vary by format.
+Every `DocumentChunk` already carries `section` (heading breadcrumb path) and, for
+text-based formats, `source_offset` / `source_length` (byte offsets into the extracted
+text). `source_detail` adds **format-specific navigation on top of those** — the kind of
+sub-location that breadcrumbs alone cannot express.
 
-| Format | Keys |
-|--------|------|
-| Python | `line_start`, `line_end`, `symbol` (e.g. `"MyClass.run"`) |
-| TypeScript / JavaScript | `line_start`, `line_end`, `symbol` |
-| Java | `line_start`, `line_end`, `symbol` |
-| XLSX | `sheet`, `row_start`, `row_end` |
-| PDF | `page` or `page_start` / `page_end` |
-| PPTX | `slide`, `shape` |
+How much additional detail is useful varies by format:
 
-`source_detail` is not embedded — it lives on the chunk as metadata only. Use it to
+| Format | What breadcrumbs give you | What `source_detail` adds |
+|--------|--------------------------|--------------------------|
+| Markdown | Heading path | Char offsets (already in `source_offset`/`source_length`) — `source_detail` is `None` |
+| XLSX | Sheet + named range (if any) | `sheet`, `row_start`, `row_end` — useful when a sheet has thousands of rows |
+| DOCX | Heading section path | `paragraph_start`, `paragraph_end`, `section` — pin-points exact paragraph range |
+| PDF | None (no heading extraction) | `page` or `page_start` / `page_end` |
+| PPTX | None | `slide`, `shape` |
+| Python | Class / method heading | `line_start`, `line_end`, `symbol` (e.g. `"MyClass.run"`) — IDE jump-to-line |
+| TypeScript / JavaScript | Class / function heading | `line_start`, `line_end`, `symbol` |
+| Java | Class / method heading | `line_start`, `line_end`, `symbol` |
+
+`source_detail` is **not embedded** — it lives on the chunk as metadata only. Use it to
 build source links, IDE jump-to-definition integrations, or citation footnotes.
 
 Custom extractors populate `source_detail` by implementing `annotate()` (see
