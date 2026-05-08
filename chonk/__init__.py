@@ -41,7 +41,9 @@ from .ner import (
     ALL_SPACY_LABELS,
     EntityIndex,
     EntityMatch,
+    NerPipeline,
     SchemaMatcher,
+    SchemaVocabBuilder,
     SpacyLabel,
     SpacyMatcher,
     VocabularyMatcher,
@@ -107,6 +109,8 @@ __all__ = [
     "merge_matches",
     "SchemaMatcher",
     "normalize_schema_term",
+    "SchemaVocabBuilder",
+    "NerPipeline",
     # Cluster
     "CooccurrenceMatrix",
     "cluster_entities",
