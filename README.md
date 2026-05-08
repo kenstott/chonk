@@ -461,7 +461,10 @@ store.search(
 ) -> list[tuple[str, float, DocumentChunk]]
 ```
 
-Returns a list of `(chunk_id, score, DocumentChunk)` tuples.
+Returns a list of `(chunk_id, score, DocumentChunk)` tuples. Each returned
+`DocumentChunk` includes `source_detail` (page, slide, paragraph, line numbers,
+etc.) when the original document was annotated — `source_detail` is persisted
+to the DuckDB store and round-trips through search.
 
 ### `chonk.storage` exports
 
@@ -527,14 +530,54 @@ results: list[ScoredChunk] = search.search(query_embedding, k=5)
 
 ### NER / vocabulary layer
 
+#### Two-pass NER: schema vocab + spaCy
+
+`NerPipeline` is the high-level entry point. It runs schema-vocab matching
+(pass 1) and spaCy NER (pass 2) and merges the results — schema terms win on
+any span overlap so that column names are not mis-labelled as generic entities.
+
+```python
+from chonk.ner import NerPipeline, SpacyLabel
+
+pipeline = NerPipeline(
+    db_enrich=True,         # match schema/column/API terms against prose
+    spacy_entities=True,    # run spaCy NER (default: all 18 labels)
+    spacy_entity_types=[SpacyLabel.ORG, SpacyLabel.PERSON, SpacyLabel.GPE],
+)
+
+# Feed schema sources — any combination
+pipeline.add_tables(table_meta_list)            # TableMeta objects
+pipeline.add_sql(open("schema.sql").read())     # raw DDL
+pipeline.add_chunks(loader.load_schema(tables)) # chunks from load_schema()
+
+# Run against document chunks
+matches = pipeline.match(chunk.content)
+
+# Or index a whole batch at once
+pipeline.run_on_chunks(chunks, entity_index)
+```
+
+All schema identifiers are normalised before matching:
+`firstName`, `first_name`, and `FIRST_NAME` all match the prose form
+`"first name"`. This surfaces structural connections between relational data
+models and the unstructured documents that describe or reference them.
+
+#### Primitives (for custom scenarios)
+
 | Name | Description |
 |---|---|
+| `NerPipeline` | Unified two-pass NER pipeline: schema vocab + spaCy, merged |
+| `SchemaVocabBuilder` | Builds a `SchemaMatcher` from `TableMeta`, SQL DDL, or `load_schema()` chunks |
 | `VocabularyMatcher` | Rule-based entity matcher using a user-supplied vocabulary |
 | `EntityIndex` | Index mapping entity IDs to the chunks they appear in |
-| `SpacyMatcher` | spaCy-backed NER matcher |
+| `SpacyMatcher` | spaCy-backed NER matcher — `entity_types` restricts to a label subset |
 | `SchemaMatcher` | Matches schema-derived terms (table/column names) against chunk text |
+| `normalize_schema_term` | `"firstName"` / `"first_name"` / `"FIRST_NAME"` → `"first name"` |
+| `merge_matches` | Merge vocab and spaCy hits; vocab wins on span overlap |
 | `CooccurrenceMatrix` | Tracks entity co-occurrence counts across chunks |
 | `ClusterMap` | Maps entity IDs to cluster IDs after `cluster_entities()` |
+| `SpacyLabel` | Enum of the 18 standard spaCy English entity labels |
+| `ALL_SPACY_LABELS` | Default label list used when `entity_types` is `None` |
 
 ---
 
