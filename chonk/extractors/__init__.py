@@ -8,6 +8,7 @@
 """Document format extractors."""
 
 from ._csv import CsvExtractor
+from ._cve import CveRenderer
 from ._docx import DocxExtractor
 from ._edgar import EdgarExtractor
 from ._email import EmailExtractor
@@ -22,6 +23,7 @@ from ._pdf import PdfExtractor
 from ._pptx import PptxExtractor
 from ._protocol import Extractor
 from ._python import PythonExtractor
+from ._renderer import Renderer
 from ._text import TextExtractor
 from ._typescript import TypeScriptExtractor
 from ._xlsx import XlsxExtractor
@@ -39,7 +41,7 @@ def _build_registry() -> list[Extractor]:
         XlsxExtractor(),
         PptxExtractor(),
         HtmlExtractor(),
-        JsonExtractor(),
+        JsonExtractor(renderers=[CveRenderer()]),
         YamlExtractor(),
         MarkdownExtractor(),
         CsvExtractor(),
@@ -107,4 +109,6 @@ __all__ = [
     "normalize_type",
     "detect_type_from_source",
     "is_binary_type",
+    "Renderer",
+    "CveRenderer",
 ]
