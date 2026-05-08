@@ -53,6 +53,7 @@ from .ner import (
 )
 from .schema import ColumnMeta, EndpointMeta, FieldMeta, TableMeta
 from .search import EnhancedSearch
+from .storage import DuckDBVectorBackend, PgVectorBackend, Store, VectorBackend
 from .transports import (
     Crawler,
     DirectoryCrawler,
@@ -148,4 +149,9 @@ __all__ = [
     "CommunityIndexBuilder",
     # Versioning
     "VersionedRef",
+    # Storage backends
+    "Store",
+    "VectorBackend",
+    "DuckDBVectorBackend",
+    "PgVectorBackend",
 ]
