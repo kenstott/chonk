@@ -174,4 +174,45 @@ run_and_eval nobc_ner_ref_rerank_laned_community_k7_full \
 run_and_eval vanilla_256_rerank_full \
     --rerank --vanilla
 
+# ── Extended grid: follow-on experiments based on full-run patterns ────────────
+# laned sim threshold trend: 0.45→0.659, 0.55→0.661, 0.60→0.671 → try 0.65, 0.70
+run_and_eval nobc_ner_ref_rerank_laned65_community_k10_full \
+    --rerank --enhanced --entity-ref-expansion \
+    --lane-entity-min-sim 0.65 \
+    --community-context --community-min-coherence 0.5 \
+    --top-k 10 \
+    $NOBC
+
+run_and_eval nobc_ner_ref_rerank_laned70_community_k10_full \
+    --rerank --enhanced --entity-ref-expansion \
+    --lane-entity-min-sim 0.70 \
+    --community-context --community-min-coherence 0.5 \
+    --top-k 10 \
+    $NOBC
+
+# best sim (0.60) + best k (15)
+run_and_eval nobc_ner_ref_rerank_laned60_community_k15_full \
+    --rerank --enhanced --entity-ref-expansion \
+    --lane-entity-min-sim 0.60 \
+    --community-context --community-min-coherence 0.5 \
+    --top-k 15 \
+    $NOBC
+
+# tighter community coherence at best sim
+run_and_eval nobc_ner_ref_rerank_laned60_community60_k10_full \
+    --rerank --enhanced --entity-ref-expansion \
+    --lane-entity-min-sim 0.60 \
+    --community-context --community-min-coherence 0.6 \
+    --top-k 10 \
+    $NOBC
+
+# laned60 + pruning (pruning hurt at sim=0.45 but untested at 0.60)
+run_and_eval nobc_ner_ref_rerank_laned60_pruned_community_k10_full \
+    --rerank --enhanced --entity-ref-expansion \
+    --lane-entity-min-sim 0.60 \
+    --redundancy-threshold 0.92 \
+    --community-context --community-min-coherence 0.5 \
+    --top-k 10 \
+    $NOBC
+
 echo "=== ALL FULL RUNS COMPLETE ==="

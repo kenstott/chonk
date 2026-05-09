@@ -26,12 +26,13 @@ Two capabilities distinguish it from simpler pipelines:
 repeating the tail of each chunk at the head of the next — which reduces missed splits
 at the cost of redundant embeddings, index bloat, and duplicate retrievals that must be
 deduplicated downstream. Chonk avoids the bad split in the first place. Chunks flush at
-heading-level transitions. Tables split at row boundaries, lists at item boundaries,
-prose at sentence boundaries. Plain-text documents without headings can have headers
-promoted automatically from questions and short phrases before chunking begins. Because
-every chunk corresponds to a complete unit of meaning — never a partial paragraph, never
-a half-table — retrieved chunks are precise: what comes back is exactly the passage that
-answers the query, with no leading or trailing noise from an adjacent context window.
+heading-level transitions, tables at row boundaries, lists at item boundaries, prose at
+sentence boundaries. Plain-text documents without headings can have headers promoted
+automatically from questions and short phrases before chunking begins.
+
+Because every chunk corresponds to a complete unit of meaning — never a partial
+paragraph, never a half-table — what comes back is exactly the passage that answers the
+query, with no leading or trailing noise from an adjacent context window.
 
 **Graph-guided retrieval with completeness gates.** `EnhancedSearch` supports three
 retrieval modes: vector-first (seed → structural → entity → cluster → community
@@ -74,9 +75,8 @@ structure:
 - **Academic papers** — Abstract, Introduction, Methods, Results, Discussion; the
   heading hierarchy is fixed by convention
 
-When sections share vocabulary, the embedding vectors for chunks from different
-documents — or different sections of the same document — are indistinguishable.
-Retrieval returns the wrong chunk, from the wrong document, for the wrong reason.
+When sections share vocabulary, the embedding vectors are indistinguishable. Retrieval
+returns the wrong chunk, from the wrong document, for the wrong reason.
 
 There are two places to inject this context. The document name and section path are
 known at chunk time, so they can be prepended to the text that gets embedded:
@@ -189,7 +189,7 @@ Transport  (Local / HTTP / S3 / FTP / SFTP / custom)
 Extractor  (PDF / DOCX / XLSX / PPTX / HTML / Markdown / EDGAR / custom)
  │  extract(data) → str
  ▼
-chunk_document(name, text, min_chunk_size, max_chunk_size)
+chunk_document(name, content, min_chunk_size, max_chunk_size)
  │  → list[DocumentChunk]  (content, section, document_name, breadcrumb,
  │                           embedding_content already set when include_breadcrumb=True)
  ▼
@@ -225,6 +225,7 @@ idempotent — it replaces `embedding_content` using the stored `breadcrumb` fie
 | `paragraph_continuation` | `bool` | True when this chunk is a continuation of a split paragraph |
 | `source` | `str` | Origin class: `"document"`, `"schema"`, `"api"`, or `"community"` |
 | `source_detail` | `dict \| None` | Format-specific navigation metadata — see [Source detail](#source-detail) |
+| `rendered_source` | `str \| None` | Per-record Markdown set by domain renderers (CWE, CVE, ATT&CK, etc.) for visualization |
 
 ### `chunk_document`
 
@@ -845,7 +846,7 @@ for doc in backend.list_documents():
 ```
 
 `delete_by_document()` removes both the chunks and the registry entry.
-`clear()` removes everything.
+`store.vector.clear()` removes everything — chunks and registry.
 
 ### `Store.search()` parameters
 
@@ -867,6 +868,18 @@ and round-trips through search on both backends.
 `query_text` hybrid BM25 reranking is supported by `DuckDBVectorBackend` only;
 `PgVectorBackend` accepts the parameter for API compatibility but performs
 pure vector search.
+
+### `Store` constructor
+
+```python
+Store(
+    db_path: str | Path = ":memory:",
+    embedding_dim: int = 1024,
+    read_only: bool = False,
+)
+```
+
+`read_only=True` opens the DuckDB file without acquiring a write lock, allowing multiple concurrent readers against the same index. Relational entity features are unavailable in read-only mode.
 
 ### `chonk.storage` exports
 

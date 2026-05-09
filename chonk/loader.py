@@ -15,7 +15,7 @@ from ._struct_inference import infer_csv, infer_json, infer_jsonl, infer_parquet
 from .models import DocumentChunk
 from .schema import EndpointMeta, TableMeta
 
-_STRUCTURED_EXTENSIONS = frozenset({".parquet", ".arrow", ".feather", ".csv", ".jsonl", ".ndjson"})
+_STRUCTURED_EXTENSIONS = frozenset({".parquet", ".arrow", ".feather", ".csv", ".json", ".jsonl", ".ndjson"})
 from .chunking import chunk_document
 from .extractors import detect_extractor, detect_type_from_source, normalize_type
 from .transports import (
