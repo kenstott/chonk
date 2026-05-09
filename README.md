@@ -37,11 +37,11 @@ query, with no leading or trailing noise from an adjacent context window.
 **Graph-guided retrieval with completeness gates.** `EnhancedSearch` supports three
 retrieval modes: vector-first (seed → structural → entity → cluster → community
 expansion), graph-first (RelationshipIndex traversal with vector reranking), and global
-(community summary search). After the top-k cohort is selected, a completeness gate
-checks whether query entities are present in the results; if any are missing, the search
-expands further until they appear or the budget is exhausted. Cohort reranking combines
-relevance, priority, and marginal coverage into a composite score, so the final answer
-context is both relevant and non-redundant.
+(community summary search). After the top-k cohort is assembled, a completeness gate
+checks whether query entities are present. Missing ones trigger further expansion until
+they appear or the budget is exhausted. Completeness, relevance, priority, and marginal
+coverage are combined into a composite reranking score. The result: answer context that
+is both on-topic and non-redundant.
 
 The completeness gate is only as good as the entity vocabulary it searches for. On
 high-quality vocabularies built from schema identifiers, structured files, or API
@@ -101,8 +101,6 @@ choose: `enrich_chunks()` handles embedding-time injection, and `AnswerGenerator
 
 ## What Chonk does
 
-Chonk is a document chunking and contextual enrichment pipeline. It:
-
 1. **Fetches** documents from local disk, HTTP/HTTPS, S3, FTP, SFTP, or any custom
    source (SharePoint, Confluence, Google Drive, Notion). Built-in `WebCrawler` and
    `DirectoryCrawler` discover documents recursively from a root URI; custom crawlers
@@ -114,9 +112,7 @@ Chonk is a document chunking and contextual enrichment pipeline. It:
 4. **Enriches** each chunk: sets `embedding_content` to
    `"[doc_name > section_path]\n\n<content>"` before it reaches your embedding model
 
-The original `content` field is never modified. `embedding_content` is what you
-embed. Everything downstream — your embedding model, vector store, retrieval
-logic — is unchanged.
+The original `content` field is never modified. `embedding_content` is what you embed. Everything downstream — your embedding model, vector store, retrieval logic — is unchanged.
 
 ---
 
@@ -846,7 +842,19 @@ for doc in backend.list_documents():
 ```
 
 `delete_by_document()` removes both the chunks and the registry entry.
-`store.vector.clear()` removes everything — chunks and registry.
+`store.vector.clear()` removes everything — chunks and registry. (`Store` does not wrap `clear()` on the facade; call it on `store.vector` directly.)
+
+### `Store.add_document()` parameters
+
+```python
+store.add_document(
+    chunks: list[DocumentChunk],
+    embeddings,                    # np.ndarray shape (n, dim)
+    namespace: str | None = None,  # optional partition key
+)
+```
+
+`namespace` partitions the index so different corpora can share a single DuckDB file and be searched independently. Pass the same value to `store.search(namespaces=[...])` to restrict retrieval to that partition. `None` means no namespace — all chunks are visible to namespace-unrestricted searches.
 
 ### `Store.search()` parameters
 
