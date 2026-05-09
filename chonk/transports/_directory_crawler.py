@@ -27,8 +27,8 @@ _DEFAULT_EXTENSIONS: frozenset[str] = frozenset(
     {
         ".md", ".txt", ".rst", ".html", ".htm",
         ".pdf", ".docx", ".xlsx", ".pptx",
-        ".csv", ".json", ".xml", ".yaml", ".yml",
-        ".py", ".pyw", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".java",
+        ".csv", ".json", ".xml", ".yaml", ".yml", ".toml",
+        ".py", ".pyw", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".java", ".sql",
     }
 )
 

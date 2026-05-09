@@ -10,6 +10,7 @@
 from ._crawler_protocol import Crawler
 from ._directory_crawler import DirectoryCrawler
 from ._ftp import FtpTransport
+from ._github import GitHubCrawler
 from ._http import HttpTransport
 from ._imap import ImapTransport
 from ._import_crawler import ImportCrawler
@@ -49,6 +50,7 @@ __all__ = [
     "SftpTransport",
     "WebCrawler",
     "DirectoryCrawler",
+    "GitHubCrawler",
     "ImportCrawler",
     "SqlAlchemyTransport",
     "SqlQueryTransport",

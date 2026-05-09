@@ -102,9 +102,9 @@ choose: `enrich_chunks()` handles embedding-time injection, and `AnswerGenerator
 ## What Chonk does
 
 1. **Fetches** documents from local disk, HTTP/HTTPS, S3, FTP, SFTP, or any custom
-   source (SharePoint, Confluence, Google Drive, Notion). Built-in `WebCrawler` and
-   `DirectoryCrawler` discover documents recursively from a root URI; custom crawlers
-   plug in via the `Crawler` protocol.
+   source (SharePoint, Confluence, Google Drive, Notion). Built-in `WebCrawler`,
+   `DirectoryCrawler`, and `GitHubCrawler` discover documents recursively from a root
+   URI; custom crawlers plug in via the `Crawler` protocol.
 2. **Extracts** text from PDF, DOCX, XLSX, PPTX, HTML, Markdown, plain text, SEC
    EDGAR inline XBRL, Python, TypeScript/JavaScript, Java, or any custom format
 3. **Chunks** into semantically coherent pieces — never breaking mid-paragraph,
@@ -340,6 +340,88 @@ enrichment and is only useful as a baseline for benchmarking.
 - `loader.load_site(url, max_pages=50, max_depth=3, same_domain=True, exclude_patterns=None, include_pattern=None, crawler=None)` — crawl a website and load all discovered HTML pages.
 - `loader.load_directory(path, extensions=None, recursive=True, max_files=1000, crawler=None)` — load all documents in a local directory or S3 prefix. Code extensions (`.py`, `.ts`, `.tsx`, `.js`, `.jsx`, `.java`) are included by default.
 - `loader.load_crawl(uri, crawler=None, **crawler_kwargs)` — generic entry point; `load_site` and `load_directory` are convenience wrappers.
+
+### `GitHubCrawler`
+
+`GitHubCrawler` indexes a GitHub repository — or every repo a token can reach — without cloning. It calls the GitHub REST API to get the file tree, then returns `raw.githubusercontent.com` URLs. `HttpTransport` fetches each blob on demand; no local storage is needed.
+
+```python
+from chonk.transports import GitHubCrawler
+from chonk import DocumentLoader
+
+crawler = GitHubCrawler(token="ghp_...")  # or set GITHUB_TOKEN env var
+loader = DocumentLoader()
+```
+
+Set `GITHUB_TOKEN` in the environment and omit the `token` argument to avoid hardcoding credentials.
+
+#### Full index of a single repo
+
+```python
+chunks = loader.load_crawl("https://github.com/org/repo", crawler=crawler)
+
+# Persist the watermark — needed for incremental updates
+sha = crawler.current_sha
+```
+
+`crawler.current_sha` is set after every `crawl()` call. Store it; it is the input to the next incremental run.
+
+#### Incremental update
+
+Pass the previously saved SHA as `since_sha`. Only files added, modified, renamed, or copied since that commit are returned.
+
+```python
+chunks = loader.load_crawl(
+    "https://github.com/org/repo",
+    crawler=crawler,
+    since_sha=sha,
+)
+sha = crawler.current_sha  # update the watermark
+```
+
+When `since_sha` equals the current HEAD, `crawl()` returns an empty list immediately — nothing changed.
+
+#### All accessible repos with `crawl_all`
+
+`list_repos()` paginates `/user/repos` with `affiliation=owner,collaborator,organization_member`, covering personal repos, org repos, and repos shared with the token. `crawl_all()` calls `list_repos()` then `crawl()` on each, returning `(urls, current_shas)`.
+
+```python
+import json, pathlib
+
+shas_file = pathlib.Path("github_shas.json")
+since_shas = json.loads(shas_file.read_text()) if shas_file.exists() else {}
+
+crawler = GitHubCrawler(
+    repo_include=r"org/",        # only repos whose URL matches this regex
+    repo_exclude=r"-archived$",  # skip repos matching this regex
+)
+urls, current_shas = crawler.crawl_all(since_shas=since_shas)
+
+# Load all discovered URLs
+chunks = []
+for url in urls:
+    chunks.extend(loader.load(url))
+
+# Persist watermarks for the next run
+shas_file.write_text(json.dumps(current_shas, indent=2))
+```
+
+Repos that fail (bad token scope, private with insufficient access) are skipped with a warning rather than aborting the entire run.
+
+#### Constructor parameters
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `token` | `str \| None` | `None` | GitHub personal access token. Falls back to `GITHUB_TOKEN` env var. Public repos work without a token but are rate-limited to 60 requests/hour. |
+| `extensions` | `list[str] \| None` | See below | File extensions to include. Leading `.` is optional. |
+| `branch` | `str \| None` | `None` | Branch or tag to crawl. Defaults to the repo's default branch. |
+| `max_files` | `int` | `2000` | Maximum files returned per repo. |
+| `repo_include` | `str \| None` | `None` | Regex — only repos whose `https://github.com/{owner}/{repo}` URL matches are crawled. |
+| `repo_exclude` | `str \| None` | `None` | Regex — repos whose URL matches are skipped. Applied after `repo_include`. |
+
+Default extensions: `.md`, `.txt`, `.rst`, `.html`, `.htm`, `.pdf`, `.docx`, `.xlsx`, `.pptx`, `.csv`, `.json`, `.xml`, `.yaml`, `.yml`, `.py`, `.pyw`, `.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.java`.
+
+`GitHubCrawler` is exported from `chonk.transports`.
 
 ---
 
