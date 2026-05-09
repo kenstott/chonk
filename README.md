@@ -42,6 +42,13 @@ expands further until they appear or the budget is exhausted. Cohort reranking c
 relevance, priority, and marginal coverage into a composite score, so the final answer
 context is both relevant and non-redundant.
 
+The completeness gate is only as good as the entity vocabulary it searches for. On
+high-quality vocabularies built from schema identifiers, structured files, or API
+endpoints, it reliably finds the right chunks. On raw spaCy output against domain text
+it will chase false positives and degrade both quality and latency. The custom vocab
+layer exists specifically to make the gate production-viable — see
+[NER / vocabulary layer](#ner--vocabulary-layer).
+
 ---
 
 ## The problem with naive chunking
@@ -147,7 +154,7 @@ pip install "chonk[full]"       # Everything
 ```python
 from chonk import DocumentLoader
 
-loader = DocumentLoader()   # context_strategy="prefix" is the default
+loader = DocumentLoader()   # enrich_context=True is the default
 
 # Local file, URL, or raw bytes — same interface
 chunks = loader.load("/path/to/report.pdf")
@@ -186,18 +193,17 @@ chunk_document(name, text, min_chunk_size, max_chunk_size)
  │  → list[DocumentChunk]  (content, section, document_name, breadcrumb,
  │                           embedding_content already set when include_breadcrumb=True)
  ▼
-enrich_chunks(chunks, strategy="prefix")   [optional; re-enriches or enriches
- │  → list[DocumentChunk]                   chunks produced without a loader]
+enrich_chunks(chunks)   [optional; re-enriches or enriches chunks produced without a loader]
+ │  → list[DocumentChunk]
  ▼
 Your embedding model / vector store
 ```
 
 `chunk_document` sets `embedding_content` directly when `include_breadcrumb=True`
 (the default). `DocumentLoader` calls `chunk_document` with `include_breadcrumb=True`
-whenever `context_strategy` is not `None`, then passes the result through
-`enrich_chunks` for the final enrichment step. Calling `enrich_chunks` on already-
-enriched chunks is idempotent — it replaces `embedding_content` using the stored
-`breadcrumb` field.
+when `enrich_context=True`, then passes the result through `enrich_chunks` for the
+final enrichment step. Calling `enrich_chunks` on already-enriched chunks is
+idempotent — it replaces `embedding_content` using the stored `breadcrumb` field.
 
 ---
 
@@ -254,14 +260,13 @@ on every returned chunk.
 ### `enrich_chunk` / `enrich_chunks`
 
 ```python
-enrich_chunk(chunk: DocumentChunk, strategy: str = "prefix") -> DocumentChunk
-enrich_chunks(chunks: list[DocumentChunk], strategy: str = "prefix") -> list[DocumentChunk]
+enrich_chunk(chunk: DocumentChunk) -> DocumentChunk
+enrich_chunks(chunks: list[DocumentChunk]) -> list[DocumentChunk]
 ```
 
 Returns new chunk(s) with `embedding_content` set. Never mutates input.
 
-All three accepted strategy values (`"prefix"`, `"inline"`, `"breadcrumb"`) produce
-the same output format:
+Output format:
 
 ```
 [doc_name > Ancestor > Section]
@@ -273,9 +278,6 @@ The breadcrumb is taken from `chunk.breadcrumb` when present. When absent it is
 rebuilt from `chunk.document_name` and `chunk.section`. If neither is available,
 `embedding_content` is set to `chunk.content` unchanged.
 
-The `strategy` parameter is validated and accepted for forward compatibility; it
-does not currently alter the output format.
-
 ### `DocumentLoader`
 
 ```python
@@ -283,14 +285,14 @@ DocumentLoader(
     min_chunk_size: int = 600,
     max_chunk_size: int = 1500,
     overflow_margin: float = 0.15,
-    context_strategy: str | None = "prefix",
+    enrich_context: bool = True,
     include_doc_name: bool = True,
     extra_transports: list | None = None,
     extra_extractors: list | None = None,
 )
 ```
 
-Full pipeline: fetch → extract → chunk → enrich. `context_strategy=None` disables
+Full pipeline: fetch → extract → chunk → enrich. `enrich_context=False` disables
 enrichment and is only useful as a baseline for benchmarking.
 
 #### Core load methods
@@ -305,7 +307,35 @@ enrichment and is only useful as a baseline for benchmarking.
 - `loader.load_schema(tables)` — build N+1 `DocumentChunk` objects per `TableMeta`: one `"db_table"` chunk summarising the table plus one `"db_column"` chunk per column.
 - `loader.load_api(endpoints)` — build N+1 `DocumentChunk` objects per `EndpointMeta`: one `"api_endpoint"` / `"api_graphql_query"` / `"api_graphql_mutation"` / `"api_graphql_type"` chunk plus one `"api_field"` chunk per field.
 - `loader.load_structured_file(path_or_uri, name=None)` — infer schema from `.csv`, `.json`, `.jsonl`/`.ndjson`, `.parquet`, `.arrow`, or `.feather` and delegate to `load_schema()`. Returns the same N+1 layout.
-- `loader.load_imap(uri, *, include_attachments=False, limit=None)` — fetch messages from an IMAP mailbox. `uri` format: `imaps://user:pass@host/MAILBOX`. Each message becomes a separate set of chunks; attachments are optionally extracted inline.
+- `loader.load_imap(uri, *, include_attachments=False, limit=None)` — fetch messages from an IMAP mailbox. Each message becomes a separate set of chunks; attachments are optionally extracted inline.
+
+  URI format: `imap[s]://user:pass@host[:port]/MAILBOX[?search=CRITERIA&limit=N]`
+
+  `search=` passes RFC 3501 criteria directly to the server — filtering happens before any bytes are transferred. Criteria are space-separated (implicit AND). Common values:
+
+  | Criterion | Meaning |
+  |---|---|
+  | `ALL` | every message (default) |
+  | `UNSEEN` / `SEEN` | unread / read |
+  | `FROM addr` | sender address |
+  | `SUBJECT text` | subject contains text |
+  | `BODY text` | body contains text |
+  | `SINCE date` | on or after date (e.g. `01-Jan-2025`) |
+  | `BEFORE date` | before date |
+  | `FLAGGED` | starred / flagged messages |
+  | `LARGER n` / `SMALLER n` | size threshold in bytes |
+
+  `limit=N` (also a kwarg) caps results to the N most-recent messages by UID after server-side filtering. Use Gmail/O365 app passwords — OAuth2 is not supported.
+
+  ```python
+  # Unread messages with PDF attachments from the last 90 days
+  chunks = loader.load_imap(
+      "imaps://me@example.com:app-pass@imap.gmail.com/INBOX"
+      "?search=UNSEEN%20SINCE%2001-Feb-2025",
+      include_attachments=True,
+      limit=100,
+  )
+  ```
 - `loader.load_from_db(connection, queries)` — execute one or more SQL queries or views against a live DB connection and load the results as document chunks. Each query becomes a separate document. `queries` is a `dict[name, sql]` or `list[tuple[name, sql]]`. The same connection used for schema introspection and NER data vocab can be passed here — no second authentication needed.
 
 #### Crawl methods
@@ -873,6 +903,18 @@ search = EnhancedSearch(store, entity_index=ei, cluster_map=cm)
 results: list[ScoredChunk] = search.search(query_embedding, k=5)
 ```
 
+**Progressive adoption.** Vector-only is a valid production configuration — pass `store` with no additional arguments and every other dimension is disabled. Each layer is an upgrade you earn by building the prerequisite index:
+
+| Layer | Prerequisite | What you gain |
+|---|---|---|
+| Vector seed | `Store` with embeddings | Baseline semantic retrieval |
+| Structural adjacency | Chunking with section/parent metadata | Adjacent context pulled automatically |
+| Entity + cluster | `EntityIndex` + `ClusterMap` (custom vocab recommended) | Completeness gate; entity-linked expansion |
+| Graph communities | `CommunityIndex` (Leiden, zero LLM) | Cluster expansion guided by co-occurrence graph |
+| Global summaries | `CommunitySummarizer` (opt-in LLM) | `global` mode: query answered from community summaries |
+
+Each layer degrades gracefully to the one below it when its index is absent. You do not need to build all layers before going to production.
+
 ### Generation layer
 
 | Name | Description |
@@ -900,6 +942,10 @@ results: list[ScoredChunk] = search.search(query_embedding, k=5)
 | `CommunityIndex` | Index of Leiden communities over the entity co-occurrence graph |
 | `CommunityIndexBuilder` | Builds a `CommunityIndex` from an `EntityIndex` and `ClusterMap` |
 | `CommunitySummarizer` | Generates natural-language summaries of each community via an LLM |
+
+Community detection (`CommunityIndexBuilder` + Leiden algorithm) runs at index time and makes zero LLM calls. The Leiden graph partition is pure graph math. In `vector_first` mode, cluster expansion uses that partition to pull co-occurring chunks — graph-guided retrieval at zero per-query LLM cost.
+
+`CommunitySummarizer` is a separate, opt-in step that calls an LLM once per community to produce a natural-language summary. It is only needed for `global` retrieval mode, which answers queries from community summaries rather than raw chunks. Traditional GraphRAG pipelines make this summarization pass mandatory; here it is optional and gated behind an explicit call. If you never use `global` mode, `CommunitySummarizer` never runs.
 
 ### NER / vocabulary layer
 

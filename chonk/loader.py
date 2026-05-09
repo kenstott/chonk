@@ -49,7 +49,7 @@ class DocumentLoader:
         min_chunk_size: int = 600,
         max_chunk_size: int = 1500,
         overflow_margin: float = 0.15,
-        context_strategy: str | None = "prefix",
+        enrich_context: bool = True,
         include_doc_name: bool = True,
         extra_transports: list | None = None,
         extra_extractors: list | None = None,
@@ -61,10 +61,10 @@ class DocumentLoader:
                 are split at natural boundaries (default 1500).
             overflow_margin: Fractional slack above max_chunk_size before a split
                 is forced (default 0.15 = 15%).
-            context_strategy: "prefix" (default) or "inline" embeds an LCA
-                breadcrumb at the start of every chunk's content and sets
-                embedding_content = content.  None produces naive chunks with no
-                breadcrumb and embedding_content = None.
+            enrich_context: When True (default), prepends a ``[doc > section]``
+                breadcrumb to every chunk and sets ``embedding_content``.  Set
+                False for naive chunks with no breadcrumb and
+                ``embedding_content = None``.
             include_doc_name: Include the document name as the first breadcrumb
                 element (default True).  Set False when all chunks share a single
                 corpus document name that adds no signal (e.g. one "Medical" doc
@@ -75,7 +75,7 @@ class DocumentLoader:
         self.min_chunk_size = min_chunk_size
         self.max_chunk_size = max_chunk_size
         self.overflow_margin = overflow_margin
-        self.context_strategy = context_strategy
+        self.enrich_context = enrich_context
         self.include_doc_name = include_doc_name
         self._extra_transports = extra_transports or []
         self._extra_extractors = extra_extractors or []
@@ -115,10 +115,10 @@ class DocumentLoader:
         return self._find_extractor(resolved)
 
     def _enrich(self, chunks: list[DocumentChunk]) -> list[DocumentChunk]:
-        if self.context_strategy is None:
+        if not self.enrich_context:
             return chunks
         from .context import enrich_chunks
-        return enrich_chunks(chunks, strategy=self.context_strategy)
+        return enrich_chunks(chunks)
 
     def load(self, uri: str, name: str | None = None) -> list[DocumentChunk]:
         """Fetch + extract + chunk + enrich.
@@ -149,7 +149,7 @@ class DocumentLoader:
         chunks = chunk_document(
             doc_name, text,
             self.min_chunk_size, self.max_chunk_size, self.overflow_margin,
-            include_breadcrumb=(self.context_strategy is not None),
+            include_breadcrumb=self.enrich_context,
             include_doc_name=self.include_doc_name,
         )
         chunks = extractor.annotate(chunks, result.data, result.source_path)
@@ -184,7 +184,7 @@ class DocumentLoader:
         chunks = chunk_document(
             name, text,
             self.min_chunk_size, self.max_chunk_size, self.overflow_margin,
-            include_breadcrumb=(self.context_strategy is not None),
+            include_breadcrumb=self.enrich_context,
             include_doc_name=self.include_doc_name,
         )
         chunks = extractor.annotate(chunks, data, source_path)
@@ -229,7 +229,7 @@ class DocumentLoader:
         chunks = chunk_document(
             name, text,
             self.min_chunk_size, self.max_chunk_size, self.overflow_margin,
-            include_breadcrumb=(self.context_strategy is not None),
+            include_breadcrumb=self.enrich_context,
             include_doc_name=self.include_doc_name,
         )
         return self._enrich(chunks)
@@ -292,7 +292,7 @@ class DocumentLoader:
             chunks = chunk_document(
                 name, text,
                 self.min_chunk_size, self.max_chunk_size, self.overflow_margin,
-                include_breadcrumb=(self.context_strategy is not None),
+                include_breadcrumb=self.enrich_context,
                 include_doc_name=self.include_doc_name,
             )
             chunks = extractor.annotate(chunks, result.data, source_path=name)
@@ -354,7 +354,7 @@ class DocumentLoader:
                 chunks = chunk_document(
                     name, text,
                     self.min_chunk_size, self.max_chunk_size, self.overflow_margin,
-                    include_breadcrumb=(self.context_strategy is not None),
+                    include_breadcrumb=self.enrich_context,
                 )
                 all_chunks.extend(self._enrich(chunks))
             except Exception as exc:
@@ -374,7 +374,7 @@ class DocumentLoader:
         chunks = chunk_document(
             name, text,
             self.min_chunk_size, self.max_chunk_size, self.overflow_margin,
-            include_breadcrumb=(self.context_strategy is not None),
+            include_breadcrumb=self.enrich_context,
             include_doc_name=self.include_doc_name,
         )
         return self._enrich(chunks)

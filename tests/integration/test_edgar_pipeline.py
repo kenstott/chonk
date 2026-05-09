@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -25,7 +25,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from chonk import DocumentLoader
 from chonk.extractors._edgar import EdgarExtractor, _extract_edgar_prose
 from chonk.models import DocumentChunk
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Fixture HTML — compact 10-K with the four prose items we care about
@@ -200,10 +199,10 @@ class TestEdgarPipelineExtraction:
 
 class TestEdgarDocumentLoader:
 
-    def _load(self, html: bytes, name: str, strategy: str | None = "prefix") -> list[DocumentChunk]:
+    def _load(self, html: bytes, name: str, enrich_context: bool = True) -> list[DocumentChunk]:
         loader = DocumentLoader(
             min_chunk_size=400, max_chunk_size=400,
-            context_strategy=strategy,
+            enrich_context=enrich_context,
             extra_extractors=[EdgarExtractor()],
         )
         return loader.load_bytes(html, name=name, doc_type="edgar")
@@ -238,30 +237,30 @@ class TestEdgarDocumentLoader:
     # ── Contextual enrichment ─────────────────────────────────────────────────
 
     def test_embedding_content_has_doc_name(self):
-        chunks = self._load(_AAPL_HTML, "aapl_10k_2024", strategy="prefix")
+        chunks = self._load(_AAPL_HTML, "aapl_10k_2024", enrich_context=True)
         for c in chunks:
             assert c.embedding_content is not None
             assert "aapl_10k_2024" in c.embedding_content
 
     def test_embedding_content_has_section(self):
-        chunks = self._load(_AAPL_HTML, "aapl_10k_2024", strategy="prefix")
+        chunks = self._load(_AAPL_HTML, "aapl_10k_2024", enrich_context=True)
         sectioned = [c for c in chunks if c.section]
         assert len(sectioned) > 0
         for c in sectioned:
             assert " > ".join(c.section) in c.embedding_content
 
     def test_naive_has_no_prefix(self):
-        chunks = self._load(_AAPL_HTML, "aapl_10k_2024", strategy=None)
+        chunks = self._load(_AAPL_HTML, "aapl_10k_2024", enrich_context=False)
         for c in chunks:
-            # naive: no context_strategy → embedding_content is None
+            # naive: no enrich_context → embedding_content is None
             assert c.embedding_content is None
 
     # ── Cross-company disambiguation ──────────────────────────────────────────
 
     def test_same_section_different_doc_names(self):
         """Item 9A chunks from AAPL and MSFT have different embedding_content."""
-        aapl_chunks = self._load(_AAPL_HTML, "aapl_10k_2024", strategy="prefix")
-        msft_chunks = self._load(_MSFT_HTML, "msft_10k_2024", strategy="prefix")
+        aapl_chunks = self._load(_AAPL_HTML, "aapl_10k_2024", enrich_context=True)
+        msft_chunks = self._load(_MSFT_HTML, "msft_10k_2024", enrich_context=True)
 
         aapl_9a = [c for c in aapl_chunks if any("9A" in p for p in c.section)]
         msft_9a = [c for c in msft_chunks if any("9A" in p for p in c.section)]
@@ -276,8 +275,8 @@ class TestEdgarDocumentLoader:
 
     def test_boilerplate_content_may_be_shared(self):
         """Item 9A prose is nearly identical — naive content overlaps."""
-        aapl_chunks = self._load(_AAPL_HTML, "aapl_10k_2024", strategy=None)
-        msft_chunks = self._load(_MSFT_HTML, "msft_10k_2024", strategy=None)
+        aapl_chunks = self._load(_AAPL_HTML, "aapl_10k_2024", enrich_context=False)
+        msft_chunks = self._load(_MSFT_HTML, "msft_10k_2024", enrich_context=False)
 
         aapl_contents = {c.content for c in aapl_chunks if any("9A" in p for p in c.section)}
         msft_contents = {c.content for c in msft_chunks if any("9A" in p for p in c.section)}
@@ -293,8 +292,8 @@ class TestEdgarDocumentLoader:
     # ── Chunk count consistency ───────────────────────────────────────────────
 
     def test_naive_and_ctx_same_chunk_count(self):
-        n = self._load(_AAPL_HTML, "aapl_10k_2024", strategy=None)
-        c = self._load(_AAPL_HTML, "aapl_10k_2024", strategy="prefix")
+        n = self._load(_AAPL_HTML, "aapl_10k_2024", enrich_context=False)
+        c = self._load(_AAPL_HTML, "aapl_10k_2024", enrich_context=True)
         assert len(n) == len(c)
 
 
@@ -411,10 +410,10 @@ class TestEdgarQueriesStructure:
 class TestEdgarRetrieval:
     """Demonstrate that contextual chunking improves retrieval on EDGAR fixtures."""
 
-    def _build_corpus(self, strategy: str | None):
+    def _build_corpus(self, enrich_context: bool):
         loader = DocumentLoader(
             min_chunk_size=300, max_chunk_size=300,
-            context_strategy=strategy,
+            enrich_context=enrich_context,
             extra_extractors=[EdgarExtractor()],
         )
         all_chunks = []
@@ -453,7 +452,7 @@ class TestEdgarRetrieval:
 
     def test_azure_query_finds_msft_contextually(self):
         """'Azure cloud competition' should rank MSFT's Risk Factors first contextually."""
-        ctx_chunks = self._build_corpus("prefix")
+        ctx_chunks = self._build_corpus(True)
         results = self._tfidf_retrieve(
             "Azure cloud platform competition antitrust European Commission",
             ctx_chunks,
@@ -463,7 +462,7 @@ class TestEdgarRetrieval:
 
     def test_iphone_query_finds_aapl_contextually(self):
         """'iPhone revenue Mac Services' should rank AAPL first contextually."""
-        ctx_chunks = self._build_corpus("prefix")
+        ctx_chunks = self._build_corpus(True)
         results = self._tfidf_retrieve(
             "iPhone revenue Mac Services AppleCare advertising",
             ctx_chunks,
@@ -473,8 +472,8 @@ class TestEdgarRetrieval:
 
     def test_contextual_vs_naive_on_controls_boilerplate(self):
         """Item 9A boilerplate: contextual should separate by document name."""
-        naive_chunks = self._build_corpus(None)
-        ctx_chunks = self._build_corpus("prefix")
+        naive_chunks = self._build_corpus(False)
+        ctx_chunks = self._build_corpus(True)
 
         query = "disclosure controls effective Chief Executive Officer Chief Financial Officer"
 

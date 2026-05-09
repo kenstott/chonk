@@ -185,7 +185,7 @@ class TestCveRenderer:
     def test_annotate_stamps_source_detail(self):
         from chonk import DocumentLoader
 
-        loader = DocumentLoader(context_strategy=None)
+        loader = DocumentLoader(enrich_context=False)
         chunks = loader.load_bytes(_bytes(_NVD_RESPONSE), name="CVE-2024-99999", doc_type="json")
         chunks = self.r.annotate(chunks, _bytes(_NVD_RESPONSE))
         annotated = [c for c in chunks if c.source_detail]
@@ -235,7 +235,7 @@ class TestJsonExtractorWithCveRenderer:
     def test_annotate_delegates_to_renderer(self):
         from chonk import DocumentLoader
 
-        loader = DocumentLoader(context_strategy=None)
+        loader = DocumentLoader(enrich_context=False)
         chunks = loader.load_bytes(_bytes(_NVD_RESPONSE), name="feed", doc_type="json")
         chunks = self.extractor.annotate(chunks, _bytes(_NVD_RESPONSE))
         annotated = [c for c in chunks if c.source_detail]

@@ -421,7 +421,7 @@ class TestEdgarWithDocumentLoader:
         from chonk import DocumentLoader
         loader = DocumentLoader(
             min_chunk_size=400, max_chunk_size=400,
-            context_strategy="prefix",
+            enrich_context=True,
             extra_extractors=[EdgarExtractor()],
         )
         chunks = loader.load_bytes(
@@ -437,7 +437,7 @@ class TestEdgarWithDocumentLoader:
         from chonk import DocumentLoader
         loader = DocumentLoader(
             min_chunk_size=400, max_chunk_size=400,
-            context_strategy="prefix",
+            enrich_context=True,
             extra_extractors=[EdgarExtractor()],
         )
         chunks = loader.load_bytes(
@@ -453,11 +453,11 @@ class TestEdgarWithDocumentLoader:
     def test_naive_and_contextual_differ(self):
         from chonk import DocumentLoader
         naive = DocumentLoader(
-            min_chunk_size=400, max_chunk_size=400, context_strategy=None,
+            min_chunk_size=400, max_chunk_size=400, enrich_context=False,
             extra_extractors=[EdgarExtractor()],
         )
         ctx = DocumentLoader(
-            min_chunk_size=400, max_chunk_size=400, context_strategy="prefix",
+            min_chunk_size=400, max_chunk_size=400, enrich_context=True,
             extra_extractors=[EdgarExtractor()],
         )
         n_chunks = naive.load_bytes(_FULL_10K_HTML.encode(), name="x", doc_type="edgar")

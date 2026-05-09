@@ -213,7 +213,7 @@ class TestAttackRenderer:
     def test_annotate_stamps_source_detail(self):
         from chonk import DocumentLoader
 
-        loader = DocumentLoader(context_strategy=None)
+        loader = DocumentLoader(enrich_context=False)
         chunks = loader.load_bytes(_bytes(_BUNDLE), name="attack", doc_type="json")
         chunks = self.r.annotate(chunks, _BUNDLE)
         annotated = [c for c in chunks if c.source_detail and c.source_detail.get("attack_id") == "T1055.011"]

@@ -113,7 +113,7 @@ class TestLoadFromDb:
     def test_returns_chunks(self, engine):
         from chonk import DocumentLoader
 
-        loader = DocumentLoader(context_strategy=None)
+        loader = DocumentLoader(enrich_context=False)
         chunks = loader.load_from_db(
             engine,
             queries={"customers": "SELECT name, region FROM customers"},
@@ -123,7 +123,7 @@ class TestLoadFromDb:
     def test_document_name_matches_key(self, engine):
         from chonk import DocumentLoader
 
-        loader = DocumentLoader(context_strategy=None)
+        loader = DocumentLoader(enrich_context=False)
         chunks = loader.load_from_db(
             engine,
             queries={"my_view": "SELECT name FROM customers"},
@@ -133,7 +133,7 @@ class TestLoadFromDb:
     def test_multiple_queries_produce_separate_documents(self, engine):
         from chonk import DocumentLoader
 
-        loader = DocumentLoader(context_strategy=None)
+        loader = DocumentLoader(enrich_context=False)
         chunks = loader.load_from_db(
             engine,
             queries={
@@ -148,7 +148,7 @@ class TestLoadFromDb:
     def test_accepts_list_of_tuples(self, engine):
         from chonk import DocumentLoader
 
-        loader = DocumentLoader(context_strategy=None)
+        loader = DocumentLoader(enrich_context=False)
         chunks = loader.load_from_db(
             engine,
             queries=[("q1", "SELECT name FROM customers")],
@@ -159,7 +159,7 @@ class TestLoadFromDb:
     def test_chunk_content_contains_data(self, engine):
         from chonk import DocumentLoader
 
-        loader = DocumentLoader(context_strategy=None)
+        loader = DocumentLoader(enrich_context=False)
         chunks = loader.load_from_db(
             engine,
             queries={"c": "SELECT name FROM customers"},
@@ -170,7 +170,7 @@ class TestLoadFromDb:
     def test_empty_result_produces_no_chunks(self, engine):
         from chonk import DocumentLoader
 
-        loader = DocumentLoader(context_strategy=None)
+        loader = DocumentLoader(enrich_context=False)
         chunks = loader.load_from_db(
             engine,
             queries={"empty": "SELECT name FROM customers WHERE 1=0"},
@@ -180,7 +180,7 @@ class TestLoadFromDb:
     def test_chunks_have_db_provenance(self, engine):
         from chonk import DocumentLoader
 
-        loader = DocumentLoader(context_strategy=None)
+        loader = DocumentLoader(enrich_context=False)
         chunks = loader.load_from_db(engine, queries={"c": "SELECT name FROM customers"})
         assert chunks
         detail = chunks[0].source_detail
@@ -192,7 +192,7 @@ class TestLoadFromDb:
         from chonk import DocumentLoader
 
         sql = "SELECT name FROM customers"
-        loader = DocumentLoader(context_strategy=None)
+        loader = DocumentLoader(enrich_context=False)
         chunks = loader.load_from_db(engine, queries={"c": sql})
         assert chunks, "expected chunks"
         for chunk in chunks:

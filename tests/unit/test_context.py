@@ -7,7 +7,6 @@
 
 """Tests for chonk.context — enrich_chunk and enrich_chunks."""
 
-import pytest
 
 from chonk.context import enrich_chunk, enrich_chunks
 from chonk.models import DocumentChunk
@@ -58,11 +57,6 @@ class TestEnrichChunk:
         chunk = _make_chunk(breadcrumb="[doc > Intro]")
         result = enrich_chunk(chunk)
         assert result is not chunk
-
-    def test_unknown_strategy_raises(self):
-        chunk = _make_chunk(breadcrumb="[doc > Intro]")
-        with pytest.raises(ValueError, match="magic"):
-            enrich_chunk(chunk, strategy="magic")
 
     def test_all_other_fields_preserved(self):
         chunk = DocumentChunk(

@@ -22,18 +22,21 @@ supporting incremental ablation benchmarking.
 
 from __future__ import annotations
 
-import math
-from typing import TYPE_CHECKING, Callable
+import logging
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from ..models import DocumentChunk, ScoredChunk
 
 if TYPE_CHECKING:
-    from ..storage._store import Store
-    from ..ner._index import EntityIndex
     from ..cluster._map import ClusterMap
     from ..graph._index import RelationshipIndex
+    from ..ner._index import EntityIndex
+    from ..storage._store import Store
+
+_log = logging.getLogger(__name__)
 
 
 class EnhancedSearch:
@@ -65,10 +68,10 @@ class EnhancedSearch:
 
     def __init__(
         self,
-        store: "Store",
-        entity_index: "EntityIndex | None" = None,
-        cluster_map: "ClusterMap | None" = None,
-        relationship_index: "RelationshipIndex | None" = None,
+        store: Store,
+        entity_index: EntityIndex | None = None,
+        cluster_map: ClusterMap | None = None,
+        relationship_index: RelationshipIndex | None = None,
         seed_pool_multiplier: int = 3,
         entity_expansion_top_n: int = 3,
         cluster_budget: int | None = None,
@@ -83,7 +86,7 @@ class EnhancedSearch:
         entity_embeddings=None,
         entity_embedding_ids: list[str] | None = None,
         ner_fn: Callable[[str], list[str]] | None = None,
-        embed_fn: Callable[[list[str]], "np.ndarray"] | None = None,
+        embed_fn: Callable[[list[str]], np.ndarray] | None = None,
         entity_embedding_top_k: int = 10,
         entity_ref_expansion: bool = False,
         entity_ref_expansion_k: int = 20,
@@ -96,7 +99,7 @@ class EnhancedSearch:
         self._entity_index = entity_index
         self._cluster_map = cluster_map
         self._relationship_index = relationship_index
-        self._chunk_cache: dict[str, "DocumentChunk"] | None = None
+        self._chunk_cache: dict[str, DocumentChunk] | None = None
         self._embedding_cache: dict[str, list[float]] | None = None
         self._seed_multiplier = seed_pool_multiplier
         self._entity_top_n = entity_expansion_top_n
@@ -132,7 +135,7 @@ class EnhancedSearch:
         k: int = 5,
         query_text: str | None = None,
         query_entities: list[str] | None = None,
-        precomputed_entity_vecs: dict[str, "np.ndarray"] | None = None,
+        precomputed_entity_vecs: dict[str, np.ndarray] | None = None,
         mode: str = "vector_first",
     ) -> list[ScoredChunk]:
         """Assemble a top-k cohort using all enabled expansion dimensions.
@@ -422,7 +425,7 @@ class EnhancedSearch:
         query_entities: list[str],
         k: int,
         query_text: str | None,
-        precomputed_entity_vecs: dict[str, "np.ndarray"] | None = None,
+        precomputed_entity_vecs: dict[str, np.ndarray] | None = None,
     ) -> list[ScoredChunk]:
         """Post-selection: if query entities are absent from top-k, expand via semantic search."""
         result_text = " ".join((sc.chunk.content or "") for sc in results).lower()
@@ -536,7 +539,8 @@ class EnhancedSearch:
                 "SELECT chunk_id, document_name, content, section, chunk_index, "
                 "source_offset, source_length, embedding FROM embeddings"
             ).fetchall()
-        except Exception:
+        except Exception as exc:
+            _log.debug("preload_chunk_cache failed: %s", exc)
             return
         self._chunk_cache = {}
         self._embedding_cache = {}
@@ -553,7 +557,7 @@ class EnhancedSearch:
             if emb is not None:
                 self._embedding_cache[cid] = np.array(emb, dtype="float32")
 
-    def _fetch_chunk(self, chunk_id: str) -> "DocumentChunk | None":
+    def _fetch_chunk(self, chunk_id: str) -> DocumentChunk | None:
         """Fetch a single chunk by ID — from cache if available, else DuckDB."""
         if self._chunk_cache is not None:
             return self._chunk_cache.get(chunk_id)
@@ -573,8 +577,8 @@ class EnhancedSearch:
                     source_offset=row[4],
                     source_length=row[5],
                 )
-        except Exception:
-            pass
+        except Exception as exc:
+            _log.warning("_fetch_chunk failed for %s: %s", chunk_id, exc)
         return None
 
     # ------------------------------------------------------------------
@@ -588,7 +592,7 @@ class EnhancedSearch:
         denom = np.linalg.norm(a) * np.linalg.norm(b)
         return float(np.dot(a, b) / denom) if denom > 0 else 0.0
 
-    def _get_embedding(self, chunk_id: str) -> "np.ndarray | list[float] | None":
+    def _get_embedding(self, chunk_id: str) -> np.ndarray | list[float] | None:
         """Fetch embedding vector for a chunk — from cache if available, else DuckDB."""
         if self._embedding_cache is not None:
             return self._embedding_cache.get(chunk_id)
@@ -599,8 +603,8 @@ class EnhancedSearch:
             ).fetchall()
             if rows and rows[0][0] is not None:
                 return list(rows[0][0])
-        except Exception:
-            pass
+        except Exception as exc:
+            _log.warning("_get_embedding failed for %s: %s", chunk_id, exc)
         return None
 
     def _select_cohort(

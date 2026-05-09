@@ -386,7 +386,7 @@ def cmd_index(args: argparse.Namespace) -> None:
             include_doc_name=False,
             promote_headings=False,  # already promoted above
         )
-        chunks = enrich_chunks(chunks, strategy="prefix")
+        chunks = enrich_chunks(chunks)
         all_chunks.extend(chunks)
 
     print(f"Total chunks: {len(all_chunks):,}")
@@ -544,6 +544,24 @@ _STRUCTURED_GEN_RETRY_HINT = (
     "You MUST respond with exactly one line starting with 'ANSWER: ' followed by your answer. "
     "Example: ANSWER: The capital of France is Paris."
 )
+
+# ── SRR: Structured Response Retry ────────────────────────────────────────────
+_SRR_GEN_SYSTEM = (
+    "Answer the question using only information from the provided context.\n"
+    "You MUST respond with valid JSON in exactly this format — no other text:\n"
+    '{\n'
+    '  "answer": "<prose answer suitable for the reader>",\n'
+    '  "key_claims": ["<discrete claim 1>", "<discrete claim 2>"],\n'
+    '  "evidence_used": ["<verbatim quote or close paraphrase from context>"]\n'
+    "}\n"
+    "If the context lacks information for a claim, omit that claim rather than fabricating."
+)
+_SRR_RETRY_HINT = (
+    "Your previous response was not valid JSON. "
+    'Respond ONLY with a JSON object containing keys "answer", "key_claims", and "evidence_used". '
+    'Example: {"answer": "...", "key_claims": ["..."], "evidence_used": ["..."]}'
+)
+_SRR_COVERAGE_THRESHOLD = 0.35  # min cosine sim for entity→evidence coverage
 _UNSTRUCTURED_GEN_SYSTEM = (
     "Answer the question based only on the provided context. "
     "If the context does not contain enough information, "
@@ -557,6 +575,71 @@ def _extract_structured_answer(text: str) -> str | None:
         if stripped.upper().startswith("ANSWER:"):
             return stripped[len("ANSWER:"):].strip()
     return None
+
+def _generate_srr(question: str, context: str, client, model: str,
+                  temperature: float = 0.0) -> dict:
+    """Generate a structured response for SRR. Returns dict with answer/key_claims/evidence_used."""
+    import json as _json
+    user_content = f"Context:\n{context}\n\nQuestion: {question}"
+    raw = ""
+    for attempt in range(2):
+        prompt = user_content if attempt == 0 else user_content + f"\n\n{_SRR_RETRY_HINT}"
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": _SRR_GEN_SYSTEM},
+                {"role": "user",   "content": prompt},
+            ],
+            temperature=temperature,
+            max_tokens=700,
+        )
+        raw = resp.choices[0].message.content.strip()
+        # Strip markdown code fences if present
+        if raw.startswith("```"):
+            raw = "\n".join(raw.splitlines()[1:])
+            if raw.endswith("```"):
+                raw = raw[:-3].strip()
+        try:
+            obj = _json.loads(raw)
+            if isinstance(obj.get("answer"), str):
+                return {
+                    "answer":       obj["answer"],
+                    "key_claims":   obj.get("key_claims", []),
+                    "evidence_used": obj.get("evidence_used", []),
+                }
+        except Exception:
+            pass
+    # Both attempts failed — return raw text as answer with empty structure
+    return {"answer": raw, "key_claims": [], "evidence_used": []}
+
+
+def _srr_gap_fill(
+    question: str,
+    uncovered_entities: list[str],
+    existing_context: str,
+    chunk_pool: list[tuple],  # [(chunk_id, text, embedding_vec)]
+    embed_model,
+    top_k: int = 3,
+) -> str:
+    """Retrieve chunks for uncovered entities and return augmented context."""
+    import numpy as _np
+    if not uncovered_entities or not chunk_pool:
+        return existing_context
+    ent_vecs = embed_model.encode(uncovered_entities, normalize_embeddings=True,
+                                  show_progress_bar=False)
+    pool_texts = [t for _, t, _ in chunk_pool]
+    pool_vecs  = _np.array([v for _, _, v in chunk_pool], dtype=_np.float32)
+    # Score each chunk against all uncovered entities (max similarity)
+    sims = ent_vecs @ pool_vecs.T          # (n_ents, n_chunks)
+    chunk_scores = sims.max(axis=0)        # (n_chunks,)
+    top_idx = _np.argsort(chunk_scores)[::-1][:top_k]
+    new_chunks = [pool_texts[i] for i in top_idx
+                  if pool_texts[i] not in existing_context]
+    if not new_chunks:
+        return existing_context
+    addition = "\n\n---\n".join(new_chunks)
+    return existing_context + f"\n\n[Additional context]\n{addition}"
+
 
 def _generate(question: str, context: str, client, model: str = GEN_MODEL,
               temperature: float = 0.0, retry_hint: str | None = None,
@@ -1163,6 +1246,7 @@ def cmd_run(args: argparse.Namespace) -> None:
     _flags = {
         "run_name": run_name,
         "db": str(db_path.name),
+        "gen_model": getattr(args, "gen_model", GEN_MODEL),
         "vanilla": use_vanilla,
         "rerank": use_rerank,
         "rerank_provider": rerank_provider,
@@ -1179,12 +1263,21 @@ def cmd_run(args: argparse.Namespace) -> None:
         "breadcrumb_style": breadcrumb_style,
         "cluster": use_cluster,
         "ner_x": use_ner_x,
+        "srr": getattr(args, "srr", False),
         "concentration_threshold": concentration_threshold,
         "query_complexity_threshold": query_complexity_threshold,
         "top_k": top_k,
+        "question_ids": question_ids_file,
+        "corpus": "full" if (question_ids_file and "full_corpus" in str(question_ids_file)) else "grid" if question_ids_file else "all",
     }
     _flags_path = results_dir / f"{run_name}_flags.json"
     _flags_path.write_text(json.dumps(_flags, indent=2), encoding="utf-8")
+    # Append to consolidated manifest
+    _manifest_path = out_dir / "run_manifest.jsonl"
+    import datetime as _dt
+    _manifest_entry = {"timestamp": _dt.datetime.utcnow().isoformat() + "Z", **_flags}
+    with open(_manifest_path, "a", encoding="utf-8") as _mf:
+        _mf.write(json.dumps(_manifest_entry) + "\n")
 
     import atexit as _atexit
     import signal as _signal
@@ -1399,6 +1492,21 @@ def cmd_run(args: argparse.Namespace) -> None:
             print("  Chunk cache preloaded.", flush=True)
         if _conc_search is not None:
             _conc_search.preload_chunk_cache()
+
+        # SRR: preload full chunk pool (id, text, embedding) for gap-fill retrieval
+        use_srr = getattr(args, "srr", False)
+        _srr_chunk_pool: list[tuple] = []
+        if use_srr:
+            all_chunks = store.vector.get_all_chunks()
+            _emb_map = store.vector._preloaded_embeddings if hasattr(store.vector, "_preloaded_embeddings") else {}
+            from chonk.storage._vector import DuckDBVectorBackend as _DVBE
+            for ch in all_chunks:
+                ec = ch.embedding_content if ch.embedding_content else ch.content
+                cid = _DVBE._generate_chunk_id(ch.document_name, ch.chunk_index, ec)
+                vec = _emb_map.get(cid)
+                if vec is not None:
+                    _srr_chunk_pool.append((cid, ch.content, vec))
+            print(f"  SRR chunk pool: {len(_srr_chunk_pool)} chunks preloaded.", flush=True)
 
         # Load pre-computed NER entity embeddings from cache (built by prime-cache)
         _precomputed_entity_vecs: dict[str, np.ndarray] | None = None
@@ -1641,7 +1749,7 @@ def cmd_run(args: argparse.Namespace) -> None:
     print(f"Generating answers with {args.concurrency} parallel workers across {n_endpoints} endpoint(s)...")
 
     retry_ner_fn = None
-    if use_entity_ref_retry:
+    if use_entity_ref_retry or use_srr:
         from chonk.ner import SpacyMatcher
         _retry_matcher = SpacyMatcher(model=SPACY_MODEL, strip_numeric=True)
         retry_ner_fn = lambda text: [m.display_name for m in _retry_matcher.match(text)]
@@ -1654,16 +1762,82 @@ def cmd_run(args: argparse.Namespace) -> None:
         slot   = item["_slot"] % n_endpoints
         client = clients[slot]
         model  = endpoint_ids[slot]
-        for attempt in range(3):
-            try:
-                answer = _generate(item["question"], item["context"], client, model,
-                                   temperature=gen_temperature, structured=use_structured_gen)
-                break
-            except Exception as exc:
-                if attempt == 2:
-                    answer = f"[ERROR: {exc}]"
+
+        srr_stats: dict | None = None
+        if use_srr:
+            context = item["context"]
+            srr_out = {"answer": "", "key_claims": [], "evidence_used": []}
+            for attempt in range(3):
+                try:
+                    srr_out = _generate_srr(item["question"], context, client, model,
+                                            temperature=gen_temperature)
+                    break
+                except Exception as exc:
+                    if attempt == 2:
+                        srr_out = {"answer": f"[ERROR: {exc}]", "key_claims": [], "evidence_used": []}
+                    else:
+                        time.sleep(2 ** attempt)
+
+            # Response gate: check entity coverage against evidence_used
+            q_entities = retry_ner_fn(item["question"]) if retry_ner_fn else []
+            uncovered_srr: list[str] = []
+            if q_entities and srr_out["evidence_used"]:
+                ent_vecs = embed_model.encode(q_entities, normalize_embeddings=True,
+                                             show_progress_bar=False)
+                ev_vecs  = embed_model.encode(srr_out["evidence_used"],
+                                              normalize_embeddings=True, show_progress_bar=False)
+                # max sim of each entity against any evidence
+                sims = ent_vecs @ ev_vecs.T
+                uncovered_srr = [e for e, row in zip(q_entities, sims)
+                                 if row.max() < _SRR_COVERAGE_THRESHOLD]
+            elif q_entities:
+                uncovered_srr = q_entities  # no evidence at all
+
+            # Gap-fill: retrieve chunks for uncovered entities, retry up to 2x
+            for _gap_round in range(2):
+                if not uncovered_srr or not _srr_chunk_pool:
+                    break
+                context = _srr_gap_fill(item["question"], uncovered_srr, context,
+                                        _srr_chunk_pool, embed_model, top_k=3)
+                new_srr = srr_out
+                for attempt in range(2):
+                    try:
+                        new_srr = _generate_srr(item["question"], context, client, model,
+                                                temperature=gen_temperature)
+                        break
+                    except Exception:
+                        time.sleep(2 ** attempt)
+                # Re-check coverage
+                if q_entities and new_srr["evidence_used"]:
+                    ent_vecs = embed_model.encode(q_entities, normalize_embeddings=True,
+                                                 show_progress_bar=False)
+                    ev_vecs  = embed_model.encode(new_srr["evidence_used"],
+                                                  normalize_embeddings=True, show_progress_bar=False)
+                    sims = ent_vecs @ ev_vecs.T
+                    uncovered_srr = [e for e, row in zip(q_entities, sims)
+                                     if row.max() < _SRR_COVERAGE_THRESHOLD]
                 else:
-                    time.sleep(2 ** attempt)
+                    uncovered_srr = []
+                srr_out = new_srr
+
+            answer = srr_out["answer"]
+            srr_stats = {
+                "key_claims":    srr_out["key_claims"],
+                "evidence_used": srr_out["evidence_used"],
+                "gap_rounds":    _gap_round,
+                "uncovered":     uncovered_srr,
+            }
+        else:
+            for attempt in range(3):
+                try:
+                    answer = _generate(item["question"], item["context"], client, model,
+                                       temperature=gen_temperature, structured=use_structured_gen)
+                    break
+                except Exception as exc:
+                    if attempt == 2:
+                        answer = f"[ERROR: {exc}]"
+                    else:
+                        time.sleep(2 ** attempt)
 
         retry_stats: dict | None = None
         if use_entity_ref_retry and retry_ner_fn is not None:
@@ -1714,6 +1888,8 @@ def cmd_run(args: argparse.Namespace) -> None:
             result["entity_ref_expansion"] = item["expansion_stats"]
         if retry_stats is not None:
             result["entity_ref_retry"] = retry_stats
+        if srr_stats is not None:
+            result["srr"] = srr_stats
         return result
 
     with ThreadPoolExecutor(max_workers=args.concurrency) as executor:
@@ -1916,7 +2092,7 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
                 _gt_cache_vecs = np.stack([_all_gt_vecs[_cached_id_idx[qid]] for qid in _gt_ids_sorted])
 
         if _gt_cache_vecs is None:
-            _gt_texts_sorted = [_gt_by_id[qid] for qid in _gt_ids_sorted]
+            _gt_texts_sorted = [_gt_by_id[qid] or "" for qid in _gt_ids_sorted]
             print(f"Encoding {len(_gt_texts_sorted)} ground-truth texts (batched)...")
             _gt_cache_vecs = embed_model.encode(
                 _gt_texts_sorted, batch_size=32, normalize_embeddings=True,
@@ -1937,7 +2113,7 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
         ans_cache_f = out_dir / "data" / f"ans_embeddings_{run_name}.npy"
         ans_id_f    = out_dir / "data" / f"ans_embedding_ids_{run_name}.json"
         all_ans_ids   = [r["id"] for r in bench_records]
-        all_ans_texts = [r["generated_answer"] for r in bench_records]
+        all_ans_texts = [r["generated_answer"] or "" for r in bench_records]
         if ans_cache_f.exists() and ans_id_f.exists() and json.loads(ans_id_f.read_text()) == all_ans_ids:
             print("Loading cached answer embeddings...")
             all_ans_vecs = np.load(str(ans_cache_f))
@@ -2007,6 +2183,68 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
                 else:
                     _rpm_tokens[0] -= 1.0
 
+        import math as _math
+        _REPROMPT_TEMPLATES = {
+            "answer_correctness": (
+                "You are evaluating whether a generated answer is correct relative to the ground truth.\n"
+                "Question: {question}\n"
+                "Ground truth: {ground_truth}\n"
+                "Generated answer: {generated_answer}\n\n"
+                "Score from 0.0 (completely wrong) to 1.0 (perfectly correct).\n"
+                'Respond with ONLY valid JSON, exactly: {{"score": <float>}}'
+            ),
+            "coverage_score": (
+                "You are evaluating how well a generated answer covers the key information in the ground truth.\n"
+                "Question: {question}\n"
+                "Ground truth: {ground_truth}\n"
+                "Generated answer: {generated_answer}\n\n"
+                "Score from 0.0 (covers nothing) to 1.0 (covers everything).\n"
+                'Respond with ONLY valid JSON, exactly: {{"score": <float>}}'
+            ),
+            "faithfulness": (
+                "You are evaluating whether a generated answer is faithful to the provided context (no hallucinations).\n"
+                "Question: {question}\n"
+                "Generated answer: {generated_answer}\n"
+                "Context (first 1000 chars): {context}\n\n"
+                "Score from 0.0 (completely hallucinated) to 1.0 (fully grounded in context).\n"
+                'Respond with ONLY valid JSON, exactly: {{"score": <float>}}'
+            ),
+        }
+
+        async def _judge_reprompt(r: dict, nan_metrics: list[str]) -> dict[str, float]:
+            """Simplified extraction prompt for metrics that returned malformed JSON."""
+            import json as _json
+            import re as _re
+            recovered: dict[str, float] = {}
+            ctx_snippet = (r.get("context") or "")[:1000]
+            for metric in nan_metrics:
+                tmpl = _REPROMPT_TEMPLATES.get(metric)
+                if not tmpl:
+                    continue
+                prompt = tmpl.format(
+                    question=r.get("question", ""),
+                    ground_truth=r.get("ground_truth", ""),
+                    generated_answer=r.get("generated_answer", ""),
+                    context=ctx_snippet,
+                )
+                for _rp_attempt in range(2):
+                    try:
+                        resp = await llm.ainvoke(prompt)
+                        text = resp.content if hasattr(resp, "content") else str(resp)
+                        # Try strict JSON parse first, then regex fallback
+                        try:
+                            obj = _json.loads(text)
+                            score = float(obj.get("score", float("nan")))
+                        except Exception:
+                            m = _re.search(r'"score"\s*:\s*([0-9]*\.?[0-9]+)', text)
+                            score = float(m.group(1)) if m else float("nan")
+                        if 0.0 <= score <= 1.0:
+                            recovered[metric] = score
+                            break
+                    except Exception:
+                        pass
+            return recovered
+
         async def _eval_one(r: dict, attempt: int = 0) -> dict:
             """Single attempt. Returns result dict, or {'_deferred': True, '_attempt': attempt} on timeout."""
             import asyncio as _aio
@@ -2046,8 +2284,18 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
                         result[key] = float(val) if isinstance(val, (int, float)) else float("nan")
                     nan_metrics = [k for k in tasks if k != "rouge_score" and result.get(k) != result.get(k)]
                     if nan_metrics:
-                        result["nan_reason"] = "parse"
-                        _nan_final[0] += 1
+                        # Guided judge reprompt: judge already reasoned but returned malformed JSON.
+                        # Recover the score with a simplified extraction prompt.
+                        recovered = await _judge_reprompt(r, nan_metrics)
+                        for key, val in recovered.items():
+                            if not _math.isnan(val):
+                                result[key] = val
+                        nan_metrics = [k for k in nan_metrics if _math.isnan(result.get(k, float("nan")))]
+                        if nan_metrics:
+                            result["nan_reason"] = "parse"
+                            _nan_final[0] += 1
+                        else:
+                            print(f"[eval] {r['id']} reprompt recovered {list(recovered.keys())}", flush=True)
                     print(f"[eval] {r['id']} done in {time.monotonic()-_t0:.1f}s metrics={list(tasks.keys())}", flush=True)
                     return result
                 except Exception as e:
@@ -2265,14 +2513,21 @@ def cmd_prep_nan_reeval(args: argparse.Namespace) -> None:
 
     import duckdb as _ddb
     con = _ddb.connect(str(run_db), read_only=True)
-    rows = con.execute(
-        "SELECT id, question_type, answer_correctness, rouge_score, "
-        "coverage_score, faithfulness, nan_reason FROM eval_scores"
-    ).fetchall()
+    try:
+        rows = con.execute(
+            "SELECT id, question_type, answer_correctness, rouge_score, "
+            "coverage_score, faithfulness, nan_reason FROM eval_scores"
+        ).fetchall()
+        cols = ["id", "question_type", "answer_correctness", "rouge_score",
+                "coverage_score", "faithfulness", "nan_reason"]
+    except Exception:
+        rows = con.execute(
+            "SELECT id, question_type, answer_correctness, rouge_score, "
+            "coverage_score, faithfulness FROM eval_scores"
+        ).fetchall()
+        cols = ["id", "question_type", "answer_correctness", "rouge_score",
+                "coverage_score", "faithfulness"]
     con.close()
-
-    cols = ["id", "question_type", "answer_correctness", "rouge_score",
-            "coverage_score", "faithfulness", "nan_reason"]
     good, nan_ids = [], []
     for row in rows:
         r = dict(zip(cols, row))
@@ -2449,10 +2704,16 @@ def cmd_bench_report(args: argparse.Namespace) -> None:
                 continue
             try:
                 con = _ddb.connect(str(run_db), read_only=True)
-                rows = con.execute(
-                    "SELECT e.question_type, r.source, e.answer_correctness, e.nan_reason "
-                    "FROM eval_scores e JOIN results r ON e.id = r.id"
-                ).fetchall()
+                try:
+                    rows = con.execute(
+                        "SELECT e.question_type, r.source, e.answer_correctness, e.nan_reason "
+                        "FROM eval_scores e JOIN results r ON e.id = r.id"
+                    ).fetchall()
+                except Exception:
+                    rows = [(qt, src, ac, None) for qt, src, ac in con.execute(
+                        "SELECT e.question_type, r.source, e.answer_correctness "
+                        "FROM eval_scores e JOIN results r ON e.id = r.id"
+                    ).fetchall()]
                 total_results = con.execute("SELECT COUNT(*) FROM results").fetchone()[0]
                 con.close()
             except Exception:
@@ -2582,6 +2843,275 @@ def cmd_bench_report(args: argparse.Namespace) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 # Together dedicated endpoint lifecycle
 # ─────────────────────────────────────────────────────────────────────────────
+
+def cmd_nan_bias_report(args: argparse.Namespace) -> None:
+    """Assess whether NaN questions introduce score bias across runs.
+
+    For each run, identifies which question IDs have NaN answer_correctness.
+    Computes:
+      1. Pairwise Jaccard overlap of NaN sets (high = same questions failing = less bias)
+      2. Per-run NaN difficulty bias: mean score of NaN-in-X questions in all other runs
+         vs overall mean — positive delta means skipping those questions inflated the score
+      3. MCAR flag: whether missingness appears random or systematic
+    """
+    import math as _math
+    from pathlib import Path as _Path
+
+    import numpy as _np
+
+    runs_dir = _Path(args.out_dir) / "data" / "runs"
+    import duckdb as _ddb
+
+    run_filter  = getattr(args, "filter", None)
+    run_exclude = getattr(args, "exclude", None)
+
+    # Load per-question answer_correctness for every available run
+    # run_data[run_name] = {qid: float or nan}
+    run_data: dict[str, dict[str, float]] = {}
+    for db in sorted(runs_dir.glob("*.duckdb")):
+        if str(db).endswith(".wal"):
+            continue
+        rn = db.stem
+        if run_filter  and run_filter  not in rn: continue
+        if run_exclude and run_exclude in rn:      continue
+        try:
+            con = _ddb.connect(str(db), read_only=True)
+            rows = con.execute(
+                "SELECT id, answer_correctness FROM eval_scores"
+            ).fetchall()
+            con.close()
+        except Exception:
+            continue
+        if not rows:
+            continue
+        run_data[rn] = {qid: (float("nan") if (ac is None or (isinstance(ac, float) and _math.isnan(ac))) else float(ac))
+                        for qid, ac in rows}
+
+    if len(run_data) < 2:
+        print("Need at least 2 runs with eval_scores. Aborting.")
+        return
+
+    run_names = sorted(run_data.keys())
+    nan_sets: dict[str, set] = {rn: {q for q, v in run_data[rn].items() if _math.isnan(v)}
+                                 for rn in run_names}
+
+    def _short(name: str) -> str:
+        return name.replace("nobc_ner_ref_rerank_", "").replace("nobc_", "").replace("_full", "").replace("_grid", "")
+
+    # ── 1. NaN set sizes ──────────────────────────────────────────────────────
+    print("\n── NaN set sizes ──\n")
+    print(f"  {'Run':<48}  {'NaN':>5}  {'Total':>6}  {'%':>5}")
+    print("  " + "-" * 68)
+    for rn in run_names:
+        total = len(run_data[rn])
+        n_nan = len(nan_sets[rn])
+        pct   = 100 * n_nan / total if total else 0
+        print(f"  {_short(rn):<48}  {n_nan:>5}  {total:>6}  {pct:>4.1f}%")
+
+    # ── 2. Pairwise Jaccard overlap of NaN sets ───────────────────────────────
+    print("\n── Pairwise Jaccard overlap of NaN sets (1.0 = identical questions failing) ──\n")
+    w = 18
+    header = f"  {'':48}" + "".join(f"  {_short(rn)[:w]:>{w}}" for rn in run_names)
+    print(header)
+    print("  " + "-" * len(header))
+    for ra in run_names:
+        row = f"  {_short(ra):<48}"
+        for rb in run_names:
+            if ra == rb:
+                row += f"  {'—':>{w}}"
+            else:
+                inter = len(nan_sets[ra] & nan_sets[rb])
+                union = len(nan_sets[ra] | nan_sets[rb])
+                j = inter / union if union else 1.0
+                row += f"  {j:>{w}.3f}"
+        print(row)
+
+    # ── 3. NaN difficulty bias ────────────────────────────────────────────────
+    # For each run X: find questions that NaN in X; look up their scores in all
+    # other runs where they did NOT NaN; compare to overall mean of those runs.
+    print("\n── NaN difficulty bias (how NaN questions score in other runs vs overall mean) ──\n")
+    print(f"  {'Run':<48}  {'NaN-q mean':>10}  {'Overall mean':>12}  {'Delta':>7}  {'n_obs':>6}")
+    print("  " + "-" * 90)
+
+    for rn in run_names:
+        nan_qs = nan_sets[rn]
+        if not nan_qs:
+            print(f"  {_short(rn):<48}  {'(no NaN)':>10}")
+            continue
+        # Gather scores for nan_qs from all OTHER runs (where they are non-NaN)
+        nan_q_scores: list[float] = []
+        all_scores:   list[float] = []
+        for other in run_names:
+            if other == rn:
+                continue
+            other_data = run_data[other]
+            # overall non-NaN scores in other run
+            all_scores.extend(v for v in other_data.values() if not _math.isnan(v))
+            # scores of rn's NaN questions in other run
+            for qid in nan_qs:
+                v = other_data.get(qid, float("nan"))
+                if not _math.isnan(v):
+                    nan_q_scores.append(v)
+        if not nan_q_scores:
+            print(f"  {_short(rn):<48}  {'(no overlap)':>10}")
+            continue
+        nan_mean  = float(_np.mean(nan_q_scores))
+        all_mean  = float(_np.mean(all_scores)) if all_scores else float("nan")
+        delta     = nan_mean - all_mean
+        # positive delta: NaN questions score ABOVE average elsewhere → skipping them deflated this run
+        # negative delta: NaN questions score BELOW average elsewhere → skipping them inflated this run
+        flag = " ▲ inflated" if delta < -0.005 else (" ▼ deflated" if delta > 0.005 else " ≈ neutral")
+        print(f"  {_short(rn):<48}  {nan_mean:>10.4f}  {all_mean:>12.4f}  {delta:>+7.4f}{flag}  {len(nan_q_scores):>6}")
+
+    # ── 4. MCAR summary ──────────────────────────────────────────────────────
+    # If NaN sets are highly overlapping (mean pairwise Jaccard high), missingness
+    # is systematic (same questions always fail) → MCAR across runs, bias is consistent.
+    all_jaccards = []
+    for i, ra in enumerate(run_names):
+        for rb in run_names[i+1:]:
+            inter = len(nan_sets[ra] & nan_sets[rb])
+            union = len(nan_sets[ra] | nan_sets[rb])
+            if union:
+                all_jaccards.append(inter / union)
+    mean_j = float(_np.mean(all_jaccards)) if all_jaccards else 0.0
+    print("\n── Summary ──\n")
+    print(f"  Mean pairwise NaN-set Jaccard: {mean_j:.3f}")
+    if mean_j >= 0.5:
+        print("  Interpretation: NaN questions are largely the same across runs (systematic parse failures).")
+        print("  Scores are comparable — the same questions are excluded from all runs.")
+    elif mean_j >= 0.2:
+        print("  Interpretation: Moderate overlap — some systematic, some run-specific NaN.")
+        print("  Check per-run delta above for inflation/deflation estimates.")
+    else:
+        print("  Interpretation: Low overlap — different questions fail in different runs.")
+        print("  Scores may not be directly comparable; check delta column for bias magnitude.")
+
+
+def cmd_corrected_report(args: argparse.Namespace) -> None:
+    """Bias-corrected scores: impute NaN questions from other runs, recompute Med+Nov mean.
+
+    For each run X and each NaN question q, imputed score = mean of q's score across
+    all other runs where q is non-NaN.  Falls back to run X's non-NaN overall mean
+    if no other run answered q.  Recomputes the balanced (Med+Nov)/2 mean-of-means
+    using actual + imputed scores and reports raw vs corrected side by side.
+    """
+    import math as _math
+    from collections import defaultdict as _dd
+    from pathlib import Path as _Path
+
+    import numpy as _np
+
+    runs_dir = _Path(args.out_dir) / "data" / "runs"
+    import duckdb as _ddb
+
+    run_filter  = getattr(args, "filter",  None)
+    run_exclude = getattr(args, "exclude", None)
+
+    # Load per-question {id: (subset, qtype, ac)} for every run
+    # subset derived from results.source ("Medical" → Med, else Nov)
+    RunQ = dict  # {qid: (subset, qtype, float|nan)}
+    run_data: dict[str, RunQ] = {}
+
+    for db in sorted(runs_dir.glob("*.duckdb")):
+        if str(db).endswith(".wal"):
+            continue
+        rn = db.stem
+        if run_filter  and run_filter  not in rn: continue
+        if run_exclude and run_exclude in rn:      continue
+        try:
+            con = _ddb.connect(str(db), read_only=True)
+            try:
+                rows = con.execute(
+                    "SELECT e.id, r.source, e.question_type, e.answer_correctness "
+                    "FROM eval_scores e JOIN results r ON e.id = r.id"
+                ).fetchall()
+            except Exception:
+                rows = []
+            con.close()
+        except Exception:
+            continue
+        if not rows:
+            continue
+        d: RunQ = {}
+        for qid, source, qtype, ac in rows:
+            subset = "Med" if source and "medical" in str(source).lower() else "Nov"
+            val    = float("nan") if (ac is None or (isinstance(ac, float) and _math.isnan(ac))) else float(ac)
+            d[qid] = (subset, qtype, val)
+        run_data[rn] = d
+
+    if len(run_data) < 2:
+        print("Need ≥2 runs with eval_scores joined to results. Aborting.")
+        return
+
+    run_names = sorted(run_data.keys())
+
+    # Build cross-run score lookup: {qid: [non-NaN scores across all runs]}
+    cross: dict[str, list[float]] = _dd(list)
+    for rn, d in run_data.items():
+        for qid, (_, _, v) in d.items():
+            if not _math.isnan(v):
+                cross[qid].append(v)
+
+    QTYPES = ["Fact Retrieval", "Complex Reasoning", "Contextual Summarize", "Creative Generation"]
+
+    def _balanced_mean(scores_by_st: dict) -> float:
+        """(Med_mean + Nov_mean) / 2 where each subset mean = mean of 4 qtype means."""
+        def _subset(s):
+            vals = [_np.mean(scores_by_st[(s, qt)]) for qt in QTYPES
+                    if scores_by_st.get((s, qt))]
+            return float(_np.mean(vals)) if vals else float("nan")
+        med = _subset("Med")
+        nov = _subset("Nov")
+        if _math.isnan(med) or _math.isnan(nov):
+            return float("nan")
+        return (med + nov) / 2
+
+    def _score_run(d: RunQ, impute: bool) -> tuple[float, int]:
+        """Return (balanced_mean, n_imputed). impute=False gives raw score."""
+        scores_by_st: dict[tuple, list] = _dd(list)
+        n_imputed = 0
+        overall_fallback = float(_np.mean([v for _, _, v in d.values() if not _math.isnan(v)]) or float("nan"))
+        for qid, (subset, qtype, v) in d.items():
+            if not _math.isnan(v):
+                scores_by_st[(subset, qtype)].append(v)
+            elif impute:
+                others = [s for s in cross[qid] if True]  # all runs incl. self already excluded by being NaN
+                imp = float(_np.mean(others)) if others else overall_fallback
+                if not _math.isnan(imp):
+                    scores_by_st[(subset, qtype)].append(imp)
+                    n_imputed += 1
+        return _balanced_mean(scores_by_st), n_imputed
+
+    def _short(name: str) -> str:
+        return (name.replace("nobc_ner_ref_rerank_", "")
+                    .replace("nobc_", "")
+                    .replace("_full", "")
+                    .replace("_grid", ""))
+
+    print("\n── Bias-corrected scores (cross-run imputation of NaN questions) ──\n")
+    print(f"  {'Run':<48}  {'Raw':>6}  {'Corrected':>9}  {'Delta':>7}  {'N imputed':>10}")
+    print("  " + "-" * 88)
+
+    rows_out = []
+    for rn in run_names:
+        d = run_data[rn]
+        raw,       _  = _score_run(d, impute=False)
+        corrected, ni = _score_run(d, impute=True)
+        delta = corrected - raw if not (_math.isnan(raw) or _math.isnan(corrected)) else float("nan")
+        rows_out.append((rn, raw, corrected, delta, ni))
+
+    # Sort by corrected score descending
+    rows_out.sort(key=lambda r: -r[2] if not _math.isnan(r[2]) else -999)
+    for rn, raw, corrected, delta, ni in rows_out:
+        r_str = f"{raw:.4f}"       if not _math.isnan(raw)       else "  —   "
+        c_str = f"{corrected:.4f}" if not _math.isnan(corrected) else "  —   "
+        d_str = f"{delta:+.4f}"    if not _math.isnan(delta)     else "  —   "
+        print(f"  {_short(rn):<48}  {r_str:>6}  {c_str:>9}  {d_str:>7}  {ni:>10}")
+
+    print()
+    print("  Imputation: NaN question score = mean of that question's score across all other runs.")
+    print("  Fallback (question NaN in all runs): run's own non-NaN mean.")
+
 
 def cmd_use_endpoints(args: argparse.Namespace) -> None:
     """Run benchmark using pre-existing Together dedicated endpoints."""
@@ -2897,6 +3427,8 @@ def _make_parser() -> argparse.ArgumentParser:
     g_misc = p.add_argument_group("misc")
     g_misc.add_argument("--entity-ref-retry", action="store_true", dest="entity_ref_retry",
                         help="On refusal answer, retry with partial-answer hint (max 1 retry)")
+    g_misc.add_argument("--srr", action="store_true", dest="srr",
+                        help="Structured Response Retry: generate with JSON schema, check entity coverage, gap-fill and retry (max 2 rounds)")
     g_misc.add_argument("--structured-gen", action="store_true", dest="structured_gen",
                         help="Require ANSWER: <text> format from generator; retry once if non-compliant; strip marker before judge")
     g_misc.add_argument("--top-k", type=int, default=None, dest="top_k", metavar="K",
@@ -3012,6 +3544,18 @@ def _make_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_prime_cache)
 
     # report — combined matrix of all eval runs + leaderboard
+    p = sub.add_parser("nan-bias-report", help="Assess NaN question bias across runs")
+    p.add_argument("--out-dir", default="/tmp/grb", metavar="DIR")
+    p.add_argument("--filter", default=None, metavar="STR")
+    p.add_argument("--exclude", default=None, metavar="STR")
+    p.set_defaults(func=cmd_nan_bias_report)
+
+    p = sub.add_parser("corrected-report", help="Bias-corrected scores via cross-run NaN imputation")
+    p.add_argument("--out-dir", default="/tmp/grb", metavar="DIR")
+    p.add_argument("--filter", default=None, metavar="STR")
+    p.add_argument("--exclude", default=None, metavar="STR")
+    p.set_defaults(func=cmd_corrected_report)
+
     p = sub.add_parser("report", help="Combined matrix: our eval runs + leaderboard")
     p.add_argument("--out-dir", default="/tmp/grb", metavar="DIR")
     p.add_argument("--filter", default=None, metavar="STR",

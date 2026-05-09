@@ -28,7 +28,7 @@ def db_path(tmp_path_factory):
     from chonk.storage import Store
 
     path = str(tmp_path_factory.mktemp("mcp") / "test.duckdb")
-    loader = DocumentLoader(context_strategy=None)
+    loader = DocumentLoader(enrich_context=False)
     chunks = loader.load_text(
         "Alpha beta gamma.\n\nDelta epsilon zeta.", name="doc_a"
     ) + loader.load_text("One two three.", name="doc_b")

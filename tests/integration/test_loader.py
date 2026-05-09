@@ -53,13 +53,13 @@ class TestDocumentLoaderMarkdown:
     def test_enrichment_sets_embedding_content(self, tmp_path):
         f = tmp_path / "sample.md"
         f.write_text(SAMPLE_MARKDOWN)
-        chunks = DocumentLoader(context_strategy="prefix").load(str(f))
+        chunks = DocumentLoader(enrich_context=True).load(str(f))
         assert all(c.embedding_content is not None for c in chunks)
 
     def test_no_enrichment_when_strategy_none(self, tmp_path):
         f = tmp_path / "sample.md"
         f.write_text(SAMPLE_MARKDOWN)
-        chunks = DocumentLoader(context_strategy=None).load(str(f))
+        chunks = DocumentLoader(enrich_context=False).load(str(f))
         assert all(c.embedding_content is None for c in chunks)
 
     def test_document_name_from_filename(self, tmp_path):
@@ -77,7 +77,7 @@ class TestDocumentLoaderMarkdown:
     def test_inline_enrichment_strategy(self, tmp_path):
         f = tmp_path / "sample.md"
         f.write_text(SAMPLE_MARKDOWN)
-        chunks = DocumentLoader(context_strategy="inline").load(str(f))
+        chunks = DocumentLoader(enrich_context=True).load(str(f))
         enriched = [c for c in chunks if c.section]
         assert all("[" in c.embedding_content for c in enriched)
 
@@ -106,7 +106,7 @@ class TestDocumentLoaderText:
         assert len(chunks) >= 1
 
     def test_load_bytes_with_enrichment(self):
-        loader = DocumentLoader(context_strategy="prefix")
+        loader = DocumentLoader(enrich_context=True)
         chunks = loader.load_bytes(
             b"# Intro\n\nSection content here.", "doc.md", doc_type="text"
         )
@@ -120,7 +120,7 @@ class TestDocumentLoaderText:
         assert "Title" in full_text or "Body" in full_text
 
     def test_load_text_no_enrichment(self):
-        loader = DocumentLoader(context_strategy=None)
+        loader = DocumentLoader(enrich_context=False)
         chunks = loader.load_text("Some text content.", "test.txt")
         assert all(c.embedding_content is None for c in chunks)
 
@@ -139,7 +139,7 @@ class TestCustomExtractor:
 
         f = tmp_path / "test.fake"
         f.write_bytes(b"raw")
-        loader = DocumentLoader(extra_extractors=[FakeExtractor()], context_strategy=None)
+        loader = DocumentLoader(extra_extractors=[FakeExtractor()], enrich_context=False)
         chunks = loader.load_bytes(b"raw", "test.fake", doc_type="fake")
         assert chunks[0].content == "fake content extracted"
 
@@ -154,7 +154,7 @@ class TestCustomExtractor:
             def annotate(self, chunks, data, source_path=None):
                 return chunks
 
-        loader = DocumentLoader(extra_extractors=[OverrideHtmlExtractor()], context_strategy=None)
+        loader = DocumentLoader(extra_extractors=[OverrideHtmlExtractor()], enrich_context=False)
         chunks = loader.load_bytes(b"<h1>ignored</h1>", "page.html", doc_type="html")
         assert chunks[0].content == "override extracted"
 

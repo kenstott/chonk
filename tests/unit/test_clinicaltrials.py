@@ -11,12 +11,9 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import pytest
-
 # The conversion functions live in the demo script; import them directly.
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from demo.clinicaltrials_demo import _study_to_markdown, QUERIES
-
+from demo.clinicaltrials_demo import QUERIES, _study_to_markdown
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Minimal realistic ClinicalTrials.gov study record (API v2 format)
@@ -257,11 +254,11 @@ class TestStudyToMarkdown:
 
 class TestClinicalTrialsWithDocumentLoader:
 
-    def _make_chunks(self, nct_id: str = "NCT12345678", context_strategy: str = "prefix"):
+    def _make_chunks(self, nct_id: str = "NCT12345678", enrich_context: bool = True):
         from chonk import DocumentLoader
         study = _make_study(nct_id=nct_id, brief_title="Pembrolizumab in NSCLC")
         doc_name, md = _study_to_markdown(study)
-        loader = DocumentLoader(min_chunk_size=300, max_chunk_size=300, context_strategy=context_strategy)
+        loader = DocumentLoader(min_chunk_size=300, max_chunk_size=300, enrich_context=enrich_context)
         return loader.load_text(md, name=doc_name)
 
     def test_load_produces_chunks(self):
@@ -291,7 +288,7 @@ class TestClinicalTrialsWithDocumentLoader:
         """Two trials with identical exclusion criteria get different embedding_content."""
         from chonk import DocumentLoader
 
-        loader = DocumentLoader(min_chunk_size=300, max_chunk_size=300, context_strategy="prefix")
+        loader = DocumentLoader(min_chunk_size=300, max_chunk_size=300, enrich_context=True)
 
         study_a = _make_study(nct_id="NCT11111111", brief_title="Trial A NSCLC")
         study_b = _make_study(nct_id="NCT22222222", brief_title="Trial B NSCLC")
@@ -322,8 +319,8 @@ class TestClinicalTrialsWithDocumentLoader:
         study = _make_study()
         doc_name, md = _study_to_markdown(study)
 
-        naive = DocumentLoader(min_chunk_size=300, max_chunk_size=300, context_strategy=None)
-        ctx = DocumentLoader(min_chunk_size=300, max_chunk_size=300, context_strategy="prefix")
+        naive = DocumentLoader(min_chunk_size=300, max_chunk_size=300, enrich_context=False)
+        ctx = DocumentLoader(min_chunk_size=300, max_chunk_size=300, enrich_context=True)
 
         n_chunks = naive.load_text(md, name=doc_name)
         c_chunks = ctx.load_text(md, name=doc_name)
@@ -343,7 +340,7 @@ class TestClinicalTrialsWithDocumentLoader:
         study = _make_study(eligibility_criteria=long_criteria)
         doc_name, md = _study_to_markdown(study)
 
-        loader = DocumentLoader(min_chunk_size=400, max_chunk_size=400, context_strategy="prefix")
+        loader = DocumentLoader(min_chunk_size=400, max_chunk_size=400, enrich_context=True)
         chunks = loader.load_text(md, name=doc_name)
 
         elig_chunks = [c for c in chunks if any("Eligibility" in s for s in c.section)]
@@ -365,7 +362,7 @@ class TestClinicalTrialsWithDocumentLoader:
         study = _make_study(eligibility_criteria=long_criteria)
         doc_name, md = _study_to_markdown(study)
 
-        loader = DocumentLoader(min_chunk_size=400, max_chunk_size=400, context_strategy="prefix")
+        loader = DocumentLoader(min_chunk_size=400, max_chunk_size=400, enrich_context=True)
         chunks = loader.load_text(md, name=doc_name)
 
         elig_chunks = [c for c in chunks if any("Eligibility" in s for s in c.section)]

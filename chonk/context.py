@@ -40,19 +40,13 @@ import dataclasses
 
 from .models import DocumentChunk
 
-_STRATEGIES = ("prefix", "inline", "breadcrumb")
 
-
-def enrich_chunk(chunk: DocumentChunk, strategy: str = "prefix") -> DocumentChunk:
+def enrich_chunk(chunk: DocumentChunk) -> DocumentChunk:
     """Return a new DocumentChunk with embedding_content set.
 
     Never mutates the input chunk.
 
-    The generated embedding_content includes both the document name and the
-    section path so that even chunks with generic headings can be distinguished
-    across multiple documents.
-
-    All three strategies produce the same output format::
+    The generated embedding_content is::
 
         [doc_name > Ancestor > Section]
 
@@ -65,26 +59,7 @@ def enrich_chunk(chunk: DocumentChunk, strategy: str = "prefix") -> DocumentChun
 
     If no breadcrumb can be constructed (no document name, no section path),
     ``embedding_content`` is set to ``chunk.content`` unchanged.
-
-    Args:
-        chunk: The source DocumentChunk to enrich.
-        strategy: One of ``"prefix"`` (default), ``"inline"``, or
-            ``"breadcrumb"``.  All three strategies currently use the same
-            ``[doc > section]\\n\\n<content>`` format; the parameter is
-            accepted for forward compatibility and to allow caller code to
-            signal intent.
-
-    Returns:
-        A new DocumentChunk with embedding_content populated.
-
-    Raises:
-        ValueError: If strategy is not one of the known values.
     """
-    if strategy not in _STRATEGIES:
-        raise ValueError(f"Unknown enrichment strategy: {strategy!r}. Choose one of: {_STRATEGIES}")
-
-    # Use the breadcrumb already built by chunk_document (respects include_doc_name
-    # and max_breadcrumb_chars).  Fall back to rebuilding from fields only if missing.
     crumb = chunk.breadcrumb
     if not crumb:
         section_parts = (
@@ -103,18 +78,6 @@ def enrich_chunk(chunk: DocumentChunk, strategy: str = "prefix") -> DocumentChun
     return dataclasses.replace(chunk, embedding_content=embedding_content)
 
 
-def enrich_chunks(
-    chunks: list[DocumentChunk],
-    strategy: str = "prefix",
-) -> list[DocumentChunk]:
-    """Return a new list of DocumentChunks with embedding_content set on each.
-
-    Args:
-        chunks: Source chunks to enrich.
-        strategy: One of ``"prefix"`` (default), ``"inline"``, or
-            ``"breadcrumb"``.  Passed through to :func:`enrich_chunk`.
-
-    Returns:
-        A new list of enriched DocumentChunks.
-    """
-    return [enrich_chunk(chunk, strategy=strategy) for chunk in chunks]
+def enrich_chunks(chunks: list[DocumentChunk]) -> list[DocumentChunk]:
+    """Return a new list of DocumentChunks with embedding_content set on each."""
+    return [enrich_chunk(chunk) for chunk in chunks]
