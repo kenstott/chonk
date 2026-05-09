@@ -8,9 +8,11 @@
 """Document transport backends."""
 
 from ._crawler_protocol import Crawler
+from ._db_schema import DatabaseSchemaCrawler
 from ._directory_crawler import DirectoryCrawler
 from ._ftp import FtpTransport
 from ._github import GitHubCrawler
+from ._gmail import GmailCrawler
 from ._http import HttpTransport
 from ._imap import ImapTransport
 from ._import_crawler import ImportCrawler
@@ -18,6 +20,7 @@ from ._local import LocalTransport
 from ._protocol import FetchResult, Transport
 from ._s3 import S3Transport
 from ._sftp import SftpTransport
+from ._sharepoint import SharePointCrawler
 from ._sql_query import SqlQueryTransport
 from ._sqlalchemy import SqlAlchemyTransport
 from ._web_crawler import WebCrawler
@@ -51,6 +54,9 @@ __all__ = [
     "WebCrawler",
     "DirectoryCrawler",
     "GitHubCrawler",
+    "DatabaseSchemaCrawler",
+    "SharePointCrawler",
+    "GmailCrawler",
     "ImportCrawler",
     "SqlAlchemyTransport",
     "SqlQueryTransport",

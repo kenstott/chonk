@@ -140,6 +140,7 @@ pip install "chonk[cluster]"    # Entity clustering (scikit-learn)
 pip install "chonk[leiden]"     # Leiden community detection (igraph + leidenalg)
 pip install "chonk[parquet]"    # Parquet/Arrow/Feather structured file support
 pip install "chonk[code]"       # Python/TS/JS/Java code chunking (stdlib only, no extra packages)
+pip install "chonk[gmail]"      # Gmail transport (google-api-python-client, google-auth-oauthlib)
 pip install "chonk[full]"       # Everything
 ```
 
@@ -422,6 +423,365 @@ Repos that fail (bad token scope, private with insufficient access) are skipped 
 Default extensions: `.md`, `.txt`, `.rst`, `.html`, `.htm`, `.pdf`, `.docx`, `.xlsx`, `.pptx`, `.csv`, `.json`, `.xml`, `.yaml`, `.yml`, `.py`, `.pyw`, `.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.java`.
 
 `GitHubCrawler` is exported from `chonk.transports`.
+
+---
+
+### `DatabaseSchemaCrawler`
+
+`DatabaseSchemaCrawler` indexes stored procedures, functions, views, and triggers from a live database as searchable document chunks. Each object's SQL definition becomes its own chunk, with a `dbschema://` URI as the document name.
+
+Unlike `load_schema()` — which describes table structure (column names, types, relationships) — `DatabaseSchemaCrawler` captures the actual SQL logic: the `CREATE VIEW` body, the procedure parameter list and code, trigger firing conditions. Together they cover the full picture of what a database does and how.
+
+The class implements both the `Crawler` and `Transport` protocols. Pass the same instance as both `crawler=` and in `extra_transports=`:
+
+```python
+from chonk.transports import DatabaseSchemaCrawler
+from chonk import DocumentLoader
+
+crawler = DatabaseSchemaCrawler("postgresql://user:pass@host/db")
+loader = DocumentLoader(extra_transports=[crawler])
+chunks = loader.load_crawl("postgresql://user:pass@host/db", crawler=crawler)
+```
+
+`crawl()` connects to the database, fetches all matching schema objects, and caches their definitions keyed by `dbschema://` URIs. `load_crawl()` then calls `fetch()` for each URI — which reads from that cache, not the database again.
+
+#### Supported dialects
+
+| Dialect | Views | Procedures / Functions | Triggers |
+|---------|-------|----------------------|---------|
+| PostgreSQL | Yes | Yes | Yes |
+| MySQL / MariaDB | Yes | Yes | Yes |
+| SQL Server | Yes | Yes (`P`, `FN`, `IF`, `TF`) | Yes |
+| SQLite | Yes | No (SQLite has no stored procedures) | Yes |
+
+For dialects not in this list, `crawl()` logs a warning and indexes views only (via SQLAlchemy inspection, which works across all dialects).
+
+#### Constructor parameters
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `connection_url` | `str` | required | SQLAlchemy connection URL |
+| `include_procs` | `bool` | `True` | Include stored procedures and functions |
+| `include_views` | `bool` | `True` | Include views |
+| `include_triggers` | `bool` | `True` | Include triggers |
+| `schemas` | `list[str] \| None` | `None` | Restrict to these schema names. `None` indexes all non-system schemas. |
+
+#### Basic usage — index everything from a PostgreSQL database
+
+```python
+from chonk.transports import DatabaseSchemaCrawler
+from chonk import DocumentLoader
+
+crawler = DatabaseSchemaCrawler("postgresql://user:pass@prod-db/warehouse")
+loader = DocumentLoader(extra_transports=[crawler])
+
+chunks = loader.load_crawl("postgresql://user:pass@prod-db/warehouse", crawler=crawler)
+
+for chunk in chunks:
+    # chunk.document_name — e.g. "VIEW: reporting.v_customer_360"
+    # chunk.content       — the SQL definition, prefixed with "-- VIEW: ..."
+    embed(chunk.embedding_content)
+```
+
+#### Selective indexing — procs and views only, restricted to named schemas
+
+```python
+crawler = DatabaseSchemaCrawler(
+    "mssql+pyodbc://sa:pass@sqlserver/OperationsDB?driver=ODBC+Driver+18+for+SQL+Server",
+    include_procs=True,
+    include_views=True,
+    include_triggers=False,
+    schemas=["dbo", "reporting"],
+)
+loader = DocumentLoader(extra_transports=[crawler])
+chunks = loader.load_crawl(
+    "mssql+pyodbc://sa:pass@sqlserver/OperationsDB?driver=ODBC+Driver+18+for+SQL+Server",
+    crawler=crawler,
+)
+```
+
+#### Combined pipeline — GitHub source code + database schema
+
+The motivating use case for `DatabaseSchemaCrawler` is cross-referencing application code against the database objects it calls. A view named `v_customer_risk` in the DB and a function called `fetch_customer_risk` in the Python codebase land in the same retrieval index. A query for "how is customer risk calculated?" pulls both.
+
+```python
+from chonk.transports import GitHubCrawler, DatabaseSchemaCrawler
+from chonk import DocumentLoader
+
+github = GitHubCrawler(token="ghp_...")
+db = DatabaseSchemaCrawler("postgresql://user:pass@prod-db/warehouse")
+
+loader = DocumentLoader(extra_transports=[db])
+
+# Index the application source code
+code_chunks = loader.load_crawl("https://github.com/org/risk-service", crawler=github)
+
+# Index the database schema objects — views, procs, triggers
+db_chunks = loader.load_crawl("postgresql://user:pass@prod-db/warehouse", crawler=db)
+
+all_chunks = code_chunks + db_chunks
+# embed and store as usual
+```
+
+`DatabaseSchemaCrawler` is exported from `chonk.transports`.
+
+---
+
+### `SharePointCrawler`
+
+`SharePointCrawler` indexes a SharePoint site — document libraries, generic lists, calendar/events lists, and site pages — and produces searchable chunks from all of them. Three authentication modes cover the full range of SharePoint deployments: Azure AD for Microsoft 365, legacy Add-in auth for older cloud tenants, and NTLM for on-premises servers.
+
+Like `DatabaseSchemaCrawler`, the class implements both the `Crawler` and `Transport` protocols. Pass the same instance as both `crawler=` and in `extra_transports=`:
+
+```python
+from chonk.transports import SharePointCrawler
+from chonk import DocumentLoader
+
+crawler = SharePointCrawler(
+    site_url="https://contoso.sharepoint.com/sites/mysite",
+    auth_mode="azure_ad",
+    tenant_id="your-tenant-id",
+    client_id="your-client-id",
+    client_secret="your-client-secret",
+)
+loader = DocumentLoader(extra_transports=[crawler])
+chunks = loader.load_crawl(
+    "https://contoso.sharepoint.com/sites/mysite",
+    crawler=crawler,
+)
+```
+
+`crawl()` authenticates, enumerates all configured artifact types, and returns a list of `spitem://` URIs. Documents are registered as pending — not downloaded. `fetch()` downloads each document on demand when `load_crawl()` processes the URI list. Lists, calendars, and pages are serialized to text during `crawl()` and cached; they are read from that cache during `fetch()`, not re-fetched.
+
+#### Authentication modes
+
+**`"azure_ad"`** — Microsoft 365 / SharePoint Online with an Azure AD app registration. Uses MSAL to acquire a client-credentials token and calls the Microsoft Graph API. Requires `pip install msal`.
+
+**`"legacy"`** — SharePoint Add-in OAuth for tenants that cannot use Azure AD app registrations. Acquires a token from the Azure ACS endpoint (`accounts.accesscontrol.windows.net`) and calls the SharePoint REST API (`/_api/`). Requires only `requests`.
+
+**`"ntlm"`** — On-premises SharePoint Server. Authenticates with Windows NTLM credentials and calls the SharePoint REST API. Requires `pip install requests-ntlm`.
+
+#### Artifact types
+
+All four types are enabled by default. Pass `artifacts=` to restrict:
+
+| Artifact | Default | How it is fetched | Content |
+|---|---|---|---|
+| `"documents"` | Yes | Lazily, in `fetch()` | Raw file bytes — same extractors as `loader.load()` |
+| `"lists"` | Yes | During `crawl()`, cached | List item fields serialized as plain text |
+| `"calendars"` | Yes | During `crawl()`, cached | Event fields serialized as plain text (Title, EventDate, EndDate, Location, Description first) |
+| `"pages"` | Yes | During `crawl()`, cached | Site page HTML |
+
+#### Constructor parameters
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `site_url` | `str` | required | Full URL of the SharePoint site |
+| `auth_mode` | `str` | `"azure_ad"` | `"azure_ad"`, `"legacy"`, or `"ntlm"` |
+| `tenant_id` | `str \| None` | `None` | Azure AD tenant ID or domain (azure_ad and legacy modes) |
+| `client_id` | `str \| None` | `None` | App client ID (azure_ad and legacy modes) |
+| `client_secret` | `str \| None` | `None` | App client secret (azure_ad and legacy modes) |
+| `username` | `str \| None` | `None` | Windows username including domain, e.g. `DOMAIN\user` (ntlm) |
+| `password` | `str \| None` | `None` | Password (ntlm) |
+| `artifacts` | `list[str] \| None` | `None` | Artifact types to crawl. `None` enables all four. |
+| `max_items` | `int` | `5000` | Maximum list items fetched per list |
+
+#### Azure AD — full site crawl
+
+Use this for any Microsoft 365 / SharePoint Online tenant where you can register an Azure AD application.
+
+```python
+from chonk.transports import SharePointCrawler
+from chonk import DocumentLoader
+
+crawler = SharePointCrawler(
+    site_url="https://contoso.sharepoint.com/sites/legal",
+    auth_mode="azure_ad",
+    tenant_id="contoso.onmicrosoft.com",
+    client_id="a1b2c3d4-...",
+    client_secret="your-secret",
+)
+loader = DocumentLoader(extra_transports=[crawler])
+chunks = loader.load_crawl(
+    "https://contoso.sharepoint.com/sites/legal",
+    crawler=crawler,
+)
+
+for chunk in chunks:
+    embed(chunk.embedding_content)
+```
+
+#### Legacy Add-in auth
+
+When the tenant does not support Azure AD app registrations, register a SharePoint Add-in via `appregnew.aspx` and use `auth_mode="legacy"`. The `tenant_id` field accepts either a GUID or a domain like `contoso.onmicrosoft.com` — the actual tenant GUID is read from the `WWW-Authenticate` header automatically, so the domain form works.
+
+```python
+crawler = SharePointCrawler(
+    site_url="https://contoso.sharepoint.com/sites/operations",
+    auth_mode="legacy",
+    tenant_id="contoso.onmicrosoft.com",
+    client_id="your-addin-client-id",
+    client_secret="your-addin-client-secret",
+)
+loader = DocumentLoader(extra_transports=[crawler])
+chunks = loader.load_crawl(
+    "https://contoso.sharepoint.com/sites/operations",
+    crawler=crawler,
+)
+```
+
+#### NTLM — on-premises SharePoint Server
+
+For SharePoint Server deployments behind corporate firewalls. Supply Windows credentials as `DOMAIN\username`.
+
+```python
+crawler = SharePointCrawler(
+    site_url="https://sharepoint.corp.example.com/sites/projects",
+    auth_mode="ntlm",
+    username=r"CORP\svc_indexer",
+    password="service-account-password",
+)
+loader = DocumentLoader(extra_transports=[crawler])
+chunks = loader.load_crawl(
+    "https://sharepoint.corp.example.com/sites/projects",
+    crawler=crawler,
+)
+```
+
+#### Selective artifacts — documents and pages only
+
+Pass `artifacts=` to skip artifact types you do not need. Omitting lists and calendars is common when the site contains mostly documents and wiki pages.
+
+```python
+crawler = SharePointCrawler(
+    site_url="https://contoso.sharepoint.com/sites/wiki",
+    auth_mode="azure_ad",
+    tenant_id="contoso.onmicrosoft.com",
+    client_id="a1b2c3d4-...",
+    client_secret="your-secret",
+    artifacts=["documents", "pages"],   # skip lists and calendars
+)
+loader = DocumentLoader(extra_transports=[crawler])
+chunks = loader.load_crawl(
+    "https://contoso.sharepoint.com/sites/wiki",
+    crawler=crawler,
+)
+```
+
+`SharePointCrawler` is exported from `chonk.transports`.
+
+---
+
+### `GmailCrawler`
+
+`GmailCrawler` indexes Gmail messages via the Gmail REST API. It authenticates with OAuth2 and pages through a mailbox label, returning one chunk set per message. The message subject becomes the `document_name`; the body is the plain-text content.
+
+Like `SharePointCrawler`, the class implements both the `Crawler` and `Transport` protocols. Pass the same instance as both `crawler=` and in `extra_transports=`:
+
+```python
+from chonk.transports import GmailCrawler
+from chonk import DocumentLoader
+
+crawler = GmailCrawler(
+    client_id="your-client-id",
+    client_secret="your-client-secret",
+    # token_path defaults to ~/.chonk/gmail_token.json
+)
+loader = DocumentLoader(extra_transports=[crawler])
+chunks = loader.load_crawl("gmail://me/INBOX", crawler=crawler)
+```
+
+`crawl()` calls the Gmail API to list message IDs and returns `gmsg://` URIs — one per message. No message content is downloaded at this stage. `fetch()` downloads each message lazily when `load_crawl()` processes the URI list, and caches the result so a second call to `fetch()` for the same URI hits the cache.
+
+#### First-run authentication
+
+On the first run the browser opens for an OAuth2 consent screen (read-only Gmail scope). The resulting token is written to `token_path` (default `~/.chonk/gmail_token.json`) and reused on every subsequent run. Expired tokens are refreshed automatically without user interaction.
+
+Run the bundled helper script once to complete the consent flow before using the crawler in a pipeline:
+
+```bash
+python scripts/gmail_auth.py
+```
+
+Credentials can also be passed via environment variables rather than constructor arguments:
+
+```bash
+export GOOGLE_EMAIL_CLIENT_ID=your-client-id
+export GOOGLE_EMAIL_CLIENT_SECRET=your-client-secret
+```
+
+#### URI scheme
+
+| URI | Mailbox |
+|---|---|
+| `gmail://me/INBOX` | Inbox |
+| `gmail://me/SENT` | Sent mail |
+| `gmail://me/DRAFTS` | Drafts |
+| `gmail://me/SPAM` | Spam |
+| `gmail://me/TRASH` | Trash |
+| `gmail://me/ALL` | All mail |
+
+`crawl()` returns internal `gmsg://<key>/<message_id>` URIs. These are opaque — pass them back to `fetch()` or `load_crawl()` unchanged.
+
+#### Filtering with Gmail search queries
+
+The `query` parameter accepts any Gmail search string. When `query` is supplied the label in the URI is ignored; the search covers all mail.
+
+```python
+# Unread messages since the start of 2025
+chunks = loader.load_crawl(
+    "gmail://me/INBOX",
+    crawler=crawler,
+    query="is:unread after:2025/01/01",
+    limit=50,
+)
+
+# Messages from a specific sender
+chunks = loader.load_crawl(
+    "gmail://me/INBOX",
+    crawler=crawler,
+    query="from:alice@example.com",
+    limit=100,
+)
+```
+
+#### Constructor parameters
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `client_id` | `str \| None` | `None` | Google OAuth2 client ID. Falls back to `GOOGLE_EMAIL_CLIENT_ID` env var. |
+| `client_secret` | `str \| None` | `None` | Google OAuth2 client secret. Falls back to `GOOGLE_EMAIL_CLIENT_SECRET` env var. |
+| `token_path` | `str \| Path \| None` | `~/.chonk/gmail_token.json` | Path to read/write the OAuth2 token. |
+| `user_id` | `str` | `"me"` | Gmail user ID. `"me"` always refers to the authenticated account. |
+| `redirect_port` | `int` | `8000` | Local port used for the OAuth2 redirect during the consent flow. |
+
+#### Full inbox crawl
+
+```python
+from chonk.transports import GmailCrawler
+from chonk import DocumentLoader
+
+crawler = GmailCrawler(
+    client_id="your-client-id",
+    client_secret="your-client-secret",
+)
+loader = DocumentLoader(extra_transports=[crawler])
+
+chunks = loader.load_crawl("gmail://me/INBOX", crawler=crawler, limit=200)
+
+for chunk in chunks:
+    # chunk.document_name — message subject (or gmsg:// URI if subject is absent)
+    # chunk.content       — From/To/Subject/Date headers + plain-text body
+    embed(chunk.embedding_content)
+```
+
+#### Sent mail
+
+```python
+chunks = loader.load_crawl("gmail://me/SENT", crawler=crawler, limit=100)
+```
+
+`GmailCrawler` is exported from `chonk.transports`.
 
 ---
 
