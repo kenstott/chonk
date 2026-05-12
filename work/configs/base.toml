@@ -21,6 +21,7 @@
 # extensions = [".md", ".txt", ".pdf"]
 # recursive  = true
 # max_files  = 1000
+# namespace  = "my_namespace"   # optional; restricts retrieval when --namespaces is set
 #
 # [[source]]
 # type   = "github"

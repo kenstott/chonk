@@ -194,6 +194,13 @@ def _apply_config(cfg: dict, args: argparse.Namespace) -> None:
     if vocab_entries and not getattr(args, "vocab_entities", None):
         args.vocab_entities = vocab_entries
 
+    sources = cfg.get("source", [])
+    if sources and not getattr(args, "sources", None):
+        args.sources = sources
+
+    if ret.get("namespaces") is not None and getattr(args, "namespaces", None) is None:
+        args.namespaces = ret["namespaces"]
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Phase 1: Download
@@ -530,7 +537,28 @@ def cmd_index(args: argparse.Namespace) -> None:
 
     print(f"Storing in {db_path}...")
     with Store(db_path, embedding_dim=EMBED_DIM) as store:
-        store.add_document(all_chunks, emb)
+        sources_cfg = getattr(args, "sources", None)
+        if sources_cfg:
+            corpus_doc_names = {doc_id for doc_id, _ in corpus}
+            source_ns_map: dict[str, str | None] = {}
+            for src in sources_cfg:
+                ns = src.get("namespace")
+                uri = src.get("uri", "")
+                for doc_id in corpus_doc_names:
+                    if uri and doc_id.startswith(uri):
+                        source_ns_map[doc_id] = ns
+            from collections import defaultdict as _defaultdict
+            ns_groups: dict[str | None, list] = _defaultdict(list)
+            ns_emb_indices: dict[str | None, list] = _defaultdict(list)
+            for idx_c, chunk in enumerate(all_chunks):
+                ns = source_ns_map.get(chunk.document_name)
+                ns_groups[ns].append(chunk)
+                ns_emb_indices[ns].append(idx_c)
+            for ns, ns_chunks in ns_groups.items():
+                ns_emb = emb[ns_emb_indices[ns]]
+                store.add_document(ns_chunks, ns_emb, namespace=ns)
+        else:
+            store.add_document(all_chunks, emb)
         n = store.count()
 
     print(f"Index complete: {n:,} chunks → {db_path}")
@@ -1567,6 +1595,7 @@ def cmd_run(args: argparse.Namespace) -> None:
     lane_entity_min_sim    = getattr(args, "lane_entity_min_sim", None)
     concentration_threshold = getattr(args, "concentration_threshold", None)
     query_complexity_threshold = getattr(args, "query_complexity_threshold", 2)
+    namespaces = getattr(args, "namespaces", None)
     db_name_override = getattr(args, 'db_name', None)
     question_ids_file = getattr(args, 'question_ids', None)
     if db_name_override:
@@ -1925,6 +1954,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                             query_entities=_q_entities,
                             precomputed_entity_vecs=_precomputed_entity_vecs,
                             mode=search_mode,
+                            namespaces=namespaces,
                         )
                         _sub_hits = [(sc.chunk_id, sc.score, sc.chunk) for sc in _sub_scored]
                     else:
@@ -1932,6 +1962,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                             sub_vec, limit=fetch_k,
                             query_text=q["question"],
                             include_breadcrumbs=False,
+                            namespaces=namespaces,
                         )
                     for cid, sc, chunk in _sub_hits:
                         if cid not in _merged or sc > _merged[cid][1]:
@@ -1944,6 +1975,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                     query_entities=_q_entities,
                     precomputed_entity_vecs=_precomputed_entity_vecs,
                     mode=search_mode,
+                    namespaces=namespaces,
                 )
                 hits   = [(sc.chunk_id, sc.score, sc.chunk) for sc in scored]
                 expansion_stats = enhanced_search.last_expansion_stats
@@ -1952,6 +1984,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                     q_vecs[j], limit=fetch_k,
                     query_text=q["question"],
                     include_breadcrumbs=False,
+                    namespaces=namespaces,
                 )
                 expansion_stats = None
 
@@ -1967,6 +2000,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                             q_vecs[j], k=fetch_k, query_text=q["question"],
                             query_entities=_q_entities,
                             precomputed_entity_vecs=_precomputed_entity_vecs,
+                            namespaces=namespaces,
                         )
                         hits = [(sc.chunk_id, sc.score, sc.chunk) for sc in scored_conc]
                         expansion_stats = _conc_search.last_expansion_stats
@@ -4043,6 +4077,8 @@ def _make_parser() -> argparse.ArgumentParser:
                         help="Require ANSWER: <text> format from generator; retry once if non-compliant; strip marker before judge")
     g_misc.add_argument("--top-k", type=int, default=None, dest="top_k", metavar="K",
                         help=f"Override retrieval top-k (default: {K})")
+    g_misc.add_argument("--namespaces", nargs="*", default=None, dest="namespaces",
+                        help="Restrict retrieval to these namespaces (default: all namespaces)")
     g_misc.add_argument("--db-name", default=None, dest="db_name",
                         help="Override DB filename inside {out_dir}/data/ (default: auto from --breadcrumb-embed)")
     g_misc.add_argument("--question-ids", default=None, dest="question_ids", metavar="PATH",

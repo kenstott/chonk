@@ -86,6 +86,20 @@ same_domain = true
 type = "sql_query"
 uri  = "sqlquery://my_report"
 sql  = "SELECT title || ' ' || body AS content FROM articles"
+
+# namespace is optional on any [[source]] block.
+# Chunks from this source are tagged with the namespace value.
+# Use --namespaces (CLI) or retrieval.namespaces (TOML) to restrict queries to
+# specific namespaces at retrieval time.
+[[source]]
+type      = "directory"
+uri       = "/path/to/internal-docs"
+namespace = "internal"
+
+[[source]]
+type      = "github"
+uri       = "https://github.com/myorg/public-wiki"
+namespace = "public"
 ```
 
 ### Library usage
@@ -215,6 +229,18 @@ At query time, `RelationshipIndex.load_from_db()` loads the table into memory. T
 
 The `cmd_build_svo` function in `graphrag_bench.py` runs extraction concurrently across chunks using a `ThreadPoolExecutor`.
 
+### Namespace filtering
+
+Each `[[source]]` block accepts an optional `namespace` string. Chunks ingested from that source are tagged with that value in the `embeddings` table.
+
+At query time, pass `namespaces` as a list to restrict results to matching rows:
+
+- **TOML**: set `retrieval.namespaces = ["internal", "public"]`
+- **CLI**: `--namespaces internal public`
+- **Library**: pass `namespaces=["internal"]` to `EnhancedSearch.search()` or `store.vector.search()`
+
+When `namespaces` is `None` (the default), all namespaces are searched — fully backwards-compatible.
+
 ---
 
 ## Retrieval modes
@@ -313,12 +339,14 @@ extends = "base.toml"   # optional
 
 # Data sources — zero or more; processed in order
 [[source]]
-type = "directory"
-uri  = "/path/to/docs"
+type      = "directory"
+uri       = "/path/to/docs"
+namespace = "internal"   # optional
 
 [[source]]
-type = "github"
-uri  = "https://github.com/myorg/myrepo"
+type      = "github"
+uri       = "https://github.com/myorg/myrepo"
+namespace = "public"     # optional
 
 # Entity vocabulary — zero or more; extends spaCy NER
 [[vocab.entities]]
@@ -363,6 +391,7 @@ lane_entity_min_sim  = null
 redundancy_threshold = null
 cluster              = false
 vanilla              = false
+namespaces           = null   # optional list of namespace strings to restrict retrieval
 
 [retrieval.community]
 enabled       = false
