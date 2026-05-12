@@ -1594,15 +1594,11 @@ def cmd_run(args: argparse.Namespace) -> None:
         # SRR: preload full chunk pool (id, text, embedding) for gap-fill retrieval
         _srr_chunk_pool: list[tuple] = []
         if use_srr:
-            all_chunks = store.vector.get_all_chunks()
-            _emb_map = store.vector._preloaded_embeddings if hasattr(store.vector, "_preloaded_embeddings") else {}
-            from chonk.storage._vector import DuckDBVectorBackend as _DVBE
-            for ch in all_chunks:
-                ec = ch.embedding_content if ch.embedding_content else ch.content
-                cid = _DVBE._generate_chunk_id(ch.document_name, ch.chunk_index, ec)
-                vec = _emb_map.get(cid)
-                if vec is not None:
-                    _srr_chunk_pool.append((cid, ch.content, vec))
+            _np_rows = store.vector._np_chunk_rows or []
+            _np_embs = getattr(store.vector, "_np_embeddings", None)
+            if _np_rows and _np_embs is not None:
+                for _i, _row in enumerate(_np_rows):
+                    _srr_chunk_pool.append((_row[0], _row[4], _np_embs[_i]))
             print(f"  SRR chunk pool: {len(_srr_chunk_pool)} chunks preloaded.", flush=True)
 
         # Load pre-computed NER entity embeddings from cache (built by prime-cache)
@@ -2011,6 +2007,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                 uncovered_srr = q_entities  # no evidence at all
 
             # Gap-fill: retrieve chunks for uncovered entities, retry up to 2x
+            _gap_rounds_done = 0
             for _gap_round in range(2):
                 if not uncovered_srr or not _srr_chunk_pool:
                     break
@@ -2036,12 +2033,13 @@ def cmd_run(args: argparse.Namespace) -> None:
                 else:
                     uncovered_srr = []
                 srr_out = new_srr
+                _gap_rounds_done += 1
 
             answer = srr_out["answer"]
             srr_stats = {
                 "key_claims":    srr_out["key_claims"],
                 "evidence_used": srr_out["evidence_used"],
-                "gap_rounds":    _gap_round,
+                "gap_rounds":    _gap_rounds_done,
                 "uncovered":     uncovered_srr,
             }
         else:
