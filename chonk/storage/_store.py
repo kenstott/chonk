@@ -222,16 +222,22 @@ class Store:
 
     def resolve_session(
         self,
-        session: dict[str, list[str]],
+        namespace_id: str,
+        active_domains: list[str],
         include_global: bool = True,
     ) -> list[str]:
-        """Resolve a session dict to domain_ids.
+        """Resolve a session to domain_ids.
 
-        session = {"global": ["finance", "legal"], "user:alice": ["my_notes"]}
-        Returns flat list of domain_ids including all descendants.
-        Always includes global namespace domains when include_global=True.
+        A session belongs to one namespace. active_domains are the domain names
+        within that namespace the user has activated. Global namespace domains
+        are always folded in when include_global=True.
+
+        Example::
+
+            domain_ids = store.resolve_session("user:alice", ["my_notes", "finance"])
+            results = store.search(query_vec, domain_ids=domain_ids)
         """
-        pairs = [(ns, domain) for ns, domains in session.items() for domain in domains]
+        pairs = [(namespace_id, domain) for domain in active_domains]
         return self.resolve_domain_ids(pairs, include_global=include_global)
 
     def delete_domain(self, domain_id: str) -> int:
