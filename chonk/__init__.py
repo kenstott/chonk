@@ -29,6 +29,7 @@ from .graph import (
     SVOExtractor,
     SVOTriple,
 )
+from .indexer import Indexer, IndexHandle
 from .loader import DocumentLoader
 from .models import (
     ClusterRecord,
@@ -95,6 +96,8 @@ __all__ = [
     "enrich_chunk",
     "enrich_chunks",
     "DocumentLoader",
+    "Indexer",
+    "IndexHandle",
     # Transports & Crawlers
     "Transport",
     "FetchResult",
