@@ -322,8 +322,9 @@ def cmd_build_ner(args: argparse.Namespace) -> None:
     if n > 0 and not force:
         print(f"chunk_entities already populated ({n:,} rows) — skipping. Use --force to rebuild.")
     else:
+        use_schema_vocab = getattr(args, "with_schema_vocab", False)
         with Store(db_path, embedding_dim=EMBED_DIM) as store:
-            entity_index = _build_entity_index_from_store(store)
+            entity_index = _build_entity_index_from_store(store, use_schema_vocab=use_schema_vocab)
         _persist_entity_index(entity_index, db_path)
 
     # Build entity embeddings if requested or not yet present
@@ -756,7 +757,7 @@ def _generate(question: str, context: str, client, model: str = GEN_MODEL,
     return answer2 if answer2 is not None else raw2
 
 
-def _build_entity_index_from_store(store) -> EntityIndex:
+def _build_entity_index_from_store(store, use_schema_vocab: bool = False) -> EntityIndex:
     """Run NER on all chunks in store and return a populated EntityIndex."""
     from chonk.ner import EntityIndex, SpacyLabel, SpacyMatcher
     from chonk.storage._vector import DuckDBVectorBackend
@@ -768,13 +769,29 @@ def _build_entity_index_from_store(store) -> EntityIndex:
     entity_index = EntityIndex()
 
     all_chunks = store.vector.get_all_chunks()
+
+    schema_matcher = None
+    if use_schema_vocab:
+        from chonk.ner import SchemaVocabBuilder
+        builder = SchemaVocabBuilder()
+        builder.add_chunks(all_chunks)
+        schema_matcher = builder.build()
+        print(f"  SchemaVocab: {builder.table_count():,} tables, {builder.column_count():,} columns, {builder.api_term_count():,} API terms")
+
     print(f"  Running NER on {len(all_chunks):,} chunks...")
     for chunk in all_chunks:
         embed_content = chunk.embedding_content if chunk.embedding_content else chunk.content
         chunk_id = DuckDBVectorBackend._generate_chunk_id(
             chunk.document_name, chunk.chunk_index, embed_content
         )
-        entity_index.run_ner(chunk_id, chunk.content, matcher)
+        if schema_matcher is not None:
+            from chonk.ner import merge_matches
+            schema_hits = schema_matcher.match(chunk.content)
+            spacy_hits  = matcher.match(chunk.content)
+            combined    = merge_matches(schema_hits, spacy_hits, source_text=chunk.content)
+            entity_index.index_chunk(chunk_id, chunk.content, combined)
+        else:
+            entity_index.run_ner(chunk_id, chunk.content, matcher)
 
     entity_index.recompute_scores()
     print(f"  {entity_index.total_chunks():,} chunks, {len(entity_index.entity_ids()):,} entities")
@@ -3715,6 +3732,8 @@ def _make_parser() -> argparse.ArgumentParser:
     p.add_argument("--db-name", required=True, help="DB filename inside {out_dir}/data/")
     p.add_argument("--with-embeddings", action="store_true", dest="with_embeddings",
                    help="Also embed entity strings and store in entity_embeddings table (required for --ner-x)")
+    p.add_argument("--with-schema-vocab", action="store_true", dest="with_schema_vocab",
+                   help="Augment spaCy NER with SchemaMatcher built from schema/API chunks in the index")
     p.add_argument("--force", action="store_true", help="Rebuild even if tables already populated")
     p.set_defaults(func=cmd_build_ner)
 
