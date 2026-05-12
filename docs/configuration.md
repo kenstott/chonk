@@ -10,6 +10,105 @@ Chonk has three configuration layers. They are applied in this order: hardcoded 
 
 ---
 
+## Data sources
+
+Chonk fetches documents through **Transport** and **Crawler** objects. Transports handle single URIs; crawlers discover and enumerate many URIs from a root. Both implement the same `fetch(uri) → FetchResult` protocol and are used by `DocumentLoader`.
+
+### Available transports and crawlers
+
+| Type | Class | URI pattern | Key constructor args |
+|---|---|---|---|
+| `directory` | `DirectoryCrawler` | local path / `file://` | `extensions`, `recursive`, `max_files`, `exclude_dirs` |
+| `github` | `GitHubCrawler` | `https://github.com/org/repo` | `token`, `branch`, `extensions`, `max_files`, `repo_include`, `repo_exclude` |
+| `web` | `WebCrawler` | `https://…` | `max_pages`, `max_depth`, `same_domain`, `exclude_patterns`, `include_pattern` |
+| `db_schema` | `DatabaseSchemaCrawler` | SQLAlchemy URL | `connection_url`, `include_procs`, `include_views`, `include_triggers`, `schemas` |
+| `sharepoint` | `SharePointCrawler` | SharePoint site URL | `site_url`, `auth_mode`, `tenant_id`, `client_id`, `client_secret`, `artifacts`, `max_items` |
+| `gmail` | `GmailCrawler` | `gmail://…` | `client_id`, `client_secret`, `token_path`, `user_id` |
+| `s3` | `S3Transport` | `s3://bucket/…` | boto3 env credentials |
+| `http` | `HttpTransport` | `https://…` (single fetch) | — |
+| `ftp` | `FtpTransport` | `ftp://…` | — |
+| `sftp` | `SftpTransport` | `sftp://…` | — |
+| `sql_query` | `SqlQueryTransport` | `sqlquery://<name>` | `connection` (SQLAlchemy), `sql` passed to `fetch()` |
+
+`DatabaseSchemaCrawler` also populates chunks with `chunk_type` values (`db_table`, `db_column`, etc.) that `SchemaVocabBuilder.add_chunks()` uses to build schema-aware NER vocabulary. Set `[index.features] schema_vocab = true` when indexing database or API sources.
+
+### TOML source declarations
+
+Each `[[source]]` block in the config declares one data source. Multiple sources are processed in order and merged into a single index.
+
+```toml
+# Local filesystem
+[[source]]
+type       = "directory"
+uri        = "/path/to/docs"
+extensions = [".md", ".txt", ".pdf"]
+recursive  = true
+max_files  = 1000
+
+# GitHub repository
+[[source]]
+type       = "github"
+uri        = "https://github.com/myorg/myrepo"
+branch     = "main"
+extensions = [".py", ".md"]
+
+# Database schema (also enables schema_vocab NER)
+[[source]]
+type             = "db_schema"
+uri              = "postgresql://user:pass@host/db"
+include_views    = true
+schemas          = ["public"]
+
+# SharePoint site
+[[source]]
+type       = "sharepoint"
+uri        = "https://myorg.sharepoint.com/sites/mysite"
+auth_mode  = "azure_ad"
+artifacts  = ["documents", "lists", "pages"]
+
+# Gmail inbox
+[[source]]
+type   = "gmail"
+uri    = "gmail://inbox"
+query  = "label:important after:2024/01/01"
+limit  = 500
+
+# Web crawl
+[[source]]
+type        = "web"
+uri         = "https://docs.example.com"
+max_pages   = 100
+max_depth   = 3
+same_domain = true
+
+# SQL query result
+[[source]]
+type = "sql_query"
+uri  = "sqlquery://my_report"
+sql  = "SELECT title || ' ' || body AS content FROM articles"
+```
+
+### Library usage
+
+```python
+from chonk import DocumentLoader
+from chonk.transports import DirectoryCrawler, DatabaseSchemaCrawler
+
+loader = DocumentLoader()
+
+# Crawl a directory
+chunks = loader.load_crawl(DirectoryCrawler(extensions=[".md", ".txt"]), "/path/to/docs")
+
+# Crawl a database schema (produces db_table / db_column chunks)
+db_crawler = DatabaseSchemaCrawler("postgresql://user:pass@host/db")
+schema_chunks = loader.load_crawl(db_crawler, "postgresql://user:pass@host/db")
+
+# Single URL
+chunks += loader.load("https://example.com/doc.pdf")
+```
+
+---
+
 ## Index features
 
 These are built once against a DuckDB file and loaded at query time. None are required; each one enables an additional retrieval capability.
@@ -145,6 +244,15 @@ SR plus a coverage-check loop (up to 2 rounds). After the first structured respo
 ```toml
 # Extend a parent config — path relative to this file
 extends = "base.toml"   # optional
+
+# Data sources — zero or more; processed in order
+[[source]]
+type = "directory"
+uri  = "/path/to/docs"
+
+[[source]]
+type = "github"
+uri  = "https://github.com/myorg/myrepo"
 
 [index]
 out_dir            = "work"

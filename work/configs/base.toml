@@ -1,5 +1,65 @@
 # Base config — all runs extend this
 
+# ── Data sources ─────────────────────────────────────────────────────────────
+# Each [[source]] entry describes one data source to crawl and index.
+# Sources are processed in order. Omit this section if you supply a
+# pre-built corpus externally (e.g. via cmd_download for the benchmark).
+#
+# type = "directory"    → DirectoryCrawler
+# type = "github"       → GitHubCrawler
+# type = "web"          → WebCrawler
+# type = "db_schema"    → DatabaseSchemaCrawler
+# type = "sharepoint"   → SharePointCrawler
+# type = "gmail"        → GmailCrawler
+# type = "s3"           → S3Transport
+# type = "http"         → HttpTransport (single URL fetch)
+# type = "sql_query"    → SqlQueryTransport
+#
+# [[source]]
+# type       = "directory"
+# uri        = "/path/to/docs"
+# extensions = [".md", ".txt", ".pdf"]
+# recursive  = true
+# max_files  = 1000
+#
+# [[source]]
+# type   = "github"
+# uri    = "https://github.com/myorg/myrepo"
+# branch = "main"
+# extensions = [".py", ".md"]
+#
+# [[source]]
+# type             = "db_schema"
+# uri              = "postgresql://user:pass@host/db"
+# include_procs    = true
+# include_views    = true
+# schemas          = ["public", "analytics"]
+#
+# [[source]]
+# type         = "sharepoint"
+# uri          = "https://myorg.sharepoint.com/sites/mysite"
+# auth_mode    = "azure_ad"     # or "user_password"
+# artifacts    = ["documents", "lists", "pages"]
+#
+# [[source]]
+# type  = "web"
+# uri   = "https://docs.example.com"
+# max_pages  = 100
+# max_depth  = 3
+# same_domain = true
+#
+# [[source]]
+# type  = "gmail"
+# uri   = "gmail://inbox"
+# query = "label:important after:2024/01/01"
+# limit = 500
+#
+# [[source]]
+# type = "sql_query"
+# uri  = "sqlquery://my_report"
+# sql  = "SELECT title || ' ' || body AS content FROM articles"
+
+# ── Index settings ────────────────────────────────────────────────────────────
 [index]
 out_dir             = "work"
 db_name             = "chunkymonkey_nobc_1100_2200.duckdb"
@@ -12,19 +72,21 @@ embed_content_only  = true
 [index.features]
 ner             = true
 ner_embeddings  = true
-schema_vocab    = false
+schema_vocab    = false   # set true when sources include db_schema or api types
 community       = true
-svo             = false
+svo             = false   # LLM-based; set gen.* when enabling
 
+# ── Reranker ──────────────────────────────────────────────────────────────────
 [rerank]
 enabled   = false
-provider  = "local"
+provider  = "local"       # local | together | cohere
 model     = "BAAI/bge-reranker-large"
 
+# ── Retrieval ─────────────────────────────────────────────────────────────────
 [retrieval]
 top_k                   = 5
 fetch_k                 = 50
-search_mode             = "vector_first"
+search_mode             = "vector_first"   # vector_first | graph_first | global
 enhanced                = false
 entity_ref_expansion    = false
 lane_entity_min_sim     = null
@@ -36,19 +98,23 @@ vanilla                 = false
 enabled         = false
 min_coherence   = 0.5
 
+# ── Generation ────────────────────────────────────────────────────────────────
 [gen]
-provider     = "openai"
+provider     = "openai"    # openai | together | anthropic
 model        = "gpt-4o-mini"
 temperature  = 0.0
 
+# ── Structured Response (SR) ──────────────────────────────────────────────────
 [sr]
-enabled = false
+enabled = false            # JSON schema output (key_claims + evidence_used)
 
+# ── Structured Response Retry (SRR) ──────────────────────────────────────────
 [srr]
-enabled   = false
-provider  = null
-model     = null
+enabled   = false          # SR + coverage check + gap-fill (up to 2 rounds)
+provider  = null           # null = same as gen.provider
+model     = null           # null = same as gen.model; use cheaper model here
 
+# ── Evaluation ────────────────────────────────────────────────────────────────
 [eval]
 judge       = "gpt-4o-mini"
 rpm         = 8000
