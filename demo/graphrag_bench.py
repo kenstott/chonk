@@ -185,6 +185,10 @@ def _apply_config(cfg: dict, args: argparse.Namespace) -> None:
     if srr_cfg.get("provider") and not getattr(args, "srr_provider", None):
         args.srr_provider = srr_cfg["provider"]
 
+    vocab_entries = cfg.get("vocab", {}).get("entities", [])
+    if vocab_entries and not getattr(args, "vocab_entities", None):
+        args.vocab_entities = vocab_entries
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Phase 1: Download
@@ -409,8 +413,13 @@ def cmd_build_ner(args: argparse.Namespace) -> None:
         print(f"chunk_entities already populated ({n:,} rows) — skipping. Use --force to rebuild.")
     else:
         use_schema_vocab = getattr(args, "with_schema_vocab", False)
+        vocab_entities   = getattr(args, "vocab_entities", None)
         with Store(db_path, embedding_dim=EMBED_DIM) as store:
-            entity_index = _build_entity_index_from_store(store, use_schema_vocab=use_schema_vocab)
+            entity_index = _build_entity_index_from_store(
+                store,
+                use_schema_vocab=use_schema_vocab,
+                vocab_entities=vocab_entities,
+            )
         _persist_entity_index(entity_index, db_path)
 
     # Build entity embeddings if requested or not yet present
@@ -843,7 +852,11 @@ def _generate(question: str, context: str, client, model: str = GEN_MODEL,
     return answer2 if answer2 is not None else raw2
 
 
-def _build_entity_index_from_store(store, use_schema_vocab: bool = False) -> EntityIndex:
+def _build_entity_index_from_store(
+    store,
+    use_schema_vocab: bool = False,
+    vocab_entities: list[dict] | None = None,
+) -> EntityIndex:
     """Run NER on all chunks in store and return a populated EntityIndex."""
     from chonk.ner import EntityIndex, SpacyLabel, SpacyMatcher
     from chonk.storage._vector import DuckDBVectorBackend
@@ -857,12 +870,27 @@ def _build_entity_index_from_store(store, use_schema_vocab: bool = False) -> Ent
     all_chunks = store.vector.get_all_chunks()
 
     schema_matcher = None
-    if use_schema_vocab:
+    if use_schema_vocab or vocab_entities:
         from chonk.ner import SchemaVocabBuilder
         builder = SchemaVocabBuilder()
-        builder.add_chunks(all_chunks)
+        if use_schema_vocab:
+            builder.add_chunks(all_chunks)
+            print(f"  SchemaVocab: {builder.table_count():,} tables, {builder.column_count():,} columns, {builder.api_term_count():,} API terms")
+        for entry in (vocab_entities or []):
+            etype = entry.get("entity_type", "term")
+            if entry.get("type") == "static":
+                names = entry.get("names", [])
+                builder.add_entities(names, entity_type=etype)
+                print(f"  VocabEntities static: {len(names):,} {etype!r} names")
+            elif entry.get("type") == "db_query":
+                conn_url = entry["connection"]
+                sql = entry["sql"]
+                builder.add_from_db(conn_url, {etype: sql})
+                print(f"  VocabEntities db_query: {etype!r} from {conn_url!r}")
         schema_matcher = builder.build()
-        print(f"  SchemaVocab: {builder.table_count():,} tables, {builder.column_count():,} columns, {builder.api_term_count():,} API terms")
+        data_matcher = builder.build_data_matcher() if builder.data_term_count() > 0 else None
+    else:
+        data_matcher = None
 
     print(f"  Running NER on {len(all_chunks):,} chunks...")
     for chunk in all_chunks:
@@ -870,11 +898,21 @@ def _build_entity_index_from_store(store, use_schema_vocab: bool = False) -> Ent
         chunk_id = DuckDBVectorBackend._generate_chunk_id(
             chunk.document_name, chunk.chunk_index, embed_content
         )
-        if schema_matcher is not None:
+        if schema_matcher is not None or data_matcher is not None:
             from chonk.ner import merge_matches
-            schema_hits = schema_matcher.match(chunk.content)
-            spacy_hits  = matcher.match(chunk.content)
-            combined    = merge_matches(schema_hits, spacy_hits, source_text=chunk.content)
+            vocab_hits: list = []
+            if schema_matcher is not None:
+                vocab_hits = merge_matches(
+                    schema_matcher.match(chunk.content), vocab_hits,
+                    source_text=chunk.content,
+                )
+            if data_matcher is not None:
+                vocab_hits = merge_matches(
+                    data_matcher.match(chunk.content), vocab_hits,
+                    source_text=chunk.content,
+                )
+            spacy_hits = matcher.match(chunk.content)
+            combined   = merge_matches(vocab_hits, spacy_hits, source_text=chunk.content)
             entity_index.index_chunk(chunk_id, chunk.content, combined)
         else:
             entity_index.run_ner(chunk_id, chunk.content, matcher)

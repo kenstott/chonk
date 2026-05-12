@@ -59,6 +59,31 @@
 # uri  = "sqlquery://my_report"
 # sql  = "SELECT title || ' ' || body AS content FROM articles"
 
+# ── Entity vocabulary ────────────────────────────────────────────────────────
+# Augments spaCy NER with domain-specific named entities. Each entry is merged
+# into the SchemaVocabBuilder before NER runs. Requires --with-schema-vocab or
+# [index.features] schema_vocab = true to activate the combined matcher.
+#
+# type = "static"    → add a fixed list of names verbatim (case-insensitive)
+# type = "db_query"  → execute SQL and add result values as entity vocabulary
+#
+# [[vocab.entities]]
+# type        = "static"
+# entity_type = "customer"
+# names       = ["Acme Corp", "Globex Inc", "Initech"]
+#
+# [[vocab.entities]]
+# type        = "db_query"
+# entity_type = "employee"
+# connection  = "postgresql://user:pass@host/db"
+# sql         = "SELECT full_name FROM employees WHERE active = true"
+#
+# [[vocab.entities]]
+# type        = "db_query"
+# entity_type = "product"
+# connection  = "postgresql://user:pass@host/db"
+# sql         = "SELECT product_name FROM products"
+
 # ── Index settings ────────────────────────────────────────────────────────────
 [index]
 out_dir             = "work"

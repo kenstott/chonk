@@ -109,6 +109,72 @@ chunks += loader.load("https://example.com/doc.pdf")
 
 ---
 
+## Entity vocabulary
+
+Entity vocabulary extends the NER pipeline with domain-specific names that spaCy would not recognize. These are added via `SchemaVocabBuilder` before NER runs.
+
+There are two sources:
+
+**Static list** — a fixed set of names provided verbatim. Matched case-insensitively at query time.
+
+**DB query** — executes a SQL `SELECT` and adds each result row as an entity name. Useful for populating vocabularies from live databases (customer names, product SKUs, employee names, etc.).
+
+Data values are matched verbatim — no camelCase splitting is applied. `SchemaVocabBuilder.add_entities()` and `SchemaVocabBuilder.add_from_db()` both use `build_data_matcher()` to produce a `VocabularyMatcher` that runs alongside the schema matcher; `merge_matches` gives schema hits precedence over spaCy hits, and data-matcher hits supplement the combined result.
+
+### TOML vocab declarations
+
+```toml
+# Static entity list
+[[vocab.entities]]
+type        = "static"
+entity_type = "customer"
+names       = ["Acme Corp", "Globex Inc", "Initech"]
+
+# DB-query populated vocabulary
+[[vocab.entities]]
+type        = "db_query"
+entity_type = "employee"
+connection  = "postgresql://user:pass@host/db"
+sql         = "SELECT full_name FROM employees WHERE active = true"
+
+[[vocab.entities]]
+type        = "db_query"
+entity_type = "product"
+connection  = "postgresql://user:pass@host/db"
+sql         = "SELECT product_name FROM products"
+```
+
+`entity_type` is the label assigned to matched spans (e.g. `"customer"`, `"employee"`, `"product"`). It is stored alongside each entity hit in `chunk_entities`.
+
+### Library usage
+
+```python
+from chonk.ner import SchemaVocabBuilder
+
+builder = SchemaVocabBuilder()
+
+# Static names
+builder.add_entities("customer", ["Acme Corp", "Globex Inc"])
+
+# From a DB query
+import duckdb
+con = duckdb.connect("my.duckdb")
+builder.add_from_db("employee", con, "SELECT full_name FROM employees WHERE active = true")
+
+data_matcher = builder.build_data_matcher()
+
+# Use alongside schema_matcher and spacy in NER loop
+from chonk.ner import merge_matches
+for chunk in loader_chunks:
+    schema_hits = schema_matcher.match(chunk.content)
+    data_hits   = data_matcher.match(chunk.content)
+    spacy_hits  = spacy.match(chunk.content)
+    combined    = merge_matches(schema_hits + data_hits, spacy_hits, source_text=chunk.content)
+    entity_index.index_chunk(chunk_id, chunk.content, combined)
+```
+
+---
+
 ## Index features
 
 These are built once against a DuckDB file and loaded at query time. None are required; each one enables an additional retrieval capability.
@@ -253,6 +319,18 @@ uri  = "/path/to/docs"
 [[source]]
 type = "github"
 uri  = "https://github.com/myorg/myrepo"
+
+# Entity vocabulary — zero or more; extends spaCy NER
+[[vocab.entities]]
+type        = "static"
+entity_type = "customer"
+names       = ["Acme Corp", "Globex Inc"]
+
+[[vocab.entities]]
+type        = "db_query"
+entity_type = "employee"
+connection  = "postgresql://user:pass@host/db"
+sql         = "SELECT full_name FROM employees WHERE active = true"
 
 [index]
 out_dir            = "work"
