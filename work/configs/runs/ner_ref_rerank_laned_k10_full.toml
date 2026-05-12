@@ -1,0 +1,11 @@
+extends = "../base.toml"
+run_name = "ner_ref_rerank_laned_k10_full"
+
+[rerank]
+enabled = true
+
+[retrieval]
+enhanced = true
+entity_ref_expansion = true
+lane_entity_min_sim = 0.45
+top_k = 10

@@ -15,4 +15,5 @@ htmlcov/
 ._*
 .idea/
 .claude/
-/work/
+/work/*
+!/work/configs

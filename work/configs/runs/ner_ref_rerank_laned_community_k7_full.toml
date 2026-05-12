@@ -1,0 +1,15 @@
+extends = "../base.toml"
+run_name = "ner_ref_rerank_laned_community_k7_full"
+
+[rerank]
+enabled = true
+
+[retrieval]
+enhanced = true
+entity_ref_expansion = true
+lane_entity_min_sim = 0.45
+top_k = 7
+
+[retrieval.community]
+enabled = true
+min_coherence = 0.5

@@ -1,0 +1,57 @@
+# Base config — all runs extend this
+
+[index]
+out_dir             = "work"
+db_name             = "chunkymonkey_nobc_1100_2200.duckdb"
+embed_model         = "BAAI/bge-large-en-v1.5"
+spacy_model         = "en_core_web_sm"
+min_chunk           = 1100
+max_chunk           = 2200
+embed_content_only  = true
+
+[index.features]
+ner             = true
+ner_embeddings  = true
+schema_vocab    = false
+community       = true
+svo             = false
+
+[rerank]
+enabled   = false
+provider  = "local"
+model     = "BAAI/bge-reranker-large"
+
+[retrieval]
+top_k                   = 5
+fetch_k                 = 50
+search_mode             = "vector_first"
+enhanced                = false
+entity_ref_expansion    = false
+lane_entity_min_sim     = null
+redundancy_threshold    = null
+cluster                 = false
+vanilla                 = false
+
+[retrieval.community]
+enabled         = false
+min_coherence   = 0.5
+
+[gen]
+provider     = "openai"
+model        = "gpt-4o-mini"
+temperature  = 0.0
+
+[sr]
+enabled = false
+
+[srr]
+enabled   = false
+provider  = null
+model     = null
+
+[eval]
+judge       = "gpt-4o-mini"
+rpm         = 8000
+batch_size  = 20
+concurrency = 50
+nan_limit   = 136

@@ -1,0 +1,8 @@
+extends = "../base.toml"
+run_name = "rerank_k10_full"
+
+[rerank]
+enabled = true
+
+[retrieval]
+top_k = 10

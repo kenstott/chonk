@@ -1,0 +1,11 @@
+extends = "../base.toml"
+run_name = "vanilla_256_rerank_full"
+
+[index]
+db_name = "vanilla_rag.duckdb"
+
+[rerank]
+enabled = true
+
+[retrieval]
+vanilla = true
