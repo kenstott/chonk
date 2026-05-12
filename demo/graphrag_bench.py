@@ -1927,6 +1927,21 @@ def cmd_run(args: argparse.Namespace) -> None:
     n_endpoints = len(clients)
     print(f"Generating answers with {args.concurrency} parallel workers across {n_endpoints} endpoint(s)...")
 
+    # Build dedicated SRR client (may differ from gen client)
+    _srr_provider = getattr(args, "srr_provider", None) or args.gen_provider
+    _srr_model    = getattr(args, "srr_model", None) or args.gen_model
+    if use_srr and (_srr_provider != args.gen_provider or _srr_model != args.gen_model):
+        if _srr_provider == "together":
+            srr_client = openai.OpenAI(api_key=os.environ["TOGETHER_API_KEY"], base_url=TOGETHER_BASE_URL, timeout=120.0)
+        elif _srr_provider == "anthropic":
+            srr_client = openai.OpenAI(api_key=os.environ["ANTHROPIC_API_KEY"], base_url=ANTHROPIC_BASE_URL,
+                                       default_headers={"anthropic-version": "2023-06-01"}, timeout=120.0)
+        else:
+            srr_client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"], timeout=60.0)
+        print(f"SRR client: {_srr_provider}/{_srr_model}")
+    else:
+        srr_client = None  # use per-slot gen client
+
     # Reranking deletes embed_model to free VRAM; reload it if SRR needs it for entity coverage
     if use_srr and embed_model is None:
         _embed_device = os.environ.get("EMBED_DEVICE") or None
@@ -1958,11 +1973,13 @@ def cmd_run(args: argparse.Namespace) -> None:
         answer: str = ""
         srr_stats: dict | None = None
         if use_srr:
+            _sc = srr_client if srr_client is not None else client
+            _sm = _srr_model
             context = item["context"]
             srr_out = {"answer": "", "key_claims": [], "evidence_used": []}
             for attempt in range(3):
                 try:
-                    srr_out = _generate_srr(item["question"], context, client, model,
+                    srr_out = _generate_srr(item["question"], context, _sc, _sm,
                                             temperature=gen_temperature)
                     break
                 except Exception as exc:
@@ -2002,7 +2019,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                 new_srr = srr_out
                 for attempt in range(2):
                     try:
-                        new_srr = _generate_srr(item["question"], context, client, model,
+                        new_srr = _generate_srr(item["question"], context, _sc, _sm,
                                                 temperature=gen_temperature)
                         break
                     except Exception:
@@ -3665,6 +3682,10 @@ def _make_parser() -> argparse.ArgumentParser:
                         help="EnhancedSearch retrieval mode: vector_first (default), graph_first (entity graph traversal), global (community summaries only)")
     g_misc.add_argument("--srr", action="store_true", dest="srr",
                         help="Structured Response Retry: generate with JSON schema, check entity coverage, gap-fill and retry (max 2 rounds)")
+    g_misc.add_argument("--srr-model", default=None, dest="srr_model",
+                        help="Model for SRR calls (default: same as --gen-model). Use a cheaper model e.g. gpt-4o-mini while --gen-model uses gpt-4o.")
+    g_misc.add_argument("--srr-provider", default=None, choices=["openai", "together", "anthropic"], dest="srr_provider",
+                        help="API provider for SRR calls (default: same as --gen-provider)")
     g_misc.add_argument("--multi-step", action="store_true", dest="multi_step",
                         help="Multi-step retrieval: decompose each question into sub-queries, retrieve for each, merge hits before generation")
     g_misc.add_argument("--structured-gen", action="store_true", dest="structured_gen",
