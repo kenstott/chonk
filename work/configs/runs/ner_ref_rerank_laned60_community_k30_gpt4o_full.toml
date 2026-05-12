@@ -1,0 +1,18 @@
+extends = "../base.toml"
+run_name = "ner_ref_rerank_laned60_community_k30_gpt4o_full"
+
+[rerank]
+enabled = true
+
+[retrieval]
+enhanced = true
+entity_ref_expansion = true
+lane_entity_min_sim = 0.60
+top_k = 30
+
+[retrieval.community]
+enabled = true
+min_coherence = 0.5
+
+[gen]
+model = "gpt-4o"

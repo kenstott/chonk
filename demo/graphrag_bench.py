@@ -4139,14 +4139,18 @@ def cmd_run_all(args: argparse.Namespace) -> None:
             print(f"=== SKIP {run_name}_rp (done) ===")
             continue
 
-        print(f"=== RUN {run_name} ===")
-        run_args = ap.parse_args([
-            "run",
-            "--out-dir", str(out_dir),
-            "--config", str(toml_path),
-            "--run-name", run_name,
-        ] + (["--question-ids", args.question_ids] if args.question_ids else []))
-        cmd_run(run_args)
+        gen_file = results_dir / f"{run_name}.jsonl"
+        if not gen_file.exists():
+            print(f"=== RUN {run_name} ===")
+            run_args = ap.parse_args([
+                "run",
+                "--out-dir", str(out_dir),
+                "--config", str(toml_path),
+                "--run-name", run_name,
+            ] + (["--question-ids", args.question_ids] if args.question_ids else []))
+            cmd_run(run_args)
+        else:
+            print(f"=== SKIP GEN {run_name} (output exists) ===")
 
         print(f"=== EVAL {run_name}_rp ===")
         rp_src = results_dir / f"{run_name}.jsonl"

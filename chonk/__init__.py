@@ -22,7 +22,15 @@ from .community import CommunityIndex, CommunityIndexBuilder, CommunitySummarize
 from .context import enrich_chunk, enrich_chunks
 from .generation import Answer, AnswerContext, AnswerGenerator, PromptBuilder
 from .graph import (
+    PHASE_EMBED_ENTITIES,
+    PHASE_EXTRACT,
+    PHASE_LOAD,
+    PHASE_PERSIST_ALIASES,
+    PHASE_PERSIST_DESCRIPTIONS,
+    PHASE_PERSIST_TRIPLES,
     VERB_SET,
+    EntityGraphPipeline,
+    EntityGraphStats,
     LLMClient,
     RelationshipIndex,
     RelationshipIndexBuilder,
@@ -155,6 +163,14 @@ __all__ = [
     "LLMClient",
     "SVOExtractor",
     "RelationshipIndexBuilder",
+    "EntityGraphPipeline",
+    "EntityGraphStats",
+    "PHASE_LOAD",
+    "PHASE_EXTRACT",
+    "PHASE_PERSIST_TRIPLES",
+    "PHASE_PERSIST_DESCRIPTIONS",
+    "PHASE_PERSIST_ALIASES",
+    "PHASE_EMBED_ENTITIES",
     # Community
     "CommunityIndex",
     "CommunitySummarizer",
