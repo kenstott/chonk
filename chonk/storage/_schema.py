@@ -35,6 +35,46 @@ EMBEDDINGS_MIGRATE_SOURCE_DETAIL = """
 ALTER TABLE embeddings ADD COLUMN IF NOT EXISTS source_detail TEXT
 """.strip()
 
+EMBEDDINGS_MIGRATE_SOURCE_ID = """
+ALTER TABLE embeddings ADD COLUMN IF NOT EXISTS source_id VARCHAR
+""".strip()
+
+EMBEDDINGS_MIGRATE_DOMAIN_ID = """
+ALTER TABLE embeddings ADD COLUMN IF NOT EXISTS domain_id VARCHAR
+""".strip()
+
+NAMESPACES_DDL = """
+CREATE TABLE IF NOT EXISTS namespaces (
+    namespace_id  VARCHAR PRIMARY KEY,
+    owner         VARCHAR,
+    description   VARCHAR,
+    created_at    TIMESTAMP DEFAULT current_timestamp,
+    updated_at    TIMESTAMP DEFAULT current_timestamp
+)
+""".strip()
+
+DOMAINS_DDL = """
+CREATE TABLE IF NOT EXISTS domains (
+    domain_id     VARCHAR PRIMARY KEY,
+    namespace_id  VARCHAR,
+    name          VARCHAR,
+    description   VARCHAR,
+    created_at    TIMESTAMP DEFAULT current_timestamp,
+    updated_at    TIMESTAMP DEFAULT current_timestamp
+)
+""".strip()
+
+SOURCES_DDL = """
+CREATE TABLE IF NOT EXISTS sources (
+    source_id     VARCHAR PRIMARY KEY,
+    domain_id     VARCHAR,
+    type          VARCHAR,
+    uri           VARCHAR,
+    config        JSON,
+    last_crawled  TIMESTAMP
+)
+""".strip()
+
 ENTITIES_DDL = """
 CREATE TABLE IF NOT EXISTS entities (
     id           TEXT PRIMARY KEY,
@@ -83,6 +123,11 @@ def get_ddl(embedding_dim: int = 1024) -> list[str]:
         EMBEDDINGS_MIGRATE_BREADCRUMB,
         EMBEDDINGS_MIGRATE_NAMESPACE,
         EMBEDDINGS_MIGRATE_SOURCE_DETAIL,
+        EMBEDDINGS_MIGRATE_SOURCE_ID,
+        EMBEDDINGS_MIGRATE_DOMAIN_ID,
+        NAMESPACES_DDL,
+        DOMAINS_DDL,
+        SOURCES_DDL,
         ENTITIES_DDL,
         CHUNK_ENTITIES_DDL,
         CHUNK_ENTITIES_MIGRATE_NAMESPACE,

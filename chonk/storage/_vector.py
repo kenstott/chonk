@@ -101,7 +101,7 @@ class DuckDBVectorBackend:
             """
             SELECT chunk_id, document_name, section, chunk_index,
                    content, breadcrumb, chunk_type, source_offset, source_length,
-                   namespace, source_detail, embedding
+                   namespace, source_detail, source_id, domain_id, embedding
             FROM embeddings
             """
         ).fetchall()
@@ -109,7 +109,7 @@ class DuckDBVectorBackend:
             return
         self._np_chunk_rows = rows
         self._np_embeddings = _np.array(
-            [r[11] for r in rows], dtype="float32"
+            [r[13] for r in rows], dtype="float32"
         )
 
     @property
@@ -161,13 +161,22 @@ class DuckDBVectorBackend:
     # Add chunks
     # ------------------------------------------------------------------
 
-    def add_chunks(self, chunks: list, embeddings, namespace: str | None = None) -> None:
+    def add_chunks(
+        self,
+        chunks: list,
+        embeddings,
+        namespace: str | None = None,
+        source_id: str | None = None,
+        domain_id: str | None = None,
+    ) -> None:
         """Insert chunks with embeddings into the embeddings table.
 
         Args:
             chunks: List of DocumentChunk objects.
             embeddings: np.ndarray of shape (n, embedding_dim).
             namespace: Optional partition key. None means no namespace filter at search time.
+            source_id: Optional source registry ID for the originating source.
+            domain_id: Optional domain registry ID (denormalization of source_id → domain).
         """
         if not chunks:
             return
@@ -204,6 +213,8 @@ class DuckDBVectorBackend:
                 getattr(chunk, "source_length", None),
                 namespace,
                 source_detail_str,
+                source_id,
+                domain_id,
                 embedding,
             ))
 
@@ -212,8 +223,8 @@ class DuckDBVectorBackend:
             INSERT INTO embeddings
                 (chunk_id, document_name, section, chunk_index, content,
                  breadcrumb, chunk_type, source_offset, source_length, namespace,
-                 source_detail, embedding)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 source_detail, source_id, domain_id, embedding)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT DO NOTHING
             """,
             records,
@@ -327,6 +338,7 @@ class DuckDBVectorBackend:
         include_breadcrumbs: bool = True,
         namespaces: list[str] | None = None,
         chunk_types: list[str] | None = None,
+        domain_ids: list[str] | None = None,
     ) -> list[tuple[str, float, object]]:
         """Search by vector similarity, with optional BM25 hybrid re-ranking.
 
@@ -340,6 +352,8 @@ class DuckDBVectorBackend:
                 this list. None searches all namespaces (backwards-compatible default).
             chunk_types: If provided, restrict search to rows whose chunk_type is in
                 this list. None searches all chunk types (backwards-compatible default).
+            domain_ids: If provided, restrict search to rows whose domain_id is in
+                this list. Independent of namespaces filter; when both set both apply (AND).
 
         Returns:
             List of (chunk_id, score, DocumentChunk).
@@ -354,12 +368,16 @@ class DuckDBVectorBackend:
             sims = self._np_embeddings @ query_vec  # (n,)
             ns_set = set(namespaces) if namespaces is not None else None
             ct_set = set(chunk_types) if chunk_types is not None else None
+            di_set = set(domain_ids) if domain_ids is not None else None
             top_idx = _np.argpartition(sims, -fetch_limit)[-fetch_limit:]
             top_idx = top_idx[_np.argsort(sims[top_idx])[::-1]]
             if ns_set is not None:
                 top_idx = [i for i in top_idx if self._np_chunk_rows[i][9] in ns_set]
             if ct_set is not None:
                 top_idx = [i for i in top_idx if self._np_chunk_rows[i][6] in ct_set]
+            if di_set is not None:
+                # domain_id is at index 12 in preloaded rows (added after source_id at 11)
+                top_idx = [i for i in top_idx if len(self._np_chunk_rows[i]) > 12 and self._np_chunk_rows[i][12] in di_set]
             # indices: 0=chunk_id,1=doc_name,2=section,3=chunk_idx,4=content,
             #          5=breadcrumb,6=chunk_type,7=source_offset,8=source_length,
             #          9=namespace,10=source_detail
@@ -376,6 +394,10 @@ class DuckDBVectorBackend:
                 placeholders = ", ".join("?" * len(chunk_types))
                 clauses.append(f"e.chunk_type IN ({placeholders})")
                 params.extend(chunk_types)
+            if domain_ids is not None:
+                placeholders = ", ".join("?" * len(domain_ids))
+                clauses.append(f"e.domain_id IN ({placeholders})")
+                params.extend(domain_ids)
             where_clause = ("WHERE " + " AND ".join(clauses)) if clauses else ""
             params += [query, fetch_limit]
 

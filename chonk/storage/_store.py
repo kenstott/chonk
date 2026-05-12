@@ -9,11 +9,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from ._pool import ThreadLocalDuckDB
-from ._vector import DuckDBVectorBackend
 from ._relational import RelationalStore
+from ._vector import DuckDBVectorBackend
 
 
 class Store:
@@ -64,14 +63,23 @@ class Store:
             )
             self.relational = None  # type: ignore
 
-    def add_document(self, chunks: list, embeddings, namespace: str | None = None) -> None:
+    def add_document(
+        self,
+        chunks: list,
+        embeddings,
+        namespace: str | None = None,
+        source_id: str | None = None,
+        domain_id: str | None = None,
+    ) -> None:
         """Add chunks with embeddings. embeddings is np.ndarray shape (n, dim).
 
         Args:
             namespace: Optional partition key (e.g. "__base__" or a project ID).
                        None means no namespace — backwards-compatible default.
+            source_id: Optional source registry ID for the originating source.
+            domain_id: Optional domain registry ID (denormalization of source_id → domain).
         """
-        self.vector.add_chunks(chunks, embeddings, namespace=namespace)
+        self.vector.add_chunks(chunks, embeddings, namespace=namespace, source_id=source_id, domain_id=domain_id)
 
     def search(
         self,
@@ -80,6 +88,7 @@ class Store:
         query_text: str | None = None,
         namespaces: list[str] | None = None,
         chunk_types: list[str] | None = None,
+        domain_ids: list[str] | None = None,
     ) -> list:
         """Hybrid or pure vector search.
 
@@ -88,14 +97,150 @@ class Store:
                         None searches all namespaces — backwards-compatible default.
             chunk_types: If provided, restrict results to rows with these chunk_types.
                          None searches all chunk types — backwards-compatible default.
+            domain_ids: If provided, restrict results to rows in these domain_ids.
+                        Independent of namespaces; when both set both apply (AND).
 
         Returns:
             List of (chunk_id, score, DocumentChunk).
         """
         return self.vector.search(
             query_embedding, limit=limit, query_text=query_text,
-            namespaces=namespaces, chunk_types=chunk_types,
+            namespaces=namespaces, chunk_types=chunk_types, domain_ids=domain_ids,
         )
+
+    # ------------------------------------------------------------------
+    # Namespace / domain / source registry
+    # ------------------------------------------------------------------
+
+    def register_namespace(
+        self,
+        namespace_id: str,
+        owner: str | None = None,
+        description: str | None = None,
+    ) -> None:
+        """Upsert a namespace record."""
+        self.vector._conn.execute(
+            """
+            INSERT INTO namespaces (namespace_id, owner, description)
+            VALUES (?, ?, ?)
+            ON CONFLICT (namespace_id) DO UPDATE SET
+                owner       = excluded.owner,
+                description = excluded.description,
+                updated_at  = current_timestamp
+            """,
+            [namespace_id, owner, description],
+        ).fetchall()
+
+    def register_domain(
+        self,
+        domain_id: str,
+        namespace_id: str,
+        name: str,
+        description: str | None = None,
+    ) -> None:
+        """Upsert a domain record."""
+        self.vector._conn.execute(
+            """
+            INSERT INTO domains (domain_id, namespace_id, name, description)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT (domain_id) DO UPDATE SET
+                namespace_id = excluded.namespace_id,
+                name         = excluded.name,
+                description  = excluded.description,
+                updated_at   = current_timestamp
+            """,
+            [domain_id, namespace_id, name, description],
+        ).fetchall()
+
+    def register_source(
+        self,
+        source_id: str,
+        domain_id: str,
+        type: str,
+        uri: str,
+        config: dict | None = None,
+    ) -> None:
+        """Upsert a source record."""
+        import json as _json
+        config_json = _json.dumps(config) if config is not None else None
+        self.vector._conn.execute(
+            """
+            INSERT INTO sources (source_id, domain_id, type, uri, config)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT (source_id) DO UPDATE SET
+                domain_id = excluded.domain_id,
+                type      = excluded.type,
+                uri       = excluded.uri,
+                config    = excluded.config
+            """,
+            [source_id, domain_id, type, uri, config_json],
+        ).fetchall()
+
+    def resolve_domain_ids(self, namespace_domain_pairs: list[tuple[str, str]]) -> list[str]:
+        """Return domain_ids matching (namespace_id, name) pairs.
+
+        Args:
+            namespace_domain_pairs: List of (namespace_id, domain_name) tuples.
+
+        Returns:
+            List of matching domain_id strings.
+        """
+        if not namespace_domain_pairs:
+            return []
+        results: list[str] = []
+        for ns_id, dom_name in namespace_domain_pairs:
+            rows = self.vector._conn.execute(
+                "SELECT domain_id FROM domains WHERE namespace_id = ? AND name = ?",
+                [ns_id, dom_name],
+            ).fetchall()
+            results.extend(r[0] for r in rows)
+        return results
+
+    def delete_domain(self, domain_id: str) -> int:
+        """Delete all chunks for a domain_id.
+
+        Also deletes associated chunk_entities and svo_triples rows.
+
+        Returns:
+            Number of chunks deleted from embeddings.
+        """
+        conn = self.vector._conn
+        count_before = conn.execute(
+            "SELECT COUNT(*) FROM embeddings WHERE domain_id = ?",
+            [domain_id],
+        ).fetchone()[0]
+
+        # Collect chunk_ids for cascade deletes
+        chunk_ids = [
+            r[0] for r in conn.execute(
+                "SELECT chunk_id FROM embeddings WHERE domain_id = ?",
+                [domain_id],
+            ).fetchall()
+        ]
+
+        if chunk_ids:
+            placeholders = ", ".join("?" * len(chunk_ids))
+            try:
+                conn.execute(
+                    f"DELETE FROM chunk_entities WHERE chunk_id IN ({placeholders})",
+                    chunk_ids,
+                ).fetchall()
+            except Exception:
+                pass
+            try:
+                conn.execute(
+                    f"DELETE FROM svo_triples WHERE chunk_id IN ({placeholders})",
+                    chunk_ids,
+                ).fetchall()
+            except Exception:
+                pass
+
+        conn.execute(
+            "DELETE FROM embeddings WHERE domain_id = ?",
+            [domain_id],
+        ).fetchall()
+        self.vector._fts_dirty = True
+        return count_before
 
     def delete_document(self, document_name: str) -> int:
         """Delete all chunks for a document. Returns count deleted."""
@@ -109,7 +254,7 @@ class Store:
         """Close the underlying DuckDB connection."""
         self._db.close()
 
-    def __enter__(self) -> "Store":
+    def __enter__(self) -> Store:
         return self
 
     def __exit__(self, *_) -> None:

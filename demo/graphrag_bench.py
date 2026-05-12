@@ -201,6 +201,9 @@ def _apply_config(cfg: dict, args: argparse.Namespace) -> None:
     if ret.get("namespaces") is not None and getattr(args, "namespaces", None) is None:
         args.namespaces = ret["namespaces"]
 
+    if ret.get("domain_ids") is not None and getattr(args, "domain_ids", None) is None:
+        args.domain_ids = ret["domain_ids"]
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Phase 1: Download
@@ -540,23 +543,49 @@ def cmd_index(args: argparse.Namespace) -> None:
         sources_cfg = getattr(args, "sources", None)
         if sources_cfg:
             corpus_doc_names = {doc_id for doc_id, _ in corpus}
+            # Build per-doc maps: namespace, source_id, domain_id
             source_ns_map: dict[str, str | None] = {}
+            source_sid_map: dict[str, str | None] = {}
+            source_did_map: dict[str, str | None] = {}
             for src in sources_cfg:
                 ns = src.get("namespace")
+                domain = src.get("domain")
+                src_type = src.get("type", "")
                 uri = src.get("uri", "")
+                # Deterministic IDs
+                namespace_id = ns if ns else None
+                domain_id = f"{ns}:{domain}" if (ns and domain) else None
+                source_id = f"{ns}:{domain}:{src_type}:{uri[:40]}" if (ns and domain) else None
+                # Register if namespace/domain present
+                if namespace_id:
+                    store.register_namespace(namespace_id)
+                if domain_id:
+                    store.register_domain(domain_id, namespace_id, domain)
+                if source_id:
+                    src_config = {k: v for k, v in src.items() if k not in ("namespace", "domain", "type", "uri")}
+                    store.register_source(source_id, domain_id, src_type, uri, src_config or None)
                 for doc_id in corpus_doc_names:
                     if uri and doc_id.startswith(uri):
                         source_ns_map[doc_id] = ns
+                        source_sid_map[doc_id] = source_id
+                        source_did_map[doc_id] = domain_id
             from collections import defaultdict as _defaultdict
-            ns_groups: dict[str | None, list] = _defaultdict(list)
-            ns_emb_indices: dict[str | None, list] = _defaultdict(list)
+            # Group by (ns, source_id, domain_id) triple
+            group_key_map: dict[str, tuple] = {}
             for idx_c, chunk in enumerate(all_chunks):
                 ns = source_ns_map.get(chunk.document_name)
-                ns_groups[ns].append(chunk)
-                ns_emb_indices[ns].append(idx_c)
-            for ns, ns_chunks in ns_groups.items():
-                ns_emb = emb[ns_emb_indices[ns]]
-                store.add_document(ns_chunks, ns_emb, namespace=ns)
+                sid = source_sid_map.get(chunk.document_name)
+                did = source_did_map.get(chunk.document_name)
+                group_key_map[chunk.document_name] = (ns, sid, did)
+            groups: dict[tuple, list] = _defaultdict(list)
+            group_indices: dict[tuple, list] = _defaultdict(list)
+            for idx_c, chunk in enumerate(all_chunks):
+                key = group_key_map.get(chunk.document_name, (None, None, None))
+                groups[key].append(chunk)
+                group_indices[key].append(idx_c)
+            for (ns, sid, did), grp_chunks in groups.items():
+                grp_emb = emb[group_indices[(ns, sid, did)]]
+                store.add_document(grp_chunks, grp_emb, namespace=ns, source_id=sid, domain_id=did)
         else:
             store.add_document(all_chunks, emb)
         n = store.count()
@@ -1438,7 +1467,7 @@ def _prune_redundant(hits, db_conn, threshold):
     return selected
 
 
-def _build_enhanced_search(store, db_path: Path | None = None, use_ner_x: bool = False, embed_model=None, entity_ref_expansion: bool = False, entity_ref_expansion_k: int = 20, entity_ref_expansion_per_k: int | None = None, entity_ref_expansion_min_sim: float | None = None, use_cluster: bool = False, lane_entity_min_sim: float | None = None, namespaces: list[str] | None = None):
+def _build_enhanced_search(store, db_path: Path | None = None, use_ner_x: bool = False, embed_model=None, entity_ref_expansion: bool = False, entity_ref_expansion_k: int = 20, entity_ref_expansion_per_k: int | None = None, entity_ref_expansion_min_sim: float | None = None, use_cluster: bool = False, lane_entity_min_sim: float | None = None, namespaces: list[str] | None = None, domain_ids: list[str] | None = None):
     """Load EnhancedSearch: from pre-built DB tables if available, else rebuild in memory."""
     import duckdb
 
@@ -1611,6 +1640,7 @@ def cmd_run(args: argparse.Namespace) -> None:
     concentration_threshold = getattr(args, "concentration_threshold", None)
     query_complexity_threshold = getattr(args, "query_complexity_threshold", 2)
     namespaces = getattr(args, "namespaces", None)
+    domain_ids = getattr(args, "domain_ids", None)
     db_name_override = getattr(args, 'db_name', None)
     question_ids_file = getattr(args, 'question_ids', None)
     if db_name_override:
@@ -1877,6 +1907,7 @@ def cmd_run(args: argparse.Namespace) -> None:
             use_cluster=use_cluster,
             lane_entity_min_sim=lane_entity_min_sim,
             namespaces=namespaces,
+            domain_ids=domain_ids,
         ) if use_enhanced else None
 
         # Build concentration fallback search (entity ref expansion) if gating is enabled
@@ -1891,6 +1922,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                 use_cluster=False,
                 lane_entity_min_sim=lane_entity_min_sim,
                 namespaces=namespaces,
+                domain_ids=domain_ids,
             )
 
         # Preload embeddings + chunk metadata into RAM (eliminates per-query DuckDB round-trips)
@@ -1972,6 +2004,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                             precomputed_entity_vecs=_precomputed_entity_vecs,
                             mode=search_mode,
                             namespaces=namespaces,
+                            domain_ids=domain_ids,
                         )
                         _sub_hits = [(sc.chunk_id, sc.score, sc.chunk) for sc in _sub_scored]
                     else:
@@ -1980,6 +2013,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                             query_text=q["question"],
                             include_breadcrumbs=False,
                             namespaces=namespaces,
+                            domain_ids=domain_ids,
                         )
                     for cid, sc, chunk in _sub_hits:
                         if cid not in _merged or sc > _merged[cid][1]:
@@ -1993,6 +2027,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                     precomputed_entity_vecs=_precomputed_entity_vecs,
                     mode=search_mode,
                     namespaces=namespaces,
+                    domain_ids=domain_ids,
                 )
                 hits   = [(sc.chunk_id, sc.score, sc.chunk) for sc in scored]
                 expansion_stats = enhanced_search.last_expansion_stats
@@ -2002,6 +2037,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                     query_text=q["question"],
                     include_breadcrumbs=False,
                     namespaces=namespaces,
+                    domain_ids=domain_ids,
                 )
                 expansion_stats = None
 
@@ -2018,6 +2054,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                             query_entities=_q_entities,
                             precomputed_entity_vecs=_precomputed_entity_vecs,
                             namespaces=namespaces,
+                            domain_ids=domain_ids,
                         )
                         hits = [(sc.chunk_id, sc.score, sc.chunk) for sc in scored_conc]
                         expansion_stats = _conc_search.last_expansion_stats
@@ -4096,6 +4133,8 @@ def _make_parser() -> argparse.ArgumentParser:
                         help=f"Override retrieval top-k (default: {K})")
     g_misc.add_argument("--namespaces", nargs="*", default=None, dest="namespaces",
                         help="Restrict retrieval to these namespaces (default: all namespaces)")
+    g_misc.add_argument("--domain-ids", nargs="*", default=None, dest="domain_ids",
+                        help="Restrict retrieval to these domain_ids (default: all domains)")
     g_misc.add_argument("--db-name", default=None, dest="db_name",
                         help="Override DB filename inside {out_dir}/data/ (default: auto from --breadcrumb-embed)")
     g_misc.add_argument("--question-ids", default=None, dest="question_ids", metavar="PATH",

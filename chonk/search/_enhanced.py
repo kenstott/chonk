@@ -138,6 +138,7 @@ class EnhancedSearch:
         precomputed_entity_vecs: dict[str, np.ndarray] | None = None,
         mode: str = "vector_first",
         namespaces: list[str] | None = None,
+        domain_ids: list[str] | None = None,
     ) -> list[ScoredChunk]:
         """Assemble a top-k cohort using all enabled expansion dimensions.
 
@@ -153,10 +154,10 @@ class EnhancedSearch:
             Ranked list of up to k ScoredChunk objects.
         """
         if mode == "global":
-            return self._global_search(query_embedding, k, query_text, namespaces)
+            return self._global_search(query_embedding, k, query_text, namespaces, domain_ids)
         if mode == "graph_first":
             return self._graph_first_search(
-                query_embedding, k, query_text, query_entities, precomputed_entity_vecs, namespaces
+                query_embedding, k, query_text, query_entities, precomputed_entity_vecs, namespaces, domain_ids
             )
         if mode != "vector_first":
             raise ValueError(f"Unknown search mode {mode!r}. Use 'vector_first', 'graph_first', or 'global'.")
@@ -169,12 +170,20 @@ class EnhancedSearch:
                 list(namespaces),
             ).fetchall()
             ns_chunk_ids = {r[0] for r in rows}
+        if domain_ids:
+            placeholders = ", ".join("?" * len(domain_ids))
+            rows = self._store.vector._conn.execute(
+                f"SELECT chunk_id FROM embeddings WHERE domain_id IN ({placeholders})",
+                list(domain_ids),
+            ).fetchall()
+            di_chunk_ids = {r[0] for r in rows}
+            ns_chunk_ids = di_chunk_ids if ns_chunk_ids is None else ns_chunk_ids & di_chunk_ids
 
         seed_limit = k * self._seed_multiplier
         cluster_budget = self._cluster_budget if self._cluster_budget is not None else 2 * k
 
         # ------ Step 1: Seed -----------------------------------------------
-        raw_seeds = self._store.search(query_embedding, limit=seed_limit, query_text=query_text, namespaces=namespaces)
+        raw_seeds = self._store.search(query_embedding, limit=seed_limit, query_text=query_text, namespaces=namespaces, domain_ids=domain_ids)
         # raw_seeds: list of (chunk_id, score, DocumentChunk)
 
         # candidate pool: chunk_id -> ScoredChunk
@@ -314,7 +323,7 @@ class EnhancedSearch:
             if ents is None and self._query_ner_fn is not None and query_text:
                 ents = self._query_ner_fn(query_text)
             if ents:
-                results = self._entity_ref_expand(results, pool, query_embedding, ents, k, query_text, precomputed_entity_vecs, namespaces)
+                results = self._entity_ref_expand(results, pool, query_embedding, ents, k, query_text, precomputed_entity_vecs, namespaces, domain_ids)
 
         return results
 
@@ -330,6 +339,7 @@ class EnhancedSearch:
         query_entities: list[str] | None,
         precomputed_entity_vecs,
         namespaces: list[str] | None = None,
+        domain_ids: list[str] | None = None,
     ) -> list[ScoredChunk]:
         """Driver: RelationshipIndex traversal. Assist: vector rerank via _select_cohort.
 
@@ -350,6 +360,7 @@ class EnhancedSearch:
                 precomputed_entity_vecs=precomputed_entity_vecs,
                 mode="vector_first",
                 namespaces=namespaces,
+                domain_ids=domain_ids,
             )
 
         # Resolve query entities via NER if not supplied
@@ -363,6 +374,7 @@ class EnhancedSearch:
                 precomputed_entity_vecs=precomputed_entity_vecs,
                 mode="vector_first",
                 namespaces=namespaces,
+                domain_ids=domain_ids,
             )
 
         # Traverse RelationshipIndex: collect related entity IDs
@@ -382,6 +394,14 @@ class EnhancedSearch:
                 list(namespaces),
             ).fetchall()
             ns_chunk_ids = {r[0] for r in rows}
+        if domain_ids:
+            placeholders = ", ".join("?" * len(domain_ids))
+            rows = self._store.vector._conn.execute(
+                f"SELECT chunk_id FROM embeddings WHERE domain_id IN ({placeholders})",
+                list(domain_ids),
+            ).fetchall()
+            di_chunk_ids = {r[0] for r in rows}
+            ns_chunk_ids = di_chunk_ids if ns_chunk_ids is None else ns_chunk_ids & di_chunk_ids
 
         # Build pool from related-entity chunks
         pool: dict[str, ScoredChunk] = {}
@@ -405,7 +425,7 @@ class EnhancedSearch:
         # Augment with vector seeds so reranker has enough candidates
         seed_limit = max(k * self._seed_multiplier, k - len(pool))
         for chunk_id, score, chunk in self._store.search(
-            query_embedding, limit=seed_limit, query_text=query_text, namespaces=namespaces
+            query_embedding, limit=seed_limit, query_text=query_text, namespaces=namespaces, domain_ids=domain_ids
         ):
             if chunk_id not in pool:
                 pool[chunk_id] = ScoredChunk(
@@ -427,6 +447,7 @@ class EnhancedSearch:
         k: int,
         query_text: str | None,
         namespaces: list[str] | None = None,
+        domain_ids: list[str] | None = None,
     ) -> list[ScoredChunk]:
         """Driver: vector search over community_summary chunks only."""
         raw = self._store.search(
@@ -435,6 +456,7 @@ class EnhancedSearch:
             query_text=query_text,
             chunk_types=["community_summary"],
             namespaces=namespaces,
+            domain_ids=domain_ids,
         )
         results: list[ScoredChunk] = []
         for chunk_id, score, chunk in raw:
@@ -460,6 +482,7 @@ class EnhancedSearch:
         query_text: str | None,
         precomputed_entity_vecs: dict[str, np.ndarray] | None = None,
         namespaces: list[str] | None = None,
+        domain_ids: list[str] | None = None,
     ) -> list[ScoredChunk]:
         """Post-selection: if query entities are absent from top-k, expand via semantic search."""
         result_text = " ".join((sc.chunk.content or "") for sc in results).lower()
@@ -487,7 +510,7 @@ class EnhancedSearch:
                 entity_vecs = self._embed_fn(missing)
             _missing_iter = missing if (entity_vecs is not None and len(missing) > 0) else []
             for i, entity in enumerate(_missing_iter):
-                hits = self._store.search(entity_vecs[i], limit=per_k, query_text=None, namespaces=namespaces)
+                hits = self._store.search(entity_vecs[i], limit=per_k, query_text=None, namespaces=namespaces, domain_ids=domain_ids)
                 for chunk_id, score, chunk in hits:
                     if min_sim is not None and score < min_sim:
                         continue
@@ -501,7 +524,7 @@ class EnhancedSearch:
         else:
             # Literal fallback
             expanded_seeds = self._store.search(
-                query_embedding, limit=self._entity_ref_expansion_k, query_text=query_text, namespaces=namespaces
+                query_embedding, limit=self._entity_ref_expansion_k, query_text=query_text, namespaces=namespaces, domain_ids=domain_ids
             )
             for chunk_id, score, chunk in expanded_seeds:
                 if chunk_id in new_pool:

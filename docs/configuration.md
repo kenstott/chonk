@@ -100,6 +100,22 @@ namespace = "internal"
 type      = "github"
 uri       = "https://github.com/myorg/public-wiki"
 namespace = "public"
+
+# namespace + domain registers the source in the normalized domains table.
+# domain is a logical grouping within the namespace (e.g. "engineering", "support").
+# Use --domain-ids (CLI) or retrieval.domain_ids (TOML) to restrict queries to
+# specific (namespace, domain) pairs.  domain_id = "{namespace}:{domain}".
+[[source]]
+type      = "directory"
+uri       = "/path/to/engineering-docs"
+namespace = "acme"
+domain    = "engineering"
+
+[[source]]
+type      = "sharepoint"
+uri       = "https://acme.sharepoint.com/sites/support"
+namespace = "acme"
+domain    = "support"
 ```
 
 ### Library usage
@@ -342,11 +358,13 @@ extends = "base.toml"   # optional
 type      = "directory"
 uri       = "/path/to/docs"
 namespace = "internal"   # optional
+domain    = "engineering"  # optional; paired with namespace, registered in domains table
 
 [[source]]
 type      = "github"
 uri       = "https://github.com/myorg/myrepo"
 namespace = "public"     # optional
+domain    = "wiki"         # optional
 
 # Entity vocabulary — zero or more; extends spaCy NER
 [[vocab.entities]]
@@ -392,6 +410,7 @@ redundancy_threshold = null
 cluster              = false
 vanilla              = false
 namespaces           = null   # optional list of namespace strings to restrict retrieval
+domain_ids           = null   # optional list of domain_id strings ("{namespace}:{domain}") to restrict retrieval
 
 [retrieval.community]
 enabled       = false

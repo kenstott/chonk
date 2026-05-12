@@ -22,6 +22,7 @@
 # recursive  = true
 # max_files  = 1000
 # namespace  = "my_namespace"   # optional; restricts retrieval when --namespaces is set
+# domain     = "my_domain"      # optional; paired with namespace to register in domains table; restricts retrieval when --domain-ids is set
 #
 # [[source]]
 # type   = "github"
