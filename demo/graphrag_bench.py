@@ -31,6 +31,11 @@ import time
 from collections import defaultdict
 from pathlib import Path
 
+try:
+    import tomllib
+except ImportError:
+    import tomli as tomllib  # type: ignore[no-redef]
+
 # Load .env from project root before anything else
 _PROJECT_ROOT = Path(__file__).parent.parent
 try:
