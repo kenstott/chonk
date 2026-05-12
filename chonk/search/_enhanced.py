@@ -160,6 +160,16 @@ class EnhancedSearch:
             )
         if mode != "vector_first":
             raise ValueError(f"Unknown search mode {mode!r}. Use 'vector_first', 'graph_first', or 'global'.")
+
+        ns_chunk_ids: set[str] | None = None
+        if namespaces:
+            placeholders = ", ".join("?" * len(namespaces))
+            rows = self._store.vector._conn.execute(
+                f"SELECT chunk_id FROM embeddings WHERE namespace IN ({placeholders})",
+                list(namespaces),
+            ).fetchall()
+            ns_chunk_ids = {r[0] for r in rows}
+
         seed_limit = k * self._seed_multiplier
         cluster_budget = self._cluster_budget if self._cluster_budget is not None else 2 * k
 
@@ -206,6 +216,8 @@ class EnhancedSearch:
                     for linked_chunk_id, _ in self._entity_index.get_chunks_for_entity(
                         entity_id, top_n=self._entity_top_n
                     ):
+                        if ns_chunk_ids is not None and linked_chunk_id not in ns_chunk_ids:
+                            continue
                         if linked_chunk_id not in pool:
                             if query_vec_flat is not None:
                                 emb = self._get_embedding(linked_chunk_id)
@@ -234,6 +246,8 @@ class EnhancedSearch:
                         neighbor_entity_id, top_n=1
                     ) if self._entity_index else []
                     for linked_chunk_id, _ in cluster_chunks:
+                        if ns_chunk_ids is not None and linked_chunk_id not in ns_chunk_ids:
+                            continue
                         if linked_chunk_id not in pool:
                             chunk = self._fetch_chunk(linked_chunk_id)
                             if chunk is not None:
@@ -276,6 +290,8 @@ class EnhancedSearch:
                         for linked_chunk_id, _ in self._entity_index.get_chunks_for_entity(
                             eid, top_n=2
                         ):
+                            if ns_chunk_ids is not None and linked_chunk_id not in ns_chunk_ids:
+                                continue
                             if linked_chunk_id not in pool:
                                 chunk = self._fetch_chunk(linked_chunk_id)
                                 if chunk is not None:
@@ -358,12 +374,23 @@ class EnhancedSearch:
                 related.add(triple.subject_id)
         related -= set(ents)  # exclude the query entities themselves
 
+        ns_chunk_ids: set[str] | None = None
+        if namespaces:
+            placeholders = ", ".join("?" * len(namespaces))
+            rows = self._store.vector._conn.execute(
+                f"SELECT chunk_id FROM embeddings WHERE namespace IN ({placeholders})",
+                list(namespaces),
+            ).fetchall()
+            ns_chunk_ids = {r[0] for r in rows}
+
         # Build pool from related-entity chunks
         pool: dict[str, ScoredChunk] = {}
         for related_entity_id in related:
             for linked_chunk_id, _ in self._entity_index.get_chunks_for_entity(
                 related_entity_id, top_n=self._entity_top_n
             ):
+                if ns_chunk_ids is not None and linked_chunk_id not in ns_chunk_ids:
+                    continue
                 if linked_chunk_id not in pool:
                     chunk = self._fetch_chunk(linked_chunk_id)
                     if chunk is not None:
