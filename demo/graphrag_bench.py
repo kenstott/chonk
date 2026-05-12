@@ -4118,7 +4118,7 @@ def cmd_prime_cache(args: argparse.Namespace) -> None:
 
 def cmd_run_all(args: argparse.Namespace) -> None:
     config_dir = Path(args.config_dir)
-    toml_files = sorted(config_dir.glob("*.toml"))
+    toml_files = sorted(f for f in config_dir.glob("*.toml") if not f.name.startswith("."))
     if not toml_files:
         raise RuntimeError(f"No *.toml files found in {config_dir}")
 

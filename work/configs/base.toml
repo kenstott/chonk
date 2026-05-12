@@ -136,8 +136,6 @@ fetch_k                 = 50
 search_mode             = "vector_first"   # vector_first | graph_first | global
 enhanced                = false
 entity_ref_expansion    = false
-lane_entity_min_sim     = null
-redundancy_threshold    = null
 cluster                 = false
 vanilla                 = false
 
@@ -158,8 +156,6 @@ enabled = false            # JSON schema output (key_claims + evidence_used)
 # ── Structured Response Retry (SRR) ──────────────────────────────────────────
 [srr]
 enabled   = false          # SR + coverage check + gap-fill (up to 2 rounds)
-provider  = null           # null = same as gen.provider
-model     = null           # null = same as gen.model; use cheaper model here
 
 # ── Evaluation ────────────────────────────────────────────────────────────────
 [eval]
