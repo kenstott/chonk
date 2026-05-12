@@ -1477,10 +1477,11 @@ def cmd_run(args: argparse.Namespace) -> None:
             f"Run: python demo/graphrag_bench.py prime-cache --out-dir {args.out_dir}"
         )
 
-    use_srr = getattr(args, "srr", False)
+    use_sr  = getattr(args, "sr", False)
+    use_srr = getattr(args, "srr", False) or use_sr
     use_multi_step = getattr(args, "multi_step", False)
     embed_model = None
-    if use_entity_ref_retry or use_srr:
+    if use_entity_ref_retry or (use_srr and not use_sr):
         _embed_device = os.environ.get("EMBED_DEVICE") or None
         if not _embed_device:
             try:
@@ -1593,7 +1594,7 @@ def cmd_run(args: argparse.Namespace) -> None:
 
         # SRR: preload full chunk pool (id, text, embedding) for gap-fill retrieval
         _srr_chunk_pool: list[tuple] = []
-        if use_srr:
+        if use_srr and not use_sr:
             _np_rows = store.vector._np_chunk_rows or []
             _np_embs = getattr(store.vector, "_np_embeddings", None)
             if _np_rows and _np_embs is not None:
@@ -1939,7 +1940,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         srr_client = None  # use per-slot gen client
 
     # Reranking deletes embed_model to free VRAM; reload it if SRR needs it for entity coverage
-    if use_srr and embed_model is None:
+    if use_srr and not use_sr and embed_model is None:
         _embed_device = os.environ.get("EMBED_DEVICE") or None
         if not _embed_device:
             try:
@@ -1951,7 +1952,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         embed_model = SentenceTransformer(EMBED_MODEL, device=_embed_device) if _embed_device else SentenceTransformer(EMBED_MODEL)
 
     retry_ner_fn = None
-    if use_entity_ref_retry or use_srr:
+    if use_entity_ref_retry or (use_srr and not use_sr):
         from chonk.ner import SpacyMatcher
         _retry_matcher = SpacyMatcher(model=SPACY_MODEL, strip_numeric=True)
         retry_ner_fn = lambda text: [m.display_name for m in _retry_matcher.match(text)]
@@ -1991,8 +1992,8 @@ def cmd_run(args: argparse.Namespace) -> None:
                     else:
                         time.sleep(2 ** attempt)
 
-            # Response gate: check entity coverage against evidence_used
-            q_entities = retry_ner_fn(item["question"]) if retry_ner_fn else []
+            # Response gate: check entity coverage against evidence_used (skipped for --sr)
+            q_entities = retry_ner_fn(item["question"]) if (retry_ner_fn and not use_sr) else []
             uncovered_srr: list[str] = []
             if q_entities and srr_out["evidence_used"]:
                 ent_vecs = embed_model.encode(q_entities, normalize_embeddings=True,
@@ -3678,6 +3679,8 @@ def _make_parser() -> argparse.ArgumentParser:
                         choices=["vector_first", "graph_first", "global"],
                         dest="search_mode",
                         help="EnhancedSearch retrieval mode: vector_first (default), graph_first (entity graph traversal), global (community summaries only)")
+    g_misc.add_argument("--sr", action="store_true", dest="sr",
+                        help="Structured Response: generate with JSON schema (key_claims + evidence_used) once, no coverage check or gap-fill")
     g_misc.add_argument("--srr", action="store_true", dest="srr",
                         help="Structured Response Retry: generate with JSON schema, check entity coverage, gap-fill and retry (max 2 rounds)")
     g_misc.add_argument("--srr-model", default=None, dest="srr_model",
