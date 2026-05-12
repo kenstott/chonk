@@ -98,11 +98,11 @@ class DuckDBVectorBackend:
     def preload_embeddings(self) -> None:
         """Load all embeddings into RAM for fast batched numpy search."""
         rows = self._conn.execute(
-            """
+            f"""
             SELECT chunk_id, document_name, section, chunk_index,
                    content, breadcrumb, chunk_type, source_offset, source_length,
                    namespace, source_detail, source_id, domain_id, embedding
-            FROM embeddings
+            FROM {self._read_table}
             """
         ).fetchall()
         if not rows:
@@ -115,6 +115,10 @@ class DuckDBVectorBackend:
     @property
     def _conn(self):
         return self._db.conn
+
+    @property
+    def _read_table(self) -> str:
+        return "all_embeddings" if getattr(self, "_global_attached", False) else "embeddings"
 
     # ------------------------------------------------------------------
     # Schema init
@@ -422,7 +426,7 @@ class DuckDBVectorBackend:
                     e.source_length,
                     e.source_detail,
                     1.0 - array_cosine_distance(e.embedding, ?::FLOAT[{self._embedding_dim}]) AS similarity
-                FROM embeddings e
+                FROM {self._read_table} e
                 {where_clause}
                 ORDER BY array_cosine_distance(e.embedding, ?::FLOAT[{self._embedding_dim}]) ASC
                 LIMIT ?
@@ -472,10 +476,10 @@ class DuckDBVectorBackend:
         from ..models import DocumentChunk
 
         rows = self._conn.execute(
-            """
+            f"""
             SELECT document_name, content, section, chunk_index,
                    source_offset, source_length, breadcrumb, source_detail
-            FROM embeddings
+            FROM {self._read_table}
             ORDER BY document_name, chunk_index
             """
         ).fetchall()

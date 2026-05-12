@@ -203,7 +203,7 @@ class Store:
             ON CONFLICT (namespace_id) DO UPDATE SET
                 owner       = excluded.owner,
                 description = excluded.description,
-                updated_at  = current_timestamp
+                updated_at  = now()
             """,
             [namespace_id, owner, description],
         ).fetchall()
@@ -226,7 +226,7 @@ class Store:
                 name         = excluded.name,
                 description  = excluded.description,
                 parent_id    = excluded.parent_id,
-                updated_at   = current_timestamp
+                updated_at   = now()
             """,
             [domain_id, namespace_id, name, description, parent_id],
         ).fetchall()
@@ -264,10 +264,11 @@ class Store:
 
         When include_global=True, always folds in all domains from namespace_id='global'.
         """
+        domains_table = "all_domains" if getattr(self.vector, "_global_attached", False) else "domains"
         pairs = list(namespace_domain_pairs)
         if include_global:
             global_rows = self.vector._conn.execute(
-                "SELECT namespace_id, name FROM domains WHERE namespace_id = ?",
+                f"SELECT namespace_id, name FROM {domains_table} WHERE namespace_id = ?",
                 [GLOBAL_NAMESPACE],
             ).fetchall()
             for row in global_rows:
@@ -284,10 +285,10 @@ class Store:
 
         sql = f"""
             WITH RECURSIVE domain_tree AS (
-                SELECT domain_id FROM domains
+                SELECT domain_id FROM {domains_table}
                 WHERE (namespace_id, name) IN (VALUES {values_placeholders})
                 UNION ALL
-                SELECT d.domain_id FROM domains d
+                SELECT d.domain_id FROM {domains_table} d
                 JOIN domain_tree dt ON d.parent_id = dt.domain_id
             )
             SELECT DISTINCT domain_id FROM domain_tree
@@ -360,6 +361,172 @@ class Store:
         ).fetchall()
         self.vector._fts_dirty = True
         return count_before
+
+    # ------------------------------------------------------------------
+    # Global attach / detach
+    # ------------------------------------------------------------------
+
+    def attach_global(self, global_db_path: str | Path) -> None:
+        """Attach a global read-only DuckDB and create union views.
+
+        After calling this, all read queries transparently span both this
+        store's tables and the global store's tables. Write queries always
+        target only this store's base tables.
+
+        Creates views: all_embeddings, all_chunk_entities, all_svo_triples,
+        all_domains, all_sources, all_namespaces.
+        """
+        from ._schema import CHUNK_ENTITIES_DDL, CHUNK_ENTITIES_MIGRATE_NAMESPACE
+
+        conn = self.vector._conn
+
+        # Ensure lazily-created local tables exist so views can reference them.
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS svo_triples ("
+            "  chunk_id   VARCHAR,"
+            "  subject_id VARCHAR NOT NULL,"
+            "  verb       VARCHAR NOT NULL,"
+            "  object_id  VARCHAR NOT NULL,"
+            "  confidence FLOAT   NOT NULL DEFAULT 1.0,"
+            "  namespace  VARCHAR"
+            ")"
+        ).fetchall()
+        conn.execute(CHUNK_ENTITIES_DDL).fetchall()
+        conn.execute(CHUNK_ENTITIES_MIGRATE_NAMESPACE).fetchall()
+
+        conn.execute(f"ATTACH '{global_db_path}' AS global_db (READ_ONLY)")
+
+        def _global_has(table: str) -> bool:
+            return conn.execute(
+                "SELECT COUNT(*) FROM information_schema.tables "
+                "WHERE table_catalog = 'global_db' AND table_name = ?",
+                [table],
+            ).fetchone()[0] > 0
+
+        # ── all_embeddings ──────────────────────────────────────────────────
+        if _global_has("embeddings"):
+            conn.execute("""
+                CREATE OR REPLACE VIEW all_embeddings AS
+                SELECT chunk_id, document_name, section, chunk_index, content,
+                       breadcrumb, chunk_type, source_offset, source_length,
+                       namespace, source_detail, source_id, domain_id,
+                       session_fingerprint, embedding
+                FROM embeddings
+                UNION ALL
+                SELECT chunk_id, document_name, section, chunk_index, content,
+                       breadcrumb, chunk_type, source_offset, source_length,
+                       namespace, source_detail, source_id, domain_id,
+                       session_fingerprint, embedding
+                FROM global_db.embeddings
+            """)
+        else:
+            conn.execute("""
+                CREATE OR REPLACE VIEW all_embeddings AS
+                SELECT chunk_id, document_name, section, chunk_index, content,
+                       breadcrumb, chunk_type, source_offset, source_length,
+                       namespace, source_detail, source_id, domain_id,
+                       session_fingerprint, embedding
+                FROM embeddings
+            """)
+
+        # ── all_chunk_entities ──────────────────────────────────────────────
+        if _global_has("chunk_entities"):
+            conn.execute("""
+                CREATE OR REPLACE VIEW all_chunk_entities AS
+                SELECT chunk_id, entity_id, frequency, positions_json, score, namespace
+                FROM chunk_entities
+                UNION ALL
+                SELECT chunk_id, entity_id, frequency, positions_json, score, namespace
+                FROM global_db.chunk_entities
+            """)
+        else:
+            conn.execute("""
+                CREATE OR REPLACE VIEW all_chunk_entities AS
+                SELECT chunk_id, entity_id, frequency, positions_json, score, namespace
+                FROM chunk_entities
+            """)
+
+        # ── all_svo_triples ─────────────────────────────────────────────────
+        if _global_has("svo_triples"):
+            conn.execute("""
+                CREATE OR REPLACE VIEW all_svo_triples AS
+                SELECT chunk_id, subject_id, verb, object_id, confidence, namespace
+                FROM svo_triples
+                UNION ALL
+                SELECT chunk_id, subject_id, verb, object_id, confidence, namespace
+                FROM global_db.svo_triples
+            """)
+        else:
+            conn.execute("""
+                CREATE OR REPLACE VIEW all_svo_triples AS
+                SELECT chunk_id, subject_id, verb, object_id, confidence, namespace
+                FROM svo_triples
+            """)
+
+        # ── all_domains ─────────────────────────────────────────────────────
+        if _global_has("domains"):
+            conn.execute("""
+                CREATE OR REPLACE VIEW all_domains AS
+                SELECT domain_id, namespace_id, name, description, parent_id,
+                       created_at, updated_at
+                FROM domains
+                UNION ALL
+                SELECT domain_id, namespace_id, name, description, parent_id,
+                       created_at, updated_at
+                FROM global_db.domains
+            """)
+        else:
+            conn.execute("""
+                CREATE OR REPLACE VIEW all_domains AS
+                SELECT domain_id, namespace_id, name, description, parent_id,
+                       created_at, updated_at
+                FROM domains
+            """)
+
+        # ── all_sources ─────────────────────────────────────────────────────
+        if _global_has("sources"):
+            conn.execute("""
+                CREATE OR REPLACE VIEW all_sources AS
+                SELECT source_id, domain_id, type, uri, config, last_crawled
+                FROM sources
+                UNION ALL
+                SELECT source_id, domain_id, type, uri, config, last_crawled
+                FROM global_db.sources
+            """)
+        else:
+            conn.execute("""
+                CREATE OR REPLACE VIEW all_sources AS
+                SELECT source_id, domain_id, type, uri, config, last_crawled
+                FROM sources
+            """)
+
+        # ── all_namespaces ──────────────────────────────────────────────────
+        if _global_has("namespaces"):
+            conn.execute("""
+                CREATE OR REPLACE VIEW all_namespaces AS
+                SELECT namespace_id, owner, description, created_at, updated_at
+                FROM namespaces
+                UNION ALL
+                SELECT namespace_id, owner, description, created_at, updated_at
+                FROM global_db.namespaces
+            """)
+        else:
+            conn.execute("""
+                CREATE OR REPLACE VIEW all_namespaces AS
+                SELECT namespace_id, owner, description, created_at, updated_at
+                FROM namespaces
+            """)
+
+        self.vector._global_attached = True
+
+    def detach_global(self) -> None:
+        """Drop the union views and detach the global DB."""
+        conn = self.vector._conn
+        for view in ("all_embeddings", "all_chunk_entities", "all_svo_triples",
+                     "all_domains", "all_sources", "all_namespaces"):
+            conn.execute(f"DROP VIEW IF EXISTS {view}")
+        conn.execute("DETACH global_db")
+        self.vector._global_attached = False
 
     def delete_document(self, document_name: str) -> int:
         """Delete all chunks for a document. Returns count deleted."""

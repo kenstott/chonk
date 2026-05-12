@@ -1418,21 +1418,26 @@ def _load_entity_index_from_db(db_path: Path, namespaces: list[str] | None = Non
     from chonk.ner import EntityIndex
 
     con = duckdb.connect(str(db_path), read_only=True)
+    _view_exists = con.execute(
+        "SELECT COUNT(*) FROM information_schema.tables "
+        "WHERE table_name = 'all_chunk_entities'"
+    ).fetchone()[0] > 0
+    _ce_table = "all_chunk_entities" if _view_exists else "chunk_entities"
     if namespaces is not None:
         placeholders = ", ".join(["?" for _ in namespaces])
         rows = con.execute(
-            f"SELECT chunk_id, entity_id, frequency, positions_json, score FROM chunk_entities WHERE namespace IN ({placeholders})",
+            f"SELECT chunk_id, entity_id, frequency, positions_json, score FROM {_ce_table} WHERE namespace IN ({placeholders})",
             namespaces,
         ).fetchall()
         total_chunks = con.execute(
-            f"SELECT COUNT(DISTINCT chunk_id) FROM chunk_entities WHERE namespace IN ({placeholders})",
+            f"SELECT COUNT(DISTINCT chunk_id) FROM {_ce_table} WHERE namespace IN ({placeholders})",
             namespaces,
         ).fetchone()[0]
     else:
         rows = con.execute(
-            "SELECT chunk_id, entity_id, frequency, positions_json, score FROM chunk_entities"
+            f"SELECT chunk_id, entity_id, frequency, positions_json, score FROM {_ce_table}"
         ).fetchall()
-        total_chunks = con.execute("SELECT COUNT(DISTINCT chunk_id) FROM chunk_entities").fetchone()[0]
+        total_chunks = con.execute(f"SELECT COUNT(DISTINCT chunk_id) FROM {_ce_table}").fetchone()[0]
     con.close()
 
     associations = [

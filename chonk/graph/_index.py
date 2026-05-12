@@ -82,15 +82,20 @@ class RelationshipIndex:
         """Load RelationshipIndex from svo_triples table. Returns empty index if table absent."""
         idx = cls()
         try:
+            _view_exists = con.execute(
+                "SELECT COUNT(*) FROM information_schema.tables "
+                "WHERE table_name = 'all_svo_triples'"
+            ).fetchone()[0] > 0
+            table = "all_svo_triples" if _view_exists else "svo_triples"
             if namespaces is not None:
                 placeholders = ", ".join(["?" for _ in namespaces])
                 rows = con.execute(
-                    f"SELECT chunk_id, subject_id, verb, object_id, confidence FROM svo_triples WHERE namespace IN ({placeholders})",
+                    f"SELECT chunk_id, subject_id, verb, object_id, confidence FROM {table} WHERE namespace IN ({placeholders})",
                     namespaces,
                 ).fetchall()
             else:
                 rows = con.execute(
-                    "SELECT chunk_id, subject_id, verb, object_id, confidence FROM svo_triples"
+                    f"SELECT chunk_id, subject_id, verb, object_id, confidence FROM {table}"
                 ).fetchall()
         except Exception:
             return idx
