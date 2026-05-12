@@ -1620,6 +1620,39 @@ export CHONK_DB_CONFIG='{
 
 ---
 
+## Configuration
+
+Chonk supports three configuration levels:
+
+- **Library API** — pass constructor arguments directly to `Store`, `EnhancedSearch`, `DocumentLoader`, etc. No files, no global state. The right choice for application code.
+- **TOML config file** — used by `demo/graphrag_bench.py`. Load with `--config path/to/file.toml`. Configs may chain with `extends = "parent.toml"`. CLI flags override TOML values; TOML values override hardcoded defaults.
+- **CLI flags** — override any TOML value when passed explicitly.
+
+Minimal library example — index then query:
+
+```python
+import numpy as np
+from chonk import Store, EnhancedSearch
+from chonk.ner import EntityIndex, SpacyMatcher
+
+spacy = SpacyMatcher(model="en_core_web_sm", strip_numeric=True)
+query_ner_fn = lambda text: [m.display_name for m in spacy.match(text)]
+
+with Store("my.duckdb", embedding_dim=1024, read_only=True) as store:
+    search = EnhancedSearch(
+        store,
+        entity_index=entity_index,       # built by build-ner or manually
+        query_ner_fn=query_ner_fn,
+        lane_entity_min_sim=0.45,         # drop weak entity-linked candidates
+        entity_ref_expansion=True,        # gap-fill if query entities are missing
+    )
+    results = search.search(query_vec, k=10, query_text="...", mode="vector_first")
+```
+
+For the full reference — index feature flags (`build-ner`, `build-svo`, `build-community`), all `EnhancedSearch` constructor parameters, retrieval modes, generation variants (`--sr`, `--srr`), and TOML schema — see [docs/configuration.md](docs/configuration.md).
+
+---
+
 ## Benchmark runner
 
 `demo/graphrag_bench.py` runs the full GraphRAG retrieval benchmark against a stratified question corpus.
