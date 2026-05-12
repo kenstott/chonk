@@ -8,7 +8,7 @@
 """Live integration tests for S3Transport and DirectoryCrawler (S3) against
 chinook-athena-us-west-1.
 
-Skipped automatically when AWS_ACCESS_KEY_ID is not in the environment.
+Skipped automatically when AWS_ACCESS_KEY_ID_TEST is not in the environment.
 
     pytest tests/integration/test_s3.py -v -s
 """
@@ -28,9 +28,15 @@ if _ENV_FILE.exists():
     except ImportError:
         pass
 
+# Inject test credentials into boto3-visible env vars for the duration of the test session
+if os.environ.get("AWS_ACCESS_KEY_ID_TEST"):
+    os.environ["AWS_ACCESS_KEY_ID"] = os.environ["AWS_ACCESS_KEY_ID_TEST"]
+    os.environ["AWS_SECRET_ACCESS_KEY"] = os.environ["AWS_SECRET_ACCESS_KEY_TEST"]
+    os.environ["AWS_DEFAULT_REGION"] = os.environ.get("AWS_DEFAULT_REGION_TEST", "us-west-1")
+
 _CREDS = pytest.mark.skipif(
-    not os.environ.get("AWS_ACCESS_KEY_ID"),
-    reason="AWS_ACCESS_KEY_ID not set — skipping live S3 tests",
+    not os.environ.get("AWS_ACCESS_KEY_ID_TEST"),
+    reason="AWS_ACCESS_KEY_ID_TEST not set — skipping live S3 tests",
 )
 
 _BUCKET = "chinook-athena-us-west-1"

@@ -50,9 +50,11 @@ from chonk.storage._store import Store
 
 EMBED_MODEL        = "BAAI/bge-large-en-v1.5"
 EMBED_DIM          = 1024
-GEN_MODEL          = "gpt-4o-mini"
-GEN_MODEL_TOGETHER = "Qwen/Qwen2.5-72B-Instruct-Turbo"   # closest serverless Qwen2.5 (14B not available serverless on Together)
-TOGETHER_BASE_URL  = "https://api.together.xyz/v1"
+GEN_MODEL           = "gpt-4o-mini"
+GEN_MODEL_TOGETHER  = "Qwen/Qwen2.5-72B-Instruct-Turbo"   # closest serverless Qwen2.5 (14B not available serverless on Together)
+GEN_MODEL_ANTHROPIC = "claude-sonnet-4-6"
+TOGETHER_BASE_URL   = "https://api.together.xyz/v1"
+ANTHROPIC_BASE_URL  = "https://api.anthropic.com/v1"
 K             = 5
 K_FETCH       = 20    # candidates to retrieve before reranking (ignored when --rerank is off)
 RERANK_MODEL         = "BAAI/bge-reranker-large"       # local cross-encoder
@@ -140,9 +142,20 @@ def cmd_download(args: argparse.Namespace) -> None:
 
 def _load_questions(data_dir: Path) -> list[dict]:
     questions = []
+    seen_files: set[Path] = set()
+    # Load canonical subsets first (stable order)
     for subset in SUBSETS:
         f = data_dir / f"{subset}_questions.jsonl"
         if f.exists():
+            seen_files.add(f)
+            with open(f) as fh:
+                for line in fh:
+                    questions.append(json.loads(line))
+    # Pick up any additional *_questions.jsonl files in the same dir
+    for f in sorted(data_dir.glob("*_questions.jsonl")):
+        if f.name.startswith("."):
+            continue
+        if f not in seen_files:
             with open(f) as fh:
                 for line in fh:
                     questions.append(json.loads(line))
@@ -427,6 +440,20 @@ def cmd_index(args: argparse.Namespace) -> None:
         _persist_entity_index(entity_index, db_path)
 
 
+def _corpus_from_store(store_db: str) -> list[tuple[str, str]]:
+    """Read document texts from an existing Store DB, grouped by document_name."""
+    import duckdb
+    con = duckdb.connect(store_db, read_only=True)
+    rows = con.execute(
+        "SELECT document_name, content FROM embeddings ORDER BY document_name, chunk_index"
+    ).fetchall()
+    con.close()
+    docs: dict[str, list[str]] = {}
+    for doc_name, content in rows:
+        docs.setdefault(doc_name, []).append(content)
+    return [(name, " ".join(chunks)) for name, chunks in docs.items()]
+
+
 def cmd_index_vanilla(args: argparse.Namespace) -> None:
     """Build vanilla RAG index: naive 256-token fixed chunks, no breadcrumbs."""
     import numpy as np
@@ -451,7 +478,11 @@ def cmd_index_vanilla(args: argparse.Namespace) -> None:
         db_path.unlink()
         print(f"Removed existing index: {db_path}")
 
-    corpus = _build_corpus(out_dir)
+    from_store = getattr(args, "from_store", None)
+    if from_store:
+        corpus = _corpus_from_store(from_store)
+    else:
+        corpus = _build_corpus(out_dir)
     print(f"Corpus: {len(corpus)} documents")
     print(f"Naive chunking: {chunk_tokens}-token chunks, {VANILLA_CHUNK_OVERLAP}-token overlap...")
 
@@ -576,6 +607,46 @@ def _extract_structured_answer(text: str) -> str | None:
             return stripped[len("ANSWER:"):].strip()
     return None
 
+_DECOMPOSE_PROMPT = """\
+You are a retrieval query planner. Break the following question into exactly 3 focused sub-queries \
+that, together, would retrieve all evidence needed to answer it. Each sub-query should target a \
+distinct aspect. Return ONLY a JSON array of 3 strings.
+
+Question type: {question_type}
+Question: {question}
+
+Sub-queries (JSON array of 3 strings):"""
+
+
+def _decompose_question(
+    question: str, question_type: str, client, model: str
+) -> list[str]:
+    """Return 3 targeted sub-queries for multi-step retrieval. Falls back to [question] on failure."""
+    import json as _json
+    import re as _re
+
+    prompt = _DECOMPOSE_PROMPT.format(question=question, question_type=question_type or "Unknown")
+    try:
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.0,
+            max_tokens=256,
+        )
+        text = resp.choices[0].message.content.strip()
+        # Try strict parse, then regex extraction
+        try:
+            subs = _json.loads(text)
+        except _json.JSONDecodeError:
+            m = _re.search(r'\[.*?\]', text, _re.DOTALL)
+            subs = _json.loads(m.group(0)) if m else []
+        if isinstance(subs, list) and len(subs) >= 2:
+            return [str(s).strip() for s in subs if str(s).strip()][:4]
+    except Exception as e:
+        print(f"[decompose] error: {type(e).__name__}: {str(e)[:120]}", flush=True)
+    return [question]
+
+
 def _generate_srr(question: str, context: str, client, model: str,
                   temperature: float = 0.0) -> dict:
     """Generate a structured response for SRR. Returns dict with answer/key_claims/evidence_used."""
@@ -604,8 +675,8 @@ def _generate_srr(question: str, context: str, client, model: str,
             if isinstance(obj.get("answer"), str):
                 return {
                     "answer":       obj["answer"],
-                    "key_claims":   obj.get("key_claims", []),
-                    "evidence_used": obj.get("evidence_used", []),
+                    "key_claims":   [x for x in obj.get("key_claims", []) if isinstance(x, str)],
+                    "evidence_used": [x for x in obj.get("evidence_used", []) if isinstance(x, str)],
                 }
         except Exception:
             pass
@@ -894,13 +965,16 @@ def _init_run_db(db_path: Path) -> None:
             rouge_score REAL,
             coverage_score REAL,
             faithfulness REAL,
-            nan_reason TEXT
+            nan_reason TEXT,
+            decomposed_score REAL,
+            decomposed_detail TEXT
         )
     """)
-    try:
-        con.execute("ALTER TABLE eval_scores ADD COLUMN nan_reason TEXT")
-    except Exception:
-        pass  # column already exists
+    for _col, _type in [("nan_reason", "TEXT"), ("decomposed_score", "REAL"), ("decomposed_detail", "TEXT")]:
+        try:
+            con.execute(f"ALTER TABLE eval_scores ADD COLUMN {_col} {_type}")
+        except Exception:
+            pass  # column already exists
     con.close()
 
 
@@ -1216,6 +1290,7 @@ def cmd_run(args: argparse.Namespace) -> None:
     entity_ref_expansion_per_k  = getattr(args, "entity_ref_expansion_per_k", None)
     entity_ref_expansion_min_sim = getattr(args, "entity_ref_expansion_min_sim", None)
     use_cluster = getattr(args, "cluster", False)
+    search_mode = getattr(args, "search_mode", "vector_first")
     use_entity_ref_retry     = getattr(args, "entity_ref_retry", False)
     use_structured_gen       = getattr(args, "structured_gen", False)
     use_breadcrumb_context = getattr(args, "breadcrumb_context", False)
@@ -1264,6 +1339,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         "cluster": use_cluster,
         "ner_x": use_ner_x,
         "srr": getattr(args, "srr", False),
+        "search_mode": search_mode,
         "concentration_threshold": concentration_threshold,
         "query_complexity_threshold": query_complexity_threshold,
         "top_k": top_k,
@@ -1321,22 +1397,42 @@ def cmd_run(args: argparse.Namespace) -> None:
     run_db = _run_db_path(data_dir, run_name)
     _init_run_db(run_db)
 
-    # Resume from DuckDB only for fully-generated results (generated_answer IS NOT NULL).
-    # Rows with context but NULL generated_answer are retrieval-phase stubs — they must
-    # be regenerated, not skipped.
+    # Resume from DuckDB: load fully-generated results AND pre-built work_items.
+    _db_pending_items: list[dict] = []
     if run_db.exists():
         import duckdb as _duckdb
         try:
-            _con = _duckdb.connect(str(run_db), read_only=True)
+            _con = _duckdb.connect(str(run_db))
             _db_done = set(
                 row[0] for row in _con.execute(
                     "SELECT id FROM results WHERE generated_answer IS NOT NULL"
                 ).fetchall()
             )
-            _con.close()
             if _db_done - done_ids:
                 print(f"Resuming from DB: {len(_db_done)} already generated")
                 done_ids.update(_db_done)
+            # Load rows with context already built but gen not yet done — skip retrieval for these
+            _db_rows = _con.execute(
+                "SELECT id, question, source, question_type, context, evidence, "
+                "gold_answer, retrieved_chunks, retrieved_scores, expansion_stats "
+                "FROM results WHERE generated_answer IS NULL AND context IS NOT NULL"
+            ).fetchall()
+            _con.close()
+            for _row in _db_rows:
+                _qid, _q, _src, _qtype, _ctx, _ev, _gold, _cids, _scores, _exp = _row
+                if _qid not in done_ids:
+                    _db_pending_items.append({
+                        "qid": _qid, "question": _q, "source": _src or "?",
+                        "qtype": _qtype or "?", "context": _ctx or "",
+                        "chunk_ids": _cids or [], "scores": _scores or [],
+                        "chunk_texts": [], "expansion_stats": _exp,
+                        "evidence": _ev or [], "gold": _gold or "",
+                        "sub_queries": None,
+                    })
+            if _db_pending_items:
+                _db_pending_ids = {it["qid"] for it in _db_pending_items}
+                done_ids.update(_db_pending_ids)
+                print(f"Resuming {len(_db_pending_items)} pre-built work_items from DB (skipping retrieval)")
         except Exception:
             pass
 
@@ -1381,8 +1477,10 @@ def cmd_run(args: argparse.Namespace) -> None:
             f"Run: python demo/graphrag_bench.py prime-cache --out-dir {args.out_dir}"
         )
 
+    use_srr = getattr(args, "srr", False)
+    use_multi_step = getattr(args, "multi_step", False)
     embed_model = None
-    if use_entity_ref_retry:
+    if use_entity_ref_retry or use_srr:
         _embed_device = os.environ.get("EMBED_DEVICE") or None
         if not _embed_device:
             try:
@@ -1494,7 +1592,6 @@ def cmd_run(args: argparse.Namespace) -> None:
             _conc_search.preload_chunk_cache()
 
         # SRR: preload full chunk pool (id, text, embedding) for gap-fill retrieval
-        use_srr = getattr(args, "srr", False)
         _srr_chunk_pool: list[tuple] = []
         if use_srr:
             all_chunks = store.vector.get_all_chunks()
@@ -1527,16 +1624,65 @@ def cmd_run(args: argparse.Namespace) -> None:
                 _q_entities_by_id.get(q.get("id", f"q{i}"), []) for i, q in pending
             ]
 
+        # Multi-step: decompose each question into sub-queries and pre-embed them
+        _sub_queries_by_idx: dict[int, list[str]] = {}  # j -> [sub_q1, sub_q2, ...]
+        _sub_vecs_by_idx:    dict[int, list] = {}        # j -> [vec1, vec2, ...]
+        if use_multi_step:
+            import openai as _oai
+            _decomp_model = args.gen_model
+            if args.gen_provider == "together":
+                _decomp_client = _oai.OpenAI(
+                    api_key=os.environ["TOGETHER_API_KEY"], base_url=TOGETHER_BASE_URL, timeout=60.0
+                )
+            else:
+                _decomp_client = _oai.OpenAI(api_key=os.environ["OPENAI_API_KEY"], timeout=60.0)
+            _ms_embed = SentenceTransformer(EMBED_MODEL)
+            print(f"[multi-step] Decomposing {len(pending)} questions with {_decomp_model}...", flush=True)
+            for j, (i, q) in enumerate(pending):
+                subs = _decompose_question(
+                    q["question"], q.get("question_type", ""), _decomp_client, _decomp_model
+                )
+                _sub_queries_by_idx[j] = subs
+                vecs = _ms_embed.encode(subs, show_progress_bar=False, normalize_embeddings=True)
+                _sub_vecs_by_idx[j] = list(vecs)
+                if (j + 1) % 50 == 0 or (j + 1) == len(pending):
+                    print(f"  Decomposed {j+1}/{len(pending)}", flush=True)
+            del _ms_embed
+
         # Phase 1: vector search for all questions (sequential, DuckDB serialized)
         _all_hits: list[tuple] = []
         _all_expansion_stats: list = []
         for j, (i, q) in enumerate(pending):
             _q_entities = _precomputed_question_entities[j] if _precomputed_question_entities is not None else None
-            if use_enhanced and enhanced_search is not None:
+            if use_multi_step and j in _sub_vecs_by_idx:
+                # Retrieve for each sub-query, merge by best score per chunk_id
+                _merged: dict[str, tuple] = {}
+                for sub_vec in _sub_vecs_by_idx[j]:
+                    if use_enhanced and enhanced_search is not None:
+                        _sub_scored = enhanced_search.search(
+                            sub_vec, k=fetch_k, query_text=q["question"],
+                            query_entities=_q_entities,
+                            precomputed_entity_vecs=_precomputed_entity_vecs,
+                            mode=search_mode,
+                        )
+                        _sub_hits = [(sc.chunk_id, sc.score, sc.chunk) for sc in _sub_scored]
+                    else:
+                        _sub_hits = store.vector.search(
+                            sub_vec, limit=fetch_k,
+                            query_text=q["question"],
+                            include_breadcrumbs=False,
+                        )
+                    for cid, sc, chunk in _sub_hits:
+                        if cid not in _merged or sc > _merged[cid][1]:
+                            _merged[cid] = (cid, sc, chunk)
+                hits = sorted(_merged.values(), key=lambda x: -x[1])[:fetch_k]
+                expansion_stats = enhanced_search.last_expansion_stats if use_enhanced and enhanced_search else None
+            elif use_enhanced and enhanced_search is not None:
                 scored = enhanced_search.search(
                     q_vecs[j], k=fetch_k, query_text=q["question"],
                     query_entities=_q_entities,
                     precomputed_entity_vecs=_precomputed_entity_vecs,
+                    mode=search_mode,
                 )
                 hits   = [(sc.chunk_id, sc.score, sc.chunk) for sc in scored]
                 expansion_stats = enhanced_search.last_expansion_stats
@@ -1570,6 +1716,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                 print(f"  Vector search {j+1}/{len(pending)}", flush=True)
 
         # Phase 2: batch reranking across all questions (GPU fully utilized)
+        _rerank_ckpt_path = None
         if use_rerank and reranker is not None:
             print(f"  Batch reranking {len(_all_hits)} questions...", flush=True)
             # Move embedder off GPU/MPS so reranker has full VRAM for large batches
@@ -1598,7 +1745,25 @@ def cmd_run(args: argparse.Namespace) -> None:
             except Exception:
                 _rerank_batch_size = 64
             _RERANK_CHUNK = args.rerank_chunk
-            _rerank_ckpt_path = results_dir / f"{run_name}_rerank_ckpt.json"
+            import hashlib as _hl_rr
+            _rerank_key_str = json.dumps({
+                "db": str(db_path),
+                "fetch_k": fetch_k,
+                "top_k": top_k,
+                "enhanced": use_enhanced,
+                "vanilla": use_vanilla,
+                "lane_sim": lane_entity_min_sim,
+                "cluster": use_cluster,
+                "entity_ref": use_entity_ref_expansion,
+                "search_mode": search_mode,
+                "ner_x": use_ner_x,
+                "rerank_provider": rerank_provider,
+                "reranker": (RERANK_MODEL_TOGETHER if rerank_provider == "together"
+                             else RERANK_MODEL_COHERE if rerank_provider == "cohere"
+                             else RERANK_MODEL),
+            }, sort_keys=True)
+            _rerank_cache_key = _hl_rr.md5(_rerank_key_str.encode()).hexdigest()[:16]
+            _rerank_ckpt_path = results_dir / f"_rerank_ckpt_{_rerank_cache_key}.json"
             # Load existing checkpoint: qid -> [chunk_id, ...]
             _rerank_ckpt: dict[str, list[str]] = {}
             if _rerank_ckpt_path.exists():
@@ -1718,6 +1883,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                 "expansion_stats": expansion_stats,
                 "evidence":       q.get("evidence", []),
                 "gold":           str(q.get("answer", "")),
+                "sub_queries":    _sub_queries_by_idx.get(j),
             }
             work_items.append(wi)
 
@@ -1734,11 +1900,24 @@ def cmd_run(args: argparse.Namespace) -> None:
                 pct = 100 * (j + 1) // len(pending)
                 print(f"  Generated {j+1}/{len(pending)} ({pct}%)", flush=True)
 
+    # Prepend pre-built work_items recovered from DB (retrieval already done on prior run)
+    if _db_pending_items:
+        for _it in _db_pending_items:
+            _it["_slot"] = len(work_items)
+            work_items.append(_it)
+        print(f"  Added {len(_db_pending_items)} DB-recovered items; total work_items={len(work_items)}", flush=True)
+
     # Build one client per endpoint (round-robin for parallelism across multiple dedicated endpoints)
     endpoint_ids: list[str] = getattr(args, "endpoint_ids", None) or [args.gen_model]
     if args.gen_provider == "together":
         clients = [
             openai.OpenAI(api_key=os.environ["TOGETHER_API_KEY"], base_url=TOGETHER_BASE_URL, timeout=120.0)
+            for _ in endpoint_ids
+        ]
+    elif args.gen_provider == "anthropic":
+        clients = [
+            openai.OpenAI(api_key=os.environ["ANTHROPIC_API_KEY"], base_url=ANTHROPIC_BASE_URL,
+                          default_headers={"anthropic-version": "2023-06-01"}, timeout=120.0)
             for _ in endpoint_ids
         ]
     else:
@@ -1747,6 +1926,18 @@ def cmd_run(args: argparse.Namespace) -> None:
 
     n_endpoints = len(clients)
     print(f"Generating answers with {args.concurrency} parallel workers across {n_endpoints} endpoint(s)...")
+
+    # Reranking deletes embed_model to free VRAM; reload it if SRR needs it for entity coverage
+    if use_srr and embed_model is None:
+        _embed_device = os.environ.get("EMBED_DEVICE") or None
+        if not _embed_device:
+            try:
+                import torch
+                if hasattr(torch.backends, "mps") and torch.backends.mps.is_available() and not torch.cuda.is_available():
+                    _embed_device = "cpu"
+            except ImportError:
+                pass
+        embed_model = SentenceTransformer(EMBED_MODEL, device=_embed_device) if _embed_device else SentenceTransformer(EMBED_MODEL)
 
     retry_ner_fn = None
     if use_entity_ref_retry or use_srr:
@@ -1757,12 +1948,14 @@ def cmd_run(args: argparse.Namespace) -> None:
     new_results: list[dict] = []
     ckpt_lock   = threading.Lock()
     done_count  = [len(done_ids)]
+    ckpt_counter = [0]
 
     def _process(item: dict) -> dict:
         slot   = item["_slot"] % n_endpoints
         client = clients[slot]
         model  = endpoint_ids[slot]
 
+        answer: str = ""
         srr_stats: dict | None = None
         if use_srr:
             context = item["context"]
@@ -1773,6 +1966,13 @@ def cmd_run(args: argparse.Namespace) -> None:
                                             temperature=gen_temperature)
                     break
                 except Exception as exc:
+                    if "insufficient_quota" in str(exc):
+                        raise
+                    if "429" in str(exc) or "rate_limit" in str(exc).lower():
+                        import re as _re
+                        _m = _re.search(r"try again in (\d+(?:\.\d+)?)s", str(exc), _re.IGNORECASE)
+                        time.sleep(float(_m.group(1)) + 1 if _m else 60)
+                        continue
                     if attempt == 2:
                         srr_out = {"answer": f"[ERROR: {exc}]", "key_claims": [], "evidence_used": []}
                     else:
@@ -1834,6 +2034,13 @@ def cmd_run(args: argparse.Namespace) -> None:
                                        temperature=gen_temperature, structured=use_structured_gen)
                     break
                 except Exception as exc:
+                    if "insufficient_quota" in str(exc):
+                        raise
+                    if "429" in str(exc) or "rate_limit" in str(exc).lower():
+                        import re as _re
+                        _m = _re.search(r"try again in (\d+(?:\.\d+)?)s", str(exc), _re.IGNORECASE)
+                        time.sleep(float(_m.group(1)) + 1 if _m else 60)
+                        continue
                     if attempt == 2:
                         answer = f"[ERROR: {exc}]"
                     else:
@@ -1902,8 +2109,9 @@ def cmd_run(args: argparse.Namespace) -> None:
                 total = done_count[0]
                 if total % 50 == 0:
                     print(f"  {total}/{len(questions)}", flush=True)
-                # Checkpoint every 100 completions
-                if len(new_results) % 100 == 0:
+                # Checkpoint every 100 new completions (independent of resumed done_ids)
+                ckpt_counter[0] += 1
+                if ckpt_counter[0] % 100 == 0:
                     batch = new_results[-100:]
                     with open(ckpt_f, "a") as f:
                         for r in batch:
@@ -1935,7 +2143,6 @@ def cmd_run(args: argparse.Namespace) -> None:
         for r in all_results:
             f.write(json.dumps(r) + "\n")
 
-    _rerank_ckpt_path.unlink(missing_ok=True)
     _write_results_to_db(run_db, all_results)
     _run_completed[0] = True
     print(f"\nComplete: {len(all_results)} results → {results_f} + {run_db}")
@@ -2010,11 +2217,12 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
             for item in done.values():
                 con.execute("DELETE FROM eval_scores WHERE id = ?", [item.get("id")])
                 con.execute(
-                    "INSERT INTO eval_scores VALUES (?,?,?,?,?,?,?)",
+                    "INSERT INTO eval_scores VALUES (?,?,?,?,?,?,?,?,?)",
                     [item.get("id"), item.get("question_type"),
                      item.get("answer_correctness"), item.get("rouge_score"),
                      item.get("coverage_score"), item.get("faithfulness"),
-                     item.get("nan_reason")],
+                     item.get("nan_reason"), item.get("decomposed_score"),
+                     item.get("decomposed_detail")],
                 )
             con.close()
             print(f"  Flushed {len(done)} checkpoint scores to DB")
@@ -2149,10 +2357,16 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
         embedding = CachedEmbeddings()
 
         METRIC_CONFIG = {
-            "Fact Retrieval":       ["rouge_score", "answer_correctness"],
-            "Complex Reasoning":    ["rouge_score", "answer_correctness"],
-            "Contextual Summarize": ["answer_correctness", "coverage_score"],
-            "Creative Generation":  ["answer_correctness", "coverage_score", "faithfulness"],
+            "Fact Retrieval":                   ["rouge_score", "answer_correctness"],
+            "Complex Reasoning":                ["rouge_score", "answer_correctness"],
+            "Contextual Summarize":             ["answer_correctness", "coverage_score"],
+            "Creative Generation":              ["answer_correctness", "coverage_score", "faithfulness"],
+            # FANG-2026 question types
+            "Multi-Document Join":              ["answer_correctness", "decomposed_score"],
+            "Temporal Versioning":              ["answer_correctness", "decomposed_score"],
+            "Cross-Domain Entity Resolution":   ["answer_correctness", "decomposed_score"],
+            "Quantitative Synthesis":           ["answer_correctness", "decomposed_score"],
+            "Absence/Negation":                 ["answer_correctness", "decomposed_score"],
         }
 
         semaphore = asyncio.Semaphore(args.concurrency)
@@ -2273,7 +2487,11 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
                         tasks["faithfulness"] = compute_faithfulness_score(
                             r["question"], r["generated_answer"], r["context"], llm
                         )
-                    _rpm_weights = {"answer_correctness": 3, "coverage_score": 1, "faithfulness": 1}
+                    if "decomposed_score" in metrics:
+                        tasks["decomposed_score"] = compute_decomposed_score(
+                            r["question"], r["generated_answer"], r["ground_truth"], qtype, llm
+                        )
+                    _rpm_weights = {"answer_correctness": 3, "coverage_score": 1, "faithfulness": 1, "decomposed_score": 1}
                     api_count = sum(_rpm_weights.get(k, 0) for k in tasks)
                     for _ in range(api_count):
                         await _acquire_rpm_token()
@@ -2281,7 +2499,17 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
                     for key, val in zip(tasks.keys(), vals):
                         if isinstance(val, BaseException):
                             print(f"[eval] {r['id']} {key} exception: {type(val).__name__}: {val}", flush=True)
-                        result[key] = float(val) if isinstance(val, (int, float)) else float("nan")
+                        if key == "decomposed_score":
+                            # val is (mean_float, detail_dict)
+                            if isinstance(val, tuple):
+                                mean_val, detail = val
+                                result["decomposed_score"] = float(mean_val) if isinstance(mean_val, (int, float)) else float("nan")
+                                result["decomposed_detail"] = json.dumps(detail) if detail else None
+                            else:
+                                result["decomposed_score"] = float("nan")
+                                result["decomposed_detail"] = None
+                        else:
+                            result[key] = float(val) if isinstance(val, (int, float)) else float("nan")
                     nan_metrics = [k for k in tasks if k != "rouge_score" and result.get(k) != result.get(k)]
                     if nan_metrics:
                         # Guided judge reprompt: judge already reasoned but returned malformed JSON.
@@ -2359,12 +2587,13 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
                         con = _connect_with_retry(run_db)
                         con.execute("DELETE FROM eval_scores WHERE id = ?", [result.get("id")])
                         con.execute(
-                            "INSERT INTO eval_scores VALUES (?,?,?,?,?,?,?)",
+                            "INSERT INTO eval_scores VALUES (?,?,?,?,?,?,?,?,?)",
                             [
                                 result.get("id"), result.get("question_type"),
                                 result.get("answer_correctness"), result.get("rouge_score"),
                                 result.get("coverage_score"), result.get("faithfulness"),
-                                result.get("nan_reason"),
+                                result.get("nan_reason"), result.get("decomposed_score"),
+                                result.get("decomposed_detail"),
                             ],
                         )
                         con.close()
@@ -2477,12 +2706,13 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
         con.execute("DELETE FROM eval_scores")
         for item in done.values():
             con.execute(
-                "INSERT INTO eval_scores VALUES (?,?,?,?,?,?,?)",
+                "INSERT INTO eval_scores VALUES (?,?,?,?,?,?,?,?,?)",
                 [
                     item.get("id"), item.get("question_type"),
                     item.get("answer_correctness"), item.get("rouge_score"),
                     item.get("coverage_score"), item.get("faithfulness"),
-                    item.get("nan_reason"),
+                    item.get("nan_reason"), item.get("decomposed_score"),
+                    item.get("decomposed_detail"),
                 ],
             )
         con.close()
@@ -2583,10 +2813,10 @@ def cmd_backfill_db(args: argparse.Namespace) -> None:
     for r in eval_rows:
         con.execute("DELETE FROM eval_scores WHERE id = ?", [r["id"]])
         con.execute(
-            "INSERT INTO eval_scores VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO eval_scores VALUES (?,?,?,?,?,?,?,?,?)",
             [r["id"], r.get("question_type"), r.get("answer_correctness"),
              r.get("rouge_score"), r.get("coverage_score"), r.get("faithfulness"),
-             r.get("nan_reason")],
+             r.get("nan_reason"), r.get("decomposed_score"), r.get("decomposed_detail")],
         )
     con.close()
     print(f"Backfilled {len(records)} results + {len(eval_rows)} eval_scores → {run_db}")
@@ -3351,6 +3581,8 @@ def _make_parser() -> argparse.ArgumentParser:
     p.add_argument("--out-dir", default="/tmp/grb", metavar="DIR")
     p.add_argument("--force", action="store_true", help="Delete existing index and reindex")
     p.add_argument("--chunk-tokens", type=int, default=None)
+    p.add_argument("--from-store", metavar="DB", default=None,
+                   help="Build corpus from an existing Store DuckDB instead of corpus_info.json")
     p.set_defaults(func=cmd_index_vanilla)
 
     # run
@@ -3360,8 +3592,8 @@ def _make_parser() -> argparse.ArgumentParser:
                    help="Limit to first N questions (for testing)")
     p.add_argument("--gen-model",     default=GEN_MODEL,
                    help=f"Generation model (default: {GEN_MODEL})")
-    p.add_argument("--gen-provider",  default="openai", choices=["openai", "together"],
-                   help="API provider for generation: openai or together (default: openai)")
+    p.add_argument("--gen-provider",  default="openai", choices=["openai", "together", "anthropic"],
+                   help="API provider for generation: openai, together, or anthropic (default: openai)")
     p.add_argument("--concurrency",   type=int, default=20,
                    help="Parallel workers (default: 20)")
     p.add_argument("--run-name",      default="contextual",
@@ -3427,8 +3659,14 @@ def _make_parser() -> argparse.ArgumentParser:
     g_misc = p.add_argument_group("misc")
     g_misc.add_argument("--entity-ref-retry", action="store_true", dest="entity_ref_retry",
                         help="On refusal answer, retry with partial-answer hint (max 1 retry)")
+    g_misc.add_argument("--search-mode", default="vector_first",
+                        choices=["vector_first", "graph_first", "global"],
+                        dest="search_mode",
+                        help="EnhancedSearch retrieval mode: vector_first (default), graph_first (entity graph traversal), global (community summaries only)")
     g_misc.add_argument("--srr", action="store_true", dest="srr",
                         help="Structured Response Retry: generate with JSON schema, check entity coverage, gap-fill and retry (max 2 rounds)")
+    g_misc.add_argument("--multi-step", action="store_true", dest="multi_step",
+                        help="Multi-step retrieval: decompose each question into sub-queries, retrieve for each, merge hits before generation")
     g_misc.add_argument("--structured-gen", action="store_true", dest="structured_gen",
                         help="Require ANSWER: <text> format from generator; retry once if non-compliant; strip marker before judge")
     g_misc.add_argument("--top-k", type=int, default=None, dest="top_k", metavar="K",

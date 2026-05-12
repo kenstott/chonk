@@ -19,3 +19,6 @@ On any new requirement, constraint, feature, or design decision: spawn a backgro
 
 # Swarm Mode & Teammate Spawning
 @.claude/refs/swarm-mode.md
+
+# Project Memory
+Read `CLAUDE_MEMORY.md` at the start of any session involving GPU runs, experiment state, or scoring.

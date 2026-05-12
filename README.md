@@ -1620,6 +1620,33 @@ export CHONK_DB_CONFIG='{
 
 ---
 
+## Benchmark runner
+
+`demo/graphrag_bench.py` runs the full GraphRAG retrieval benchmark against a stratified question corpus.
+
+**Additional requirements:**
+
+```bash
+# S3-compatible storage (Cloudflare R2 used in this project)
+pip install "chonk[s3]"   # boto3
+
+# rclone — sync large result files (checkpoints, run DBs, embeddings) to/from R2
+brew install rclone
+# Configure R2 remote named "chonk":
+#   rclone config create chonk s3 provider Cloudflare \
+#     access_key_id <key> secret_access_key <secret> \
+#     endpoint https://<account>.r2.cloudflarestorage.com
+```
+
+Large files (`work/results/*.jsonl`, `work/data/runs/*.duckdb`, `work/data/*.npy/npz`) are not tracked in git. Sync them with:
+
+```bash
+rclone sync work/results r2:chonk/results
+rclone sync work/data    r2:chonk/data
+```
+
+---
+
 ## Demos
 
 ```bash
