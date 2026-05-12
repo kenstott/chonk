@@ -5,6 +5,7 @@
 # permission from the copyright holder.
 
 """chonk search — enhanced 4-dimensional cohort assembly."""
-from ._enhanced import EnhancedSearch
 
-__all__ = ["EnhancedSearch"]
+from ._enhanced import EnhancedSearch, RetrievalTrace
+
+__all__ = ["EnhancedSearch", "RetrievalTrace"]

@@ -61,7 +61,7 @@ from .ner import (
     normalize_schema_term,
 )
 from .schema import ColumnMeta, EndpointMeta, FieldMeta, TableMeta
-from .search import EnhancedSearch
+from .search import EnhancedSearch, RetrievalTrace
 from .storage import (
     DuckDBVectorBackend,
     PgVectorBackend,
@@ -141,6 +141,7 @@ __all__ = [
     "ClusterMap",
     # Search
     "EnhancedSearch",
+    "RetrievalTrace",
     # Schema metadata
     "ColumnMeta",
     "TableMeta",

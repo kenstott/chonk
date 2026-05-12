@@ -2108,6 +2108,11 @@ def cmd_run(args: argparse.Namespace) -> None:
         _complexity_matcher = SpacyMatcher(model=SPACY_MODEL, strip_numeric=True)
         print("Loaded SpacyMatcher for query complexity / concentration gating.")
 
+    # Run schema migrations in write mode before opening read-only.
+    # ALTER TABLE is idempotent; this is a no-op when columns already exist.
+    with Store(db_path, embedding_dim=EMBED_DIM) as _mig:
+        pass
+
     work_items: list[dict] = []
     with Store(db_path, embedding_dim=EMBED_DIM, read_only=True) as store:
         enhanced_search = _build_enhanced_search(
@@ -2754,6 +2759,7 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
 
     run_db = _run_db_path(data_dir, run_name)
     if run_db.exists():
+        _init_run_db(run_db)  # migrate schema (ALTER TABLE is idempotent)
         records = _read_results_from_db(run_db)
     elif results_f.exists():
         records = [json.loads(line) for line in open(results_f)]

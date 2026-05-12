@@ -24,7 +24,8 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Literal, overload
 
 import numpy as np
 
@@ -37,6 +38,48 @@ if TYPE_CHECKING:
     from ..storage._store import Store
 
 _log = logging.getLogger(__name__)
+
+
+def _tally_provenance(results: list[ScoredChunk]) -> dict[str, int]:
+    tally: dict[str, int] = {}
+    for sc in results:
+        tally[sc.provenance] = tally.get(sc.provenance, 0) + 1
+    return tally
+
+
+@dataclass
+class RetrievalTrace:
+    """Per-query record of which graph assets contributed to the retrieval cohort.
+
+    Populated by :meth:`EnhancedSearch.search` when ``return_trace=True``.
+    All list fields contain chunk IDs or entity IDs as strings.
+    """
+
+    mode: str = "vector_first"
+    query_entities: list[str] = field(default_factory=list)
+
+    # vector_first path
+    seed_chunk_ids: list[str] = field(default_factory=list)
+    structural_chunk_ids: list[str] = field(default_factory=list)
+    entity_expanded_chunk_ids: list[str] = field(default_factory=list)
+    cluster_expanded_chunk_ids: list[str] = field(default_factory=list)
+    entity_embed_expanded_chunk_ids: list[str] = field(default_factory=list)
+
+    # graph_first path
+    graph_traversal_entities: list[str] = field(default_factory=list)
+    svo_triples_count: int = 0
+
+    # global path
+    community_chunk_ids: list[str] = field(default_factory=list)
+
+    # entity-ref expansion (all modes)
+    ref_expansion_missing: list[str] = field(default_factory=list)
+    ref_expansion_found: list[str] = field(default_factory=list)
+    ref_expansion_chunks_added: int = 0
+
+    # final result summary
+    pool_size: int = 0
+    final_provenance: dict[str, int] = field(default_factory=dict)
 
 
 class EnhancedSearch:
@@ -131,6 +174,34 @@ class EnhancedSearch:
     # Public interface
     # ------------------------------------------------------------------
 
+    @overload
+    def search(
+        self,
+        query_embedding,
+        k: int = ...,
+        query_text: str | None = ...,
+        query_entities: list[str] | None = ...,
+        precomputed_entity_vecs: dict[str, np.ndarray] | None = ...,
+        mode: str = ...,
+        namespaces: list[str] | None = ...,
+        domain_ids: list[str] | None = ...,
+        return_trace: Literal[False] = ...,
+    ) -> list[ScoredChunk]: ...
+
+    @overload
+    def search(
+        self,
+        query_embedding,
+        k: int = ...,
+        query_text: str | None = ...,
+        query_entities: list[str] | None = ...,
+        precomputed_entity_vecs: dict[str, np.ndarray] | None = ...,
+        mode: str = ...,
+        namespaces: list[str] | None = ...,
+        domain_ids: list[str] | None = ...,
+        return_trace: Literal[True] = ...,
+    ) -> tuple[list[ScoredChunk], RetrievalTrace]: ...
+
     def search(
         self,
         query_embedding,
@@ -141,7 +212,8 @@ class EnhancedSearch:
         mode: str = "vector_first",
         namespaces: list[str] | None = None,
         domain_ids: list[str] | None = None,
-    ) -> list[ScoredChunk]:
+        return_trace: bool = False,
+    ) -> list[ScoredChunk] | tuple[list[ScoredChunk], RetrievalTrace]:
         """Assemble a top-k cohort using all enabled expansion dimensions.
 
         Args:
@@ -151,16 +223,27 @@ class EnhancedSearch:
             mode: Retrieval mode — "vector_first" (default), "graph_first", or "global".
                   "graph_first": drives on RelationshipIndex traversal, vector reranks.
                   "global": searches community_summary chunks only.
+            return_trace: If True, return ``(results, RetrievalTrace)`` instead of just results.
 
         Returns:
             Ranked list of up to k ScoredChunk objects.
         """
+        trace = RetrievalTrace(mode=mode) if return_trace else None
+
         if mode == "global":
-            return self._global_search(query_embedding, k, query_text, namespaces, domain_ids)
+            results = self._global_search(query_embedding, k, query_text, namespaces, domain_ids, _trace=trace)
+            if trace is not None:
+                trace.pool_size = len(results)
+                trace.final_provenance = _tally_provenance(results)
+            return (results, trace) if return_trace else results
         if mode == "graph_first":
-            return self._graph_first_search(
-                query_embedding, k, query_text, query_entities, precomputed_entity_vecs, namespaces, domain_ids
+            results = self._graph_first_search(
+                query_embedding, k, query_text, query_entities, precomputed_entity_vecs, namespaces, domain_ids, _trace=trace
             )
+            if trace is not None:
+                trace.pool_size = len(results)
+                trace.final_provenance = _tally_provenance(results)
+            return (results, trace) if return_trace else results
         if mode != "vector_first":
             raise ValueError(f"Unknown search mode {mode!r}. Use 'vector_first', 'graph_first', or 'global'.")
 
@@ -184,6 +267,9 @@ class EnhancedSearch:
         seed_limit = k * self._seed_multiplier
         cluster_budget = self._cluster_budget if self._cluster_budget is not None else 2 * k
 
+        if trace is not None:
+            trace.query_entities = list(query_entities) if query_entities else []
+
         # ------ Step 1: Seed -----------------------------------------------
         raw_seeds = self._store.search(query_embedding, limit=seed_limit, query_text=query_text, namespaces=namespaces, domain_ids=domain_ids)
         # raw_seeds: list of (chunk_id, score, DocumentChunk)
@@ -203,9 +289,13 @@ class EnhancedSearch:
                 )
             seed_chunk_ids.append(chunk_id)
 
+        if trace is not None:
+            trace.seed_chunk_ids = list(seed_chunk_ids)
+
         # ------ Step 2: Structural expansion --------------------------------
         if self._structural:
             structural_ids = self._structural_neighbors(seed_chunk_ids)
+            _structural_added: list[str] = []
             for chunk_id, chunk in structural_ids:
                 if chunk_id not in pool:
                     pool[chunk_id] = ScoredChunk(
@@ -214,11 +304,15 @@ class EnhancedSearch:
                         score=0.0,
                         provenance="structural",
                     )
+                    _structural_added.append(chunk_id)
+            if trace is not None:
+                trace.structural_chunk_ids = _structural_added
 
         # ------ Step 3: Entity expansion ------------------------------------
         entity_source_ids = list(pool.keys())  # seed + structural
         expanded_entity_ids: set[str] = set()
         query_vec_flat = query_embedding.flatten().astype("float32") if self._lane_entity_min_sim is not None else None
+        _entity_added: list[str] = []
 
         if self._entity and self._entity_index is not None:
             for cid in entity_source_ids:
@@ -243,9 +337,14 @@ class EnhancedSearch:
                                     provenance="entity_adjacent",
                                     linked_by=entity_id,
                                 )
+                                _entity_added.append(linked_chunk_id)
+
+        if trace is not None:
+            trace.entity_expanded_chunk_ids = _entity_added
 
         # ------ Step 4: Cluster expansion (budget-limited) ------------------
         cluster_count = 0
+        _cluster_added: list[str] = []
         if self._cluster and self._cluster_map is not None and cluster_budget > 0:
             for entity_id in expanded_entity_ids:
                 if cluster_count >= cluster_budget:
@@ -272,8 +371,13 @@ class EnhancedSearch:
                                     cluster=cluster_id,
                                 )
                                 cluster_count += 1
+                                _cluster_added.append(linked_chunk_id)
+
+        if trace is not None:
+            trace.cluster_expanded_chunk_ids = _cluster_added
 
         # ------ Step 5: Entity embedding ANN expansion ----------------------
+        _entity_embed_added: list[str] = []
         if (
             self._entity_embed
             and self._entity_embeddings is not None
@@ -285,6 +389,8 @@ class EnhancedSearch:
         ):
             import numpy as np
             query_ents = query_entities if query_entities is not None else self._ner_fn(query_text)
+            if trace is not None and query_ents and not trace.query_entities:
+                trace.query_entities = list(query_ents)
             if query_ents:
                 if precomputed_entity_vecs is not None:
                     vecs = [precomputed_entity_vecs[e] for e in query_ents if e in precomputed_entity_vecs]
@@ -313,6 +419,10 @@ class EnhancedSearch:
                                         provenance="entity_adjacent",
                                         linked_by=eid,
                                     )
+                                    _entity_embed_added.append(linked_chunk_id)
+
+        if trace is not None:
+            trace.entity_embed_expanded_chunk_ids = _entity_embed_added
 
         # ------ Step 6: Score and select top-k ------------------------------
         candidates = list(pool.values())
@@ -325,9 +435,13 @@ class EnhancedSearch:
             if ents is None and self._query_ner_fn is not None and query_text:
                 ents = self._query_ner_fn(query_text)
             if ents:
-                results = self._entity_ref_expand(results, pool, query_embedding, ents, k, query_text, precomputed_entity_vecs, namespaces, domain_ids)
+                results = self._entity_ref_expand(results, pool, query_embedding, ents, k, query_text, precomputed_entity_vecs, namespaces, domain_ids, _trace=trace)
 
-        return results
+        if trace is not None:
+            trace.pool_size = len(pool)
+            trace.final_provenance = _tally_provenance(results)
+
+        return (results, trace) if return_trace else results
 
     # ------------------------------------------------------------------
     # graph_first mode
@@ -342,6 +456,7 @@ class EnhancedSearch:
         precomputed_entity_vecs,
         namespaces: list[str] | None = None,
         domain_ids: list[str] | None = None,
+        _trace: RetrievalTrace | None = None,
     ) -> list[ScoredChunk]:
         """Driver: RelationshipIndex traversal. Assist: vector rerank via _select_cohort.
 
@@ -379,14 +494,24 @@ class EnhancedSearch:
                 domain_ids=domain_ids,
             )
 
+        if _trace is not None:
+            _trace.query_entities = list(ents)
+
         # Traverse RelationshipIndex: collect related entity IDs
         related: set[str] = set()
+        svo_count = 0
         for entity_id in ents:
             for triple in self._relationship_index.get_objects(entity_id):
                 related.add(triple.object_id)
+                svo_count += 1
             for triple in self._relationship_index.get_subjects(entity_id):
                 related.add(triple.subject_id)
+                svo_count += 1
         related -= set(ents)  # exclude the query entities themselves
+
+        if _trace is not None:
+            _trace.graph_traversal_entities = list(related)
+            _trace.svo_triples_count = svo_count
 
         ns_chunk_ids: set[str] | None = None
         if namespaces:
@@ -450,6 +575,7 @@ class EnhancedSearch:
         query_text: str | None,
         namespaces: list[str] | None = None,
         domain_ids: list[str] | None = None,
+        _trace: RetrievalTrace | None = None,
     ) -> list[ScoredChunk]:
         """Driver: vector search over community_summary chunks only."""
         raw = self._store.search(
@@ -469,6 +595,8 @@ class EnhancedSearch:
                 score=score,
                 provenance="seed",
             ))
+        if _trace is not None:
+            _trace.community_chunk_ids = [sc.chunk_id for sc in results]
         return results
 
     # ------------------------------------------------------------------
@@ -486,6 +614,7 @@ class EnhancedSearch:
         precomputed_entity_vecs: dict[str, np.ndarray] | None = None,
         namespaces: list[str] | None = None,
         domain_ids: list[str] | None = None,
+        _trace: RetrievalTrace | None = None,
     ) -> list[ScoredChunk]:
         """Post-selection: if query entities are absent from top-k, expand via semantic search."""
         result_text = " ".join((sc.chunk.content or "") for sc in results).lower()
@@ -493,6 +622,10 @@ class EnhancedSearch:
 
         if not missing:
             self.last_expansion_stats = {"invoked": False, "missing_entities": []}
+            if _trace is not None:
+                _trace.ref_expansion_missing = []
+                _trace.ref_expansion_found = []
+                _trace.ref_expansion_chunks_added = 0
             return results
 
         new_pool = dict(existing_pool)
@@ -543,13 +676,18 @@ class EnhancedSearch:
                         if e not in found_entities:
                             found_entities.append(e)
 
+        chunks_added = len(new_pool) - len(existing_pool)
         self.last_expansion_stats = {
             "invoked": True,
             "missing_entities": missing,
             "found_entities": found_entities,
             "unresolved_entities": [e for e in missing if e not in found_entities],
-            "new_chunks_added": len(new_pool) - len(existing_pool),
+            "new_chunks_added": chunks_added,
         }
+        if _trace is not None:
+            _trace.ref_expansion_missing = list(missing)
+            _trace.ref_expansion_found = list(found_entities)
+            _trace.ref_expansion_chunks_added = chunks_added
 
         if not found_entities:
             return results
