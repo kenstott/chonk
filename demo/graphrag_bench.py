@@ -439,6 +439,12 @@ def cmd_index(args: argparse.Namespace) -> None:
             entity_index = _build_entity_index_from_store(store)
         _persist_entity_index(entity_index, db_path)
 
+    if getattr(args, "with_community", False):
+        cmd_build_community(args)
+
+    if getattr(args, "with_svo", False):
+        cmd_build_svo(args)
+
 
 def _corpus_from_store(store_db: str) -> list[tuple[str, str]]:
     """Read document texts from an existing Store DB, grouped by document_name."""
@@ -913,6 +919,102 @@ def cmd_build_community(args: argparse.Namespace) -> None:
         raise RuntimeError("Could not acquire write lock on DB after 10 minutes.")
 
 
+def cmd_build_svo(args: argparse.Namespace) -> None:
+    """Extract SVO triples from all chunks and persist to svo_triples table."""
+    import concurrent.futures
+
+    import duckdb
+
+    from chonk.graph import RelationshipIndex, SVOExtractor
+
+    data_dir = Path(args.out_dir) / "data"
+    db_name  = getattr(args, "db_name", None) or DB_FILENAME
+    db_path  = data_dir / db_name
+    force    = getattr(args, "force", False)
+    gen_model    = getattr(args, "gen_model", GEN_MODEL)
+    gen_provider = getattr(args, "gen_provider", "openai")
+    concurrency  = getattr(args, "concurrency", 4)
+
+    if not db_path.exists():
+        raise FileNotFoundError(f"Index DB not found: {db_path}")
+
+    if not force:
+        con = duckdb.connect(str(db_path), read_only=True)
+        try:
+            n = con.execute("SELECT COUNT(*) FROM svo_triples").fetchone()[0]
+            con.close()
+            if n > 0:
+                print(f"svo_triples already populated ({n:,} rows) — skipping. Use --force to rebuild.")
+                return
+        except Exception:
+            con.close()
+
+    import openai as _oai
+
+    if gen_provider == "together":
+        _oai_client = _oai.OpenAI(
+            api_key=os.environ["TOGETHER_API_KEY"], base_url=TOGETHER_BASE_URL, timeout=120.0
+        )
+    elif gen_provider == "anthropic":
+        _oai_client = _oai.OpenAI(
+            api_key=os.environ["ANTHROPIC_API_KEY"], base_url=ANTHROPIC_BASE_URL,
+            default_headers={"anthropic-version": "2023-06-01"}, timeout=120.0,
+        )
+    else:
+        _oai_client = _oai.OpenAI(api_key=os.environ["OPENAI_API_KEY"], timeout=60.0)
+
+    class _OpenAILLMClient:
+        def complete(self, prompt: str) -> str:
+            resp = _oai_client.chat.completions.create(
+                model=gen_model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0,
+            )
+            return resp.choices[0].message.content or ""
+
+    llm = _OpenAILLMClient()
+    extractor = SVOExtractor(llm)
+
+    con_ro = duckdb.connect(str(db_path), read_only=True)
+    rows = con_ro.execute("SELECT chunk_id, content FROM embeddings").fetchall()
+    con_ro.close()
+    print(f"Loaded {len(rows):,} chunks from {db_path}")
+
+    relationship_index = RelationshipIndex()
+
+    def _extract_one(row):
+        chunk_id, content = row
+        return extractor.extract(content or "", chunk_id=chunk_id)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as pool:
+        futures = {pool.submit(_extract_one, row): row for row in rows}
+        done = 0
+        for fut in concurrent.futures.as_completed(futures):
+            triples = fut.result()
+            for t in triples:
+                relationship_index.add(t)
+            done += 1
+            if done % 100 == 0 or done == len(rows):
+                print(f"  {done:,}/{len(rows):,} chunks processed, {len(relationship_index):,} triples so far")
+
+    import time as _time
+    for _attempt in range(60):
+        try:
+            con_rw = duckdb.connect(str(db_path))
+            n_written = relationship_index.save_to_db(con_rw)
+            con_rw.close()
+            print(f"Persisted {n_written:,} triples → {db_path}")
+            break
+        except Exception as _e:
+            if "lock" in str(_e).lower() or "conflict" in str(_e).lower():
+                print(f"  DB locked, waiting 10s... (attempt {_attempt+1}/60)", flush=True)
+                _time.sleep(10)
+            else:
+                raise
+    else:
+        raise RuntimeError("Could not acquire write lock on DB after 10 minutes.")
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Per-run DuckDB helpers
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1195,6 +1297,18 @@ def _build_enhanced_search(store, db_path: Path | None = None, use_ner_x: bool =
                     texts, normalize_embeddings=True, show_progress_bar=False
                 )
 
+            import duckdb as _ddb
+
+            from chonk.graph import RelationshipIndex
+
+            _con = _ddb.connect(str(db_path), read_only=True)
+            relationship_index = RelationshipIndex.load_from_db(_con)
+            _con.close()
+            if len(relationship_index) == 0:
+                relationship_index = None
+            else:
+                print(f"  Loaded {len(relationship_index):,} SVO triples from DB.")
+
             return EnhancedSearch(
                 store,
                 entity_index=entity_index,
@@ -1207,6 +1321,7 @@ def _build_enhanced_search(store, db_path: Path | None = None, use_ner_x: bool =
                 entity_ref_expansion_per_k=entity_ref_expansion_per_k,
                 entity_ref_expansion_min_sim=entity_ref_expansion_min_sim,
                 lane_entity_min_sim=lane_entity_min_sim,
+                relationship_index=relationship_index,
                 **ner_x_kwargs,
                 **embed_fn_kwargs,
             )
@@ -3581,6 +3696,17 @@ def _make_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-chunk", type=int, default=None)
     p.add_argument("--with-ner", action="store_true",
                    help="Run NER + cluster after indexing and persist to DB")
+    p.add_argument("--with-community", action="store_true", dest="with_community",
+                   help="Build community index after indexing and persist to DB")
+    p.add_argument("--with-svo", action="store_true", dest="with_svo",
+                   help="Extract SVO triples after indexing and persist to DB (requires --gen-model / --gen-provider)")
+    p.add_argument("--gen-model", default=GEN_MODEL, dest="gen_model",
+                   help=f"Generation model for --with-svo (default: {GEN_MODEL})")
+    p.add_argument("--gen-provider", default="openai", choices=["openai", "together", "anthropic"],
+                   dest="gen_provider",
+                   help="API provider for --with-svo (default: openai)")
+    p.add_argument("--db-name", default=None, dest="db_name",
+                   help="DB filename override for --with-community / --with-svo")
     p.set_defaults(func=cmd_index)
 
     # build-ner
@@ -3713,6 +3839,21 @@ def _make_parser() -> argparse.ArgumentParser:
                    help="Community label method: ner_embedding (default) uses entity embeddings; term_freq uses word frequency")
     p.add_argument("--force", action="store_true", help="Rebuild even if already populated")
     p.set_defaults(func=cmd_build_community)
+
+    # build-svo
+    p = sub.add_parser("build-svo", help="Extract SVO triples from all chunks and persist to svo_triples table")
+    p.add_argument("--out-dir", default="/tmp/grb", metavar="DIR")
+    p.add_argument("--db-name", default=None, dest="db_name",
+                   help=f"DB filename inside {{out_dir}}/data/ (default: {DB_FILENAME})")
+    p.add_argument("--force", action="store_true", help="Rebuild even if already populated")
+    p.add_argument("--gen-model", default=GEN_MODEL, dest="gen_model",
+                   help=f"LLM model for triple extraction (default: {GEN_MODEL})")
+    p.add_argument("--gen-provider", default="openai", choices=["openai", "together", "anthropic"],
+                   dest="gen_provider",
+                   help="API provider for LLM (default: openai)")
+    p.add_argument("--concurrency", type=int, default=4,
+                   help="Parallel extraction workers (default: 4)")
+    p.set_defaults(func=cmd_build_svo)
 
     # use-endpoints — run benchmark against existing Together dedicated endpoints
     p = sub.add_parser("use-endpoints", help="Run benchmark using existing Together dedicated endpoints")

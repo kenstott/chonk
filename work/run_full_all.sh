@@ -213,30 +213,30 @@ run_and_eval_rp ner_ref_laned60_community_k30_gpt4o_full \
     --gen-model gpt-4o \
     $NOBC
 
-run_and_eval_rp ner_ref_laned60_community_k30_gpt4o_srr_full \
+run_and_eval_rp ner_ref_laned60_community_k30_gpt4o_sr_full \
     --enhanced --entity-ref-expansion \
     --lane-entity-min-sim 0.60 \
     --community-context --community-min-coherence 0.5 \
     --top-k 30 \
     --gen-model gpt-4o \
-    --srr \
+    --sr \
     $NOBC
 
-run_and_eval_rp ner_ref_rerank_laned60_community_k30_gpt4o_srr_full \
+run_and_eval_rp ner_ref_rerank_laned60_community_k30_gpt4o_sr_full \
     --rerank --enhanced --entity-ref-expansion \
     --lane-entity-min-sim 0.60 \
     --community-context --community-min-coherence 0.5 \
     --top-k 30 \
     --gen-model gpt-4o \
-    --srr \
+    --sr \
     $NOBC
 
-run_and_eval_rp ner_ref_laned60_community_k30_mini_srr_full \
+run_and_eval_rp ner_ref_laned60_community_k30_mini_sr_full \
     --enhanced --entity-ref-expansion \
     --lane-entity-min-sim 0.60 \
     --community-context --community-min-coherence 0.5 \
     --top-k 30 \
-    --srr \
+    --sr \
     $NOBC
 
 run_and_eval_rp ner_ref_rerank_laned60_community_k30_mini_srr_full \
@@ -247,14 +247,14 @@ run_and_eval_rp ner_ref_rerank_laned60_community_k30_mini_srr_full \
     --srr \
     $NOBC
 
-run_and_eval_rp ner_ref_laned60_community_k30_llama8b_srr_full \
+run_and_eval_rp ner_ref_laned60_community_k30_llama8b_sr_full \
     --enhanced --entity-ref-expansion \
     --lane-entity-min-sim 0.60 \
     --community-context --community-min-coherence 0.5 \
     --top-k 30 \
     --gen-provider together \
     --gen-model "meta-llama/Meta-Llama-3-8B-Instruct-Lite" \
-    --srr \
+    --sr \
     $NOBC
 
 run_and_eval_rp ner_ref_rerank_laned60_community_k10_llama8b_srr_full \

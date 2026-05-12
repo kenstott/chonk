@@ -50,3 +50,46 @@ class RelationshipIndex:
 
     def __len__(self) -> int:
         return sum(len(v) for v in self._by_subject.values())
+
+    def save_to_db(self, con) -> int:
+        """Upsert all triples into svo_triples table. Returns count written."""
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS svo_triples (
+                chunk_id    VARCHAR,
+                subject_id  VARCHAR NOT NULL,
+                verb        VARCHAR NOT NULL,
+                object_id   VARCHAR NOT NULL,
+                confidence  FLOAT   NOT NULL DEFAULT 1.0
+            )
+        """)
+        con.execute("DELETE FROM svo_triples")
+        rows = [
+            (t.source_chunk_id, t.subject_id, t.verb, t.object_id, t.confidence)
+            for triples in self._by_subject.values()
+            for t in triples
+        ]
+        if rows:
+            con.executemany("INSERT INTO svo_triples VALUES (?, ?, ?, ?, ?)", rows)
+        return len(rows)
+
+    @classmethod
+    def load_from_db(cls, con) -> RelationshipIndex:
+        """Load RelationshipIndex from svo_triples table. Returns empty index if table absent."""
+        idx = cls()
+        try:
+            rows = con.execute(
+                "SELECT chunk_id, subject_id, verb, object_id, confidence FROM svo_triples"
+            ).fetchall()
+        except Exception:
+            return idx
+        for chunk_id, subject_id, verb, object_id, confidence in rows:
+            idx.add(
+                SVOTriple(
+                    subject_id=subject_id,
+                    verb=verb,
+                    object_id=object_id,
+                    confidence=confidence,
+                    source_chunk_id=chunk_id,
+                )
+            )
+        return idx
