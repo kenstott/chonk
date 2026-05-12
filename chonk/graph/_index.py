@@ -59,27 +59,39 @@ class RelationshipIndex:
                 subject_id  VARCHAR NOT NULL,
                 verb        VARCHAR NOT NULL,
                 object_id   VARCHAR NOT NULL,
-                confidence  FLOAT   NOT NULL DEFAULT 1.0
+                confidence  FLOAT   NOT NULL DEFAULT 1.0,
+                namespace   VARCHAR
             )
         """)
+        con.execute("ALTER TABLE svo_triples ADD COLUMN IF NOT EXISTS namespace VARCHAR")
         con.execute("DELETE FROM svo_triples")
-        rows = [
-            (t.source_chunk_id, t.subject_id, t.verb, t.object_id, t.confidence)
-            for triples in self._by_subject.values()
-            for t in triples
-        ]
+        rows = []
+        for triples in self._by_subject.values():
+            for t in triples:
+                ns_row = con.execute(
+                    "SELECT namespace FROM embeddings WHERE chunk_id = ?", [t.source_chunk_id]
+                ).fetchone()
+                namespace = ns_row[0] if ns_row else None
+                rows.append((t.source_chunk_id, t.subject_id, t.verb, t.object_id, t.confidence, namespace))
         if rows:
-            con.executemany("INSERT INTO svo_triples VALUES (?, ?, ?, ?, ?)", rows)
+            con.executemany("INSERT INTO svo_triples VALUES (?, ?, ?, ?, ?, ?)", rows)
         return len(rows)
 
     @classmethod
-    def load_from_db(cls, con) -> RelationshipIndex:
+    def load_from_db(cls, con, namespaces: list[str] | None = None) -> RelationshipIndex:
         """Load RelationshipIndex from svo_triples table. Returns empty index if table absent."""
         idx = cls()
         try:
-            rows = con.execute(
-                "SELECT chunk_id, subject_id, verb, object_id, confidence FROM svo_triples"
-            ).fetchall()
+            if namespaces is not None:
+                placeholders = ", ".join(["?" for _ in namespaces])
+                rows = con.execute(
+                    f"SELECT chunk_id, subject_id, verb, object_id, confidence FROM svo_triples WHERE namespace IN ({placeholders})",
+                    namespaces,
+                ).fetchall()
+            else:
+                rows = con.execute(
+                    "SELECT chunk_id, subject_id, verb, object_id, confidence FROM svo_triples"
+                ).fetchall()
         except Exception:
             return idx
         for chunk_id, subject_id, verb, object_id, confidence in rows:

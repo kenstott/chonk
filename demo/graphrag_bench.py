@@ -964,9 +964,13 @@ def _persist_entity_index(entity_index, db_path: Path) -> None:
     con.execute("DELETE FROM chunk_entities")
     con.execute("DELETE FROM entities")
     for a in data["associations"]:
+        ns_row = con.execute(
+            "SELECT namespace FROM embeddings WHERE chunk_id = ?", [a["chunk_id"]]
+        ).fetchone()
+        namespace = ns_row[0] if ns_row else None
         con.execute(
-            "INSERT OR REPLACE INTO chunk_entities(chunk_id, entity_id, frequency, positions_json, score) VALUES (?,?,?,?,?)",
-            [a["chunk_id"], a["entity_id"], a["frequency"], json.dumps(a["positions"]), a["score"]],
+            "INSERT OR REPLACE INTO chunk_entities(chunk_id, entity_id, frequency, positions_json, score, namespace) VALUES (?,?,?,?,?,?)",
+            [a["chunk_id"], a["entity_id"], a["frequency"], json.dumps(a["positions"]), a["score"], namespace],
         )
         con.execute(
             "INSERT OR IGNORE INTO entities(id, name, display_name) VALUES (?,?,?)",
@@ -1357,17 +1361,28 @@ def _load_entity_embeddings(db_path: Path):
     return mat, ids
 
 
-def _load_entity_index_from_db(db_path: Path) -> EntityIndex:
+def _load_entity_index_from_db(db_path: Path, namespaces: list[str] | None = None) -> EntityIndex:
     """Reconstruct EntityIndex from persisted chunk_entities table."""
     import duckdb
 
     from chonk.ner import EntityIndex
 
     con = duckdb.connect(str(db_path), read_only=True)
-    rows = con.execute(
-        "SELECT chunk_id, entity_id, frequency, positions_json, score FROM chunk_entities"
-    ).fetchall()
-    total_chunks = con.execute("SELECT COUNT(DISTINCT chunk_id) FROM chunk_entities").fetchone()[0]
+    if namespaces is not None:
+        placeholders = ", ".join(["?" for _ in namespaces])
+        rows = con.execute(
+            f"SELECT chunk_id, entity_id, frequency, positions_json, score FROM chunk_entities WHERE namespace IN ({placeholders})",
+            namespaces,
+        ).fetchall()
+        total_chunks = con.execute(
+            f"SELECT COUNT(DISTINCT chunk_id) FROM chunk_entities WHERE namespace IN ({placeholders})",
+            namespaces,
+        ).fetchone()[0]
+    else:
+        rows = con.execute(
+            "SELECT chunk_id, entity_id, frequency, positions_json, score FROM chunk_entities"
+        ).fetchall()
+        total_chunks = con.execute("SELECT COUNT(DISTINCT chunk_id) FROM chunk_entities").fetchone()[0]
     con.close()
 
     associations = [
@@ -1423,7 +1438,7 @@ def _prune_redundant(hits, db_conn, threshold):
     return selected
 
 
-def _build_enhanced_search(store, db_path: Path | None = None, use_ner_x: bool = False, embed_model=None, entity_ref_expansion: bool = False, entity_ref_expansion_k: int = 20, entity_ref_expansion_per_k: int | None = None, entity_ref_expansion_min_sim: float | None = None, use_cluster: bool = False, lane_entity_min_sim: float | None = None):
+def _build_enhanced_search(store, db_path: Path | None = None, use_ner_x: bool = False, embed_model=None, entity_ref_expansion: bool = False, entity_ref_expansion_k: int = 20, entity_ref_expansion_per_k: int | None = None, entity_ref_expansion_min_sim: float | None = None, use_cluster: bool = False, lane_entity_min_sim: float | None = None, namespaces: list[str] | None = None):
     """Load EnhancedSearch: from pre-built DB tables if available, else rebuild in memory."""
     import duckdb
 
@@ -1437,7 +1452,7 @@ def _build_enhanced_search(store, db_path: Path | None = None, use_ner_x: bool =
         con.close()
         if n > 0:
             print(f"Loading EntityIndex from DB ({n:,} associations)...")
-            entity_index = _load_entity_index_from_db(db_path)
+            entity_index = _load_entity_index_from_db(db_path, namespaces=namespaces)
             print(f"  {entity_index.total_chunks():,} chunks, {len(entity_index.entity_ids()):,} entities")
 
             cluster_map = None
@@ -1476,7 +1491,7 @@ def _build_enhanced_search(store, db_path: Path | None = None, use_ner_x: bool =
             from chonk.graph import RelationshipIndex
 
             _con = _ddb.connect(str(db_path), read_only=True)
-            relationship_index = RelationshipIndex.load_from_db(_con)
+            relationship_index = RelationshipIndex.load_from_db(_con, namespaces=namespaces)
             _con.close()
             if len(relationship_index) == 0:
                 relationship_index = None
@@ -1861,6 +1876,7 @@ def cmd_run(args: argparse.Namespace) -> None:
             entity_ref_expansion_min_sim=entity_ref_expansion_min_sim,
             use_cluster=use_cluster,
             lane_entity_min_sim=lane_entity_min_sim,
+            namespaces=namespaces,
         ) if use_enhanced else None
 
         # Build concentration fallback search (entity ref expansion) if gating is enabled
@@ -1874,6 +1890,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                 entity_ref_expansion_min_sim=entity_ref_expansion_min_sim,
                 use_cluster=False,
                 lane_entity_min_sim=lane_entity_min_sim,
+                namespaces=namespaces,
             )
 
         # Preload embeddings + chunk metadata into RAM (eliminates per-query DuckDB round-trips)

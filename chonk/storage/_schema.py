@@ -52,8 +52,13 @@ CREATE TABLE IF NOT EXISTS chunk_entities (
     frequency       INTEGER NOT NULL DEFAULT 1,
     positions_json  TEXT NOT NULL DEFAULT '[]',
     score           REAL NOT NULL DEFAULT 0.0,
+    namespace       TEXT,
     PRIMARY KEY (chunk_id, entity_id)
 )
+""".strip()
+
+CHUNK_ENTITIES_MIGRATE_NAMESPACE = """
+ALTER TABLE chunk_entities ADD COLUMN IF NOT EXISTS namespace TEXT
 """.strip()
 
 DOCUMENTS_DDL = """
@@ -80,5 +85,6 @@ def get_ddl(embedding_dim: int = 1024) -> list[str]:
         EMBEDDINGS_MIGRATE_SOURCE_DETAIL,
         ENTITIES_DDL,
         CHUNK_ENTITIES_DDL,
+        CHUNK_ENTITIES_MIGRATE_NAMESPACE,
         DOCUMENTS_DDL,
     ]
