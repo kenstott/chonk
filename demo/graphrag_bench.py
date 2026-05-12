@@ -101,6 +101,92 @@ PUBLISHED_BASELINES = {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# TOML config loading
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _deep_merge(base: dict, override: dict) -> dict:
+    result = dict(base)
+    for k, v in override.items():
+        if isinstance(v, dict) and isinstance(result.get(k), dict):
+            result[k] = _deep_merge(result[k], v)
+        else:
+            result[k] = v
+    return result
+
+
+def _load_config(config_path: str | None, _depth: int = 0) -> dict:
+    if config_path is None:
+        return {}
+    if _depth > 5:
+        raise RuntimeError(f"TOML extends chain exceeds max depth 5 at {config_path}")
+    path = Path(config_path)
+    with open(path, "rb") as f:
+        data = tomllib.load(f)
+    parent: dict = {}
+    if "extends" in data:
+        parent_path = (path.parent / data.pop("extends")).resolve()
+        parent = _load_config(str(parent_path), _depth + 1)
+    return _deep_merge(parent, data)
+
+
+def _apply_config(cfg: dict, args: argparse.Namespace) -> None:
+    if "run_name" in cfg and not getattr(args, "run_name", None):
+        args.run_name = cfg["run_name"]
+
+    idx = cfg.get("index", {})
+    if idx.get("db_name") and not getattr(args, "db_name", None):
+        args.db_name = idx["db_name"]
+
+    rnk = cfg.get("rerank", {})
+    if rnk.get("enabled") and not getattr(args, "rerank", False):
+        args.rerank = True
+
+    ret = cfg.get("retrieval", {})
+    if ret.get("top_k") is not None and getattr(args, "top_k", None) is None:
+        args.top_k = ret["top_k"]
+    if ret.get("search_mode") and getattr(args, "search_mode", "vector_first") == "vector_first":
+        args.search_mode = ret["search_mode"]
+    if ret.get("enhanced") and not getattr(args, "enhanced", False):
+        args.enhanced = True
+    if ret.get("entity_ref_expansion") and not getattr(args, "entity_ref_expansion", False):
+        args.entity_ref_expansion = True
+    if ret.get("lane_entity_min_sim") is not None and getattr(args, "lane_entity_min_sim", None) is None:
+        args.lane_entity_min_sim = ret["lane_entity_min_sim"]
+    if ret.get("redundancy_threshold") is not None and getattr(args, "redundancy_threshold", None) is None:
+        args.redundancy_threshold = ret["redundancy_threshold"]
+    if ret.get("cluster") and not getattr(args, "cluster", False):
+        args.cluster = True
+    if ret.get("vanilla") and not getattr(args, "vanilla", False):
+        args.vanilla = True
+    if ret.get("multi_step") and not getattr(args, "multi_step", False):
+        args.multi_step = True
+
+    comm = ret.get("community", {})
+    if comm.get("enabled") and not getattr(args, "community_context", False):
+        args.community_context = True
+    if comm.get("min_coherence") is not None and getattr(args, "community_min_coherence", None) is None:
+        args.community_min_coherence = comm["min_coherence"]
+
+    g = cfg.get("gen", {})
+    if g.get("model") and getattr(args, "gen_model", None) in (None, "gpt-4o-mini"):
+        args.gen_model = g["model"]
+    if g.get("provider") and getattr(args, "gen_provider", "openai") == "openai":
+        args.gen_provider = g["provider"]
+
+    sr_cfg = cfg.get("sr", {})
+    if sr_cfg.get("enabled") and not getattr(args, "sr", False):
+        args.sr = True
+
+    srr_cfg = cfg.get("srr", {})
+    if srr_cfg.get("enabled") and not getattr(args, "srr", False):
+        args.srr = True
+    if srr_cfg.get("model") and not getattr(args, "srr_model", None):
+        args.srr_model = srr_cfg["model"]
+    if srr_cfg.get("provider") and not getattr(args, "srr_provider", None):
+        args.srr_provider = srr_cfg["provider"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Phase 1: Download
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1385,6 +1471,9 @@ def cmd_run(args: argparse.Namespace) -> None:
     import numpy as np
     import openai
     from sentence_transformers import SentenceTransformer
+
+    _cfg = _load_config(getattr(args, "config", None))
+    _apply_config(_cfg, args)
 
     out_dir     = Path(args.out_dir)
     data_dir    = out_dir / "data"
@@ -3682,6 +3771,79 @@ def cmd_prime_cache(args: argparse.Namespace) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# run-all and init-config commands
+# ─────────────────────────────────────────────────────────────────────────────
+
+def cmd_run_all(args: argparse.Namespace) -> None:
+    config_dir = Path(args.config_dir)
+    toml_files = sorted(config_dir.glob("*.toml"))
+    if not toml_files:
+        raise RuntimeError(f"No *.toml files found in {config_dir}")
+
+    out_dir = Path(args.out_dir)
+    results_dir = out_dir / "results"
+
+    ap = _make_parser()
+
+    for toml_path in toml_files:
+        cfg = _load_config(str(toml_path))
+        run_name = cfg.get("run_name")
+        if not run_name:
+            print(f"SKIP {toml_path.name}: no run_name")
+            continue
+
+        eval_file = results_dir / f"bench_eval_{run_name}_rp.json"
+        if eval_file.exists():
+            print(f"=== SKIP {run_name}_rp (done) ===")
+            continue
+
+        print(f"=== RUN {run_name} ===")
+        run_args = ap.parse_args([
+            "run",
+            "--out-dir", str(out_dir),
+            "--config", str(toml_path),
+            "--run-name", run_name,
+        ] + (["--question-ids", args.question_ids] if args.question_ids else []))
+        cmd_run(run_args)
+
+        print(f"=== EVAL {run_name}_rp ===")
+        rp_src = results_dir / f"{run_name}.jsonl"
+        rp_dst = results_dir / f"{run_name}_rp.jsonl"
+        if rp_src.exists() and not rp_dst.exists():
+            import shutil
+            shutil.copy(str(rp_src), str(rp_dst))
+        eval_args = ap.parse_args([
+            "eval",
+            "--out-dir", str(out_dir),
+            "--run-name", f"{run_name}_rp",
+            "--judge", "gpt-4o-mini",
+            "--eval-rpm", "8000",
+            "--eval-batch-size", "20",
+            "--concurrency", "50",
+            "--nan-limit", "136",
+        ])
+        cmd_bench_eval(eval_args)
+
+
+def cmd_init_config(args: argparse.Namespace) -> None:
+
+    out_dir = Path(args.out_dir)
+    configs_dir = out_dir / "configs"
+    configs_dir.mkdir(parents=True, exist_ok=True)
+    dest = configs_dir / "base.toml"
+    if dest.exists() and not getattr(args, "force", False):
+        print(f"Exists (use --force to overwrite): {dest}")
+        return
+    src = Path(__file__).parent.parent / "work" / "configs" / "base.toml"
+    if src.exists():
+        import shutil
+        shutil.copy(str(src), str(dest))
+        print(f"Written: {dest}")
+    else:
+        raise FileNotFoundError(f"Source base.toml not found at {src}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # CLI
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -3842,6 +4004,8 @@ def _make_parser() -> argparse.ArgumentParser:
                         help="Override DB filename inside {out_dir}/data/ (default: auto from --breadcrumb-embed)")
     g_misc.add_argument("--question-ids", default=None, dest="question_ids", metavar="PATH",
                         help="JSON file with list of question IDs to run (default: all)")
+    g_misc.add_argument("--config", default=None, metavar="TOML",
+                        help="Path to run config TOML file; CLI flags override")
 
     p.set_defaults(func=cmd_run)
 
@@ -3983,6 +4147,21 @@ def _make_parser() -> argparse.ArgumentParser:
     p.add_argument("--exclude", default=None, metavar="STR",
                    help="Exclude runs whose name contains STR (e.g. 'full' to show only grid runs)")
     p.set_defaults(func=cmd_bench_report)
+
+    # run-all — run every TOML config in a directory, skipping completed runs
+    p = sub.add_parser("run-all", help="Run all TOML configs in a directory, then eval each")
+    p.add_argument("--config-dir", required=True, metavar="DIR",
+                   help="Directory containing *.toml run configs")
+    p.add_argument("--out-dir", default="/tmp/grb", metavar="DIR")
+    p.add_argument("--question-ids", default=None, dest="question_ids", metavar="PATH",
+                   help="JSON file with list of question IDs to run (default: all)")
+    p.set_defaults(func=cmd_run_all)
+
+    # init-config — write base.toml to {out_dir}/configs/
+    p = sub.add_parser("init-config", help="Write base.toml with all defaults to {out_dir}/configs/")
+    p.add_argument("--out-dir", default="/tmp/grb", metavar="DIR")
+    p.add_argument("--force", action="store_true", help="Overwrite if exists")
+    p.set_defaults(func=cmd_init_config)
 
     return ap
 
