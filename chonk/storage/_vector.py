@@ -168,6 +168,7 @@ class DuckDBVectorBackend:
         namespace: str | None = None,
         source_id: str | None = None,
         domain_id: str | None = None,
+        session_fingerprint: str | None = None,
     ) -> None:
         """Insert chunks with embeddings into the embeddings table.
 
@@ -177,6 +178,7 @@ class DuckDBVectorBackend:
             namespace: Optional partition key. None means no namespace filter at search time.
             source_id: Optional source registry ID for the originating source.
             domain_id: Optional domain registry ID (denormalization of source_id → domain).
+            session_fingerprint: Optional fingerprint tagging community summary chunks.
         """
         if not chunks:
             return
@@ -215,6 +217,7 @@ class DuckDBVectorBackend:
                 source_detail_str,
                 source_id,
                 domain_id,
+                session_fingerprint,
                 embedding,
             ))
 
@@ -223,8 +226,8 @@ class DuckDBVectorBackend:
             INSERT INTO embeddings
                 (chunk_id, document_name, section, chunk_index, content,
                  breadcrumb, chunk_type, source_offset, source_length, namespace,
-                 source_detail, source_id, domain_id, embedding)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 source_detail, source_id, domain_id, session_fingerprint, embedding)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT DO NOTHING
             """,
             records,
@@ -339,6 +342,7 @@ class DuckDBVectorBackend:
         namespaces: list[str] | None = None,
         chunk_types: list[str] | None = None,
         domain_ids: list[str] | None = None,
+        session_fingerprint: str | None = None,
     ) -> list[tuple[str, float, object]]:
         """Search by vector similarity, with optional BM25 hybrid re-ranking.
 
@@ -398,6 +402,9 @@ class DuckDBVectorBackend:
                 placeholders = ", ".join("?" * len(domain_ids))
                 clauses.append(f"e.domain_id IN ({placeholders})")
                 params.extend(domain_ids)
+            if session_fingerprint is not None:
+                clauses.append("e.session_fingerprint = ?")
+                params.append(session_fingerprint)
             where_clause = ("WHERE " + " AND ".join(clauses)) if clauses else ""
             params += [query, fetch_limit]
 

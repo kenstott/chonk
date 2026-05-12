@@ -94,6 +94,7 @@ class EnhancedSearch:
         entity_ref_expansion_min_sim: float | None = None,
         query_ner_fn: Callable[[str], list[str]] | None = None,
         lane_entity_min_sim: float | None = None,
+        session_fingerprint: str | None = None,
     ):
         self._store = store
         self._entity_index = entity_index
@@ -123,6 +124,7 @@ class EnhancedSearch:
         self._entity_ref_expansion_min_sim = entity_ref_expansion_min_sim
         self._query_ner_fn = query_ner_fn
         self._lane_entity_min_sim = lane_entity_min_sim
+        self._session_fingerprint = session_fingerprint
         self.last_expansion_stats: dict | None = None
 
     # ------------------------------------------------------------------
@@ -457,6 +459,7 @@ class EnhancedSearch:
             chunk_types=["community_summary"],
             namespaces=namespaces,
             domain_ids=domain_ids,
+            session_fingerprint=self._session_fingerprint,
         )
         results: list[ScoredChunk] = []
         for chunk_id, score, chunk in raw:

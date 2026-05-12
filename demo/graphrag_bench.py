@@ -1045,6 +1045,7 @@ def cmd_build_community(args: argparse.Namespace) -> None:
     from sentence_transformers import SentenceTransformer
 
     from chonk.community import CommunityIndex
+    from chonk.storage._store import Store
 
     data_dir = Path(args.out_dir) / "data"
     db_path  = data_dir / args.db_name
@@ -1052,9 +1053,18 @@ def cmd_build_community(args: argparse.Namespace) -> None:
     sim_threshold = getattr(args, "sim_threshold", 0.6)
     force    = getattr(args, "force", False)
     label_strategy = getattr(args, "community_label_strategy", "ner_embedding")
+    domain_ids = getattr(args, "domain_ids", None)
 
     if not db_path.exists():
         raise FileNotFoundError(f"Index DB not found: {db_path}")
+
+    # Fingerprint-based cache check when domain_ids are scoped
+    if domain_ids and not force:
+        fingerprint = Store.session_fingerprint(domain_ids)
+        with Store(db_path, embedding_dim=EMBED_DIM) as _cache_store:
+            if _cache_store.community_cache_valid(fingerprint, domain_ids):
+                print(f"Community cache hit for fingerprint {fingerprint}")
+                return
 
     # Check if already built
     if not force:
@@ -1128,6 +1138,13 @@ def cmd_build_community(args: argparse.Namespace) -> None:
                 raise
     else:
         raise RuntimeError("Could not acquire write lock on DB after 10 minutes.")
+
+    # Write community cache entry when domain-scoped
+    if domain_ids:
+        fingerprint = Store.session_fingerprint(domain_ids)
+        with Store(db_path, embedding_dim=EMBED_DIM) as _cache_store:
+            _cache_store.write_community_cache(fingerprint, domain_ids)
+        print(f"  Community cache written for fingerprint {fingerprint}")
 
 
 def cmd_build_svo(args: argparse.Namespace) -> None:
@@ -1477,7 +1494,12 @@ def _build_enhanced_search(store, db_path: Path | None = None, use_ner_x: bool =
 
     from chonk.ner import EntityIndex, SpacyMatcher
     from chonk.search import EnhancedSearch
+    from chonk.storage._store import Store as _Store
     from chonk.storage._vector import DuckDBVectorBackend
+
+    _session_fingerprint: str | None = (
+        _Store.session_fingerprint(domain_ids) if domain_ids else None
+    )
 
     if db_path is not None and db_path.exists():
         con = duckdb.connect(str(db_path), read_only=True)
@@ -1544,6 +1566,7 @@ def _build_enhanced_search(store, db_path: Path | None = None, use_ner_x: bool =
                 entity_ref_expansion_min_sim=entity_ref_expansion_min_sim,
                 lane_entity_min_sim=lane_entity_min_sim,
                 relationship_index=relationship_index,
+                session_fingerprint=_session_fingerprint,
                 **ner_x_kwargs,
                 **embed_fn_kwargs,
             )
@@ -1580,6 +1603,7 @@ def _build_enhanced_search(store, db_path: Path | None = None, use_ner_x: bool =
         entity_ref_expansion_per_k=entity_ref_expansion_per_k,
         entity_ref_expansion_min_sim=entity_ref_expansion_min_sim,
         lane_entity_min_sim=lane_entity_min_sim,
+        session_fingerprint=_session_fingerprint,
     )
 
 

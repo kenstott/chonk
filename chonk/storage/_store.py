@@ -72,6 +72,7 @@ class Store:
         namespace: str | None = None,
         source_id: str | None = None,
         domain_id: str | None = None,
+        session_fingerprint: str | None = None,
     ) -> None:
         """Add chunks with embeddings. embeddings is np.ndarray shape (n, dim).
 
@@ -80,8 +81,78 @@ class Store:
                        None means no namespace — backwards-compatible default.
             source_id: Optional source registry ID for the originating source.
             domain_id: Optional domain registry ID (denormalization of source_id → domain).
+            session_fingerprint: Optional fingerprint tagging community summary chunks.
         """
-        self.vector.add_chunks(chunks, embeddings, namespace=namespace, source_id=source_id, domain_id=domain_id)
+        self.vector.add_chunks(chunks, embeddings, namespace=namespace, source_id=source_id, domain_id=domain_id, session_fingerprint=session_fingerprint)
+
+    @staticmethod
+    def session_fingerprint(domain_ids: list[str]) -> str:
+        """Stable hex fingerprint of a sorted domain_ids set."""
+        import hashlib
+        key = ",".join(sorted(domain_ids))
+        return hashlib.sha256(key.encode()).hexdigest()[:16]
+
+    def community_cache_valid(self, fingerprint: str, domain_ids: list[str]) -> bool:
+        """True if fingerprint exists in cache AND chunk_count matches current count."""
+        row = self.vector._conn.execute(
+            "SELECT chunk_count FROM community_cache WHERE fingerprint = ?",
+            [fingerprint],
+        ).fetchone()
+        if row is None:
+            return False
+        current_count = self.vector._conn.execute(
+            "SELECT COUNT(*) FROM embeddings WHERE domain_id IN ({})".format(
+                ", ".join("?" * len(domain_ids))
+            ),
+            domain_ids,
+        ).fetchone()[0]
+        return row[0] == current_count
+
+    def write_community_cache(self, fingerprint: str, domain_ids: list[str]) -> None:
+        """Record a community cache entry after building communities for domain_ids."""
+        import json as _json
+        chunk_count = self.vector._conn.execute(
+            "SELECT COUNT(*) FROM embeddings WHERE domain_id IN ({})".format(
+                ", ".join("?" * len(domain_ids))
+            ),
+            domain_ids,
+        ).fetchone()[0]
+        self.vector._conn.execute(
+            """
+            INSERT INTO community_cache (fingerprint, domain_ids, chunk_count)
+            VALUES (?, ?, ?)
+            ON CONFLICT (fingerprint) DO UPDATE SET
+                domain_ids  = excluded.domain_ids,
+                chunk_count = excluded.chunk_count,
+                created_at  = current_timestamp
+            """,
+            [fingerprint, _json.dumps(sorted(domain_ids)), chunk_count],
+        ).fetchall()
+
+    def invalidate_community_cache(self, domain_id: str) -> int:
+        """Delete cache entries that include domain_id. Returns count deleted."""
+        rows = self.vector._conn.execute(
+            "SELECT fingerprint, domain_ids FROM community_cache"
+        ).fetchall()
+        import json as _json
+        to_delete = [
+            r[0] for r in rows
+            if domain_id in _json.loads(r[1])
+        ]
+        if not to_delete:
+            return 0
+        placeholders = ", ".join("?" * len(to_delete))
+        # Delete stale community summary chunks
+        self.vector._conn.execute(
+            f"DELETE FROM embeddings WHERE session_fingerprint IN ({placeholders})",
+            to_delete,
+        ).fetchall()
+        self.vector._conn.execute(
+            f"DELETE FROM community_cache WHERE fingerprint IN ({placeholders})",
+            to_delete,
+        ).fetchall()
+        self.vector._fts_dirty = True
+        return len(to_delete)
 
     def search(
         self,
@@ -91,6 +162,7 @@ class Store:
         namespaces: list[str] | None = None,
         chunk_types: list[str] | None = None,
         domain_ids: list[str] | None = None,
+        session_fingerprint: str | None = None,
     ) -> list:
         """Hybrid or pure vector search.
 
@@ -101,6 +173,8 @@ class Store:
                          None searches all chunk types — backwards-compatible default.
             domain_ids: If provided, restrict results to rows in these domain_ids.
                         Independent of namespaces; when both set both apply (AND).
+            session_fingerprint: If provided, restrict results to rows with this
+                        session_fingerprint. Used to filter community summary chunks.
 
         Returns:
             List of (chunk_id, score, DocumentChunk).
@@ -108,6 +182,7 @@ class Store:
         return self.vector.search(
             query_embedding, limit=limit, query_text=query_text,
             namespaces=namespaces, chunk_types=chunk_types, domain_ids=domain_ids,
+            session_fingerprint=session_fingerprint,
         )
 
     # ------------------------------------------------------------------

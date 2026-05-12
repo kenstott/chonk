@@ -43,6 +43,19 @@ EMBEDDINGS_MIGRATE_DOMAIN_ID = """
 ALTER TABLE embeddings ADD COLUMN IF NOT EXISTS domain_id VARCHAR
 """.strip()
 
+EMBEDDINGS_MIGRATE_SESSION_FINGERPRINT = """
+ALTER TABLE embeddings ADD COLUMN IF NOT EXISTS session_fingerprint VARCHAR
+""".strip()
+
+COMMUNITY_CACHE_DDL = """
+CREATE TABLE IF NOT EXISTS community_cache (
+    fingerprint   VARCHAR PRIMARY KEY,
+    domain_ids    JSON,
+    chunk_count   INTEGER,
+    created_at    TIMESTAMP DEFAULT current_timestamp
+)
+""".strip()
+
 NAMESPACES_DDL = """
 CREATE TABLE IF NOT EXISTS namespaces (
     namespace_id  VARCHAR PRIMARY KEY,
@@ -130,6 +143,8 @@ def get_ddl(embedding_dim: int = 1024) -> list[str]:
         EMBEDDINGS_MIGRATE_SOURCE_DETAIL,
         EMBEDDINGS_MIGRATE_SOURCE_ID,
         EMBEDDINGS_MIGRATE_DOMAIN_ID,
+        EMBEDDINGS_MIGRATE_SESSION_FINGERPRINT,
+        COMMUNITY_CACHE_DDL,
         NAMESPACES_DDL,
         DOMAINS_DDL,
         DOMAINS_MIGRATE_PARENT_ID,
