@@ -14,6 +14,8 @@ from ._pool import ThreadLocalDuckDB
 from ._relational import RelationalStore
 from ._vector import DuckDBVectorBackend
 
+GLOBAL_NAMESPACE = "global"
+
 
 class Store:
     """Composed storage facade backed by DuckDB.
@@ -137,19 +139,21 @@ class Store:
         namespace_id: str,
         name: str,
         description: str | None = None,
+        parent_id: str | None = None,
     ) -> None:
         """Upsert a domain record."""
         self.vector._conn.execute(
             """
-            INSERT INTO domains (domain_id, namespace_id, name, description)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO domains (domain_id, namespace_id, name, description, parent_id)
+            VALUES (?, ?, ?, ?, ?)
             ON CONFLICT (domain_id) DO UPDATE SET
                 namespace_id = excluded.namespace_id,
                 name         = excluded.name,
                 description  = excluded.description,
+                parent_id    = excluded.parent_id,
                 updated_at   = current_timestamp
             """,
-            [domain_id, namespace_id, name, description],
+            [domain_id, namespace_id, name, description, parent_id],
         ).fetchall()
 
     def register_source(
@@ -176,25 +180,59 @@ class Store:
             [source_id, domain_id, type, uri, config_json],
         ).fetchall()
 
-    def resolve_domain_ids(self, namespace_domain_pairs: list[tuple[str, str]]) -> list[str]:
-        """Return domain_ids matching (namespace_id, name) pairs.
+    def resolve_domain_ids(
+        self,
+        namespace_domain_pairs: list[tuple[str, str]],
+        include_global: bool = True,
+    ) -> list[str]:
+        """Resolve (namespace_id, domain_name) pairs to domain_ids, including all descendants.
 
-        Args:
-            namespace_domain_pairs: List of (namespace_id, domain_name) tuples.
-
-        Returns:
-            List of matching domain_id strings.
+        When include_global=True, always folds in all domains from namespace_id='global'.
         """
-        if not namespace_domain_pairs:
-            return []
-        results: list[str] = []
-        for ns_id, dom_name in namespace_domain_pairs:
-            rows = self.vector._conn.execute(
-                "SELECT domain_id FROM domains WHERE namespace_id = ? AND name = ?",
-                [ns_id, dom_name],
+        pairs = list(namespace_domain_pairs)
+        if include_global:
+            global_rows = self.vector._conn.execute(
+                "SELECT namespace_id, name FROM domains WHERE namespace_id = ?",
+                [GLOBAL_NAMESPACE],
             ).fetchall()
-            results.extend(r[0] for r in rows)
-        return results
+            for row in global_rows:
+                if (row[0], row[1]) not in pairs:
+                    pairs.append((row[0], row[1]))
+
+        if not pairs:
+            return []
+
+        values_placeholders = ", ".join("(?, ?)" for _ in pairs)
+        params: list[str] = []
+        for ns_id, dom_name in pairs:
+            params.extend([ns_id, dom_name])
+
+        sql = f"""
+            WITH RECURSIVE domain_tree AS (
+                SELECT domain_id FROM domains
+                WHERE (namespace_id, name) IN (VALUES {values_placeholders})
+                UNION ALL
+                SELECT d.domain_id FROM domains d
+                JOIN domain_tree dt ON d.parent_id = dt.domain_id
+            )
+            SELECT DISTINCT domain_id FROM domain_tree
+        """
+        rows = self.vector._conn.execute(sql, params).fetchall()
+        return [r[0] for r in rows]
+
+    def resolve_session(
+        self,
+        session: dict[str, list[str]],
+        include_global: bool = True,
+    ) -> list[str]:
+        """Resolve a session dict to domain_ids.
+
+        session = {"global": ["finance", "legal"], "user:alice": ["my_notes"]}
+        Returns flat list of domain_ids including all descendants.
+        Always includes global namespace domains when include_global=True.
+        """
+        pairs = [(ns, domain) for ns, domains in session.items() for domain in domains]
+        return self.resolve_domain_ids(pairs, include_global=include_global)
 
     def delete_domain(self, domain_id: str) -> int:
         """Delete all chunks for a domain_id.

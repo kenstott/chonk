@@ -441,6 +441,53 @@ nan_limit   = 136
 
 A config may declare `extends = "relative/path/to/parent.toml"`. The parent is loaded first, then the child is deep-merged over it. Chains resolve recursively up to depth 5. Keys absent from the child fall through from the parent unchanged; keys present in the child override the parent at any nesting level.
 
+---
+
+## Config layering
+
+Config inheritance and namespace hierarchy are intentionally isomorphic: the parent config defines what is globally shared; child configs extend it and add user-specific content.
+
+**`global.toml`** defines shared data sources using `namespace = "global"`:
+
+```toml
+# global.toml
+[[source]]
+type      = "directory"
+uri       = "/shared/knowledge-base"
+namespace = "global"
+domain    = "kb"
+
+[[source]]
+type      = "github"
+uri       = "https://github.com/myorg/docs"
+namespace = "global"
+domain    = "engineering"
+```
+
+**User configs** use `extends = "global.toml"` and add user-specific sources:
+
+```toml
+# alice.toml
+extends = "global.toml"
+
+[[source]]
+type      = "gmail"
+uri       = "gmail://inbox"
+namespace = "user:alice"
+domain    = "email"
+```
+
+**`store.resolve_session()`** always folds in all domains from the `global` namespace in addition to the explicitly requested pairs:
+
+```python
+domain_ids = store.resolve_session({
+    "user:alice": ["email"],
+    # global namespace is folded in automatically (include_global=True)
+})
+```
+
+**The `extends` chain and the namespace hierarchy are isomorphic**: the parent config corresponds to the `global` namespace; child configs correspond to user-specific namespaces. Sources without an explicit `namespace` field default to `global` when loaded through `_apply_config`.
+
 ### Resolution order
 
 Hardcoded defaults (constants at the top of `graphrag_bench.py`) < TOML config file < CLI flags.

@@ -5,6 +5,14 @@
 # Sources are processed in order. Omit this section if you supply a
 # pre-built corpus externally (e.g. via cmd_download for the benchmark).
 #
+# Namespace/domain convention:
+#   global.toml defines shared sources with namespace = "global". These are
+#   always included when resolving domains via store.resolve_session().
+#   User configs use extends = "global.toml" and add their own sources with
+#   namespace = "user:{id}" (or any custom namespace). The extends chain and
+#   the namespace hierarchy are isomorphic: parent config → "global" namespace,
+#   child config → user-specific namespace.
+#
 # type = "directory"    → DirectoryCrawler
 # type = "github"       → GitHubCrawler
 # type = "web"          → WebCrawler
@@ -21,14 +29,16 @@
 # extensions = [".md", ".txt", ".pdf"]
 # recursive  = true
 # max_files  = 1000
-# namespace  = "my_namespace"   # optional; restricts retrieval when --namespaces is set
+# namespace  = "global"         # global.toml sources use namespace = "global"
 # domain     = "my_domain"      # optional; paired with namespace to register in domains table; restricts retrieval when --domain-ids is set
 #
 # [[source]]
-# type   = "github"
-# uri    = "https://github.com/myorg/myrepo"
-# branch = "main"
+# type      = "github"
+# uri       = "https://github.com/myorg/myrepo"
+# branch    = "main"
 # extensions = [".py", ".md"]
+# namespace  = "global"         # shared repo available to all users
+# domain     = "engineering"
 #
 # [[source]]
 # type             = "db_schema"
@@ -36,30 +46,40 @@
 # include_procs    = true
 # include_views    = true
 # schemas          = ["public", "analytics"]
+# namespace        = "global"
+# domain           = "schema"
 #
 # [[source]]
 # type         = "sharepoint"
 # uri          = "https://myorg.sharepoint.com/sites/mysite"
 # auth_mode    = "azure_ad"     # or "user_password"
 # artifacts    = ["documents", "lists", "pages"]
+# namespace    = "global"
+# domain       = "intranet"
 #
 # [[source]]
-# type  = "web"
-# uri   = "https://docs.example.com"
-# max_pages  = 100
-# max_depth  = 3
+# type        = "web"
+# uri         = "https://docs.example.com"
+# max_pages   = 100
+# max_depth   = 3
 # same_domain = true
+# namespace   = "global"
+# domain      = "public_docs"
 #
 # [[source]]
-# type  = "gmail"
-# uri   = "gmail://inbox"
-# query = "label:important after:2024/01/01"
-# limit = 500
+# type      = "gmail"
+# uri       = "gmail://inbox"
+# query     = "label:important after:2024/01/01"
+# limit     = 500
+# namespace = "user:alice"      # user-specific sources use namespace = "user:{id}"
+# domain    = "email"
 #
 # [[source]]
-# type = "sql_query"
-# uri  = "sqlquery://my_report"
-# sql  = "SELECT title || ' ' || body AS content FROM articles"
+# type      = "sql_query"
+# uri       = "sqlquery://my_report"
+# sql       = "SELECT title || ' ' || body AS content FROM articles"
+# namespace = "global"
+# domain    = "reports"
 
 # ── Entity vocabulary ────────────────────────────────────────────────────────
 # Augments spaCy NER with domain-specific named entities. Each entry is merged

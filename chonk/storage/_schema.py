@@ -59,9 +59,14 @@ CREATE TABLE IF NOT EXISTS domains (
     namespace_id  VARCHAR,
     name          VARCHAR,
     description   VARCHAR,
+    parent_id     VARCHAR,
     created_at    TIMESTAMP DEFAULT current_timestamp,
     updated_at    TIMESTAMP DEFAULT current_timestamp
 )
+""".strip()
+
+DOMAINS_MIGRATE_PARENT_ID = """
+ALTER TABLE domains ADD COLUMN IF NOT EXISTS parent_id VARCHAR
 """.strip()
 
 SOURCES_DDL = """
@@ -127,6 +132,7 @@ def get_ddl(embedding_dim: int = 1024) -> list[str]:
         EMBEDDINGS_MIGRATE_DOMAIN_ID,
         NAMESPACES_DDL,
         DOMAINS_DDL,
+        DOMAINS_MIGRATE_PARENT_ID,
         SOURCES_DDL,
         ENTITIES_DDL,
         CHUNK_ENTITIES_DDL,

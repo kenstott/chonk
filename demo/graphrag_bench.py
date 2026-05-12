@@ -196,7 +196,10 @@ def _apply_config(cfg: dict, args: argparse.Namespace) -> None:
 
     sources = cfg.get("source", [])
     if sources and not getattr(args, "sources", None):
-        args.sources = sources
+        args.sources = [
+            dict(entry, namespace=entry.get("namespace", GLOBAL_NAMESPACE))
+            for entry in sources
+        ]
 
     if ret.get("namespaces") is not None and getattr(args, "namespaces", None) is None:
         args.namespaces = ret["namespaces"]
@@ -542,13 +545,14 @@ def cmd_index(args: argparse.Namespace) -> None:
     with Store(db_path, embedding_dim=EMBED_DIM) as store:
         sources_cfg = getattr(args, "sources", None)
         if sources_cfg:
+            store.register_namespace(GLOBAL_NAMESPACE)
             corpus_doc_names = {doc_id for doc_id, _ in corpus}
             # Build per-doc maps: namespace, source_id, domain_id
             source_ns_map: dict[str, str | None] = {}
             source_sid_map: dict[str, str | None] = {}
             source_did_map: dict[str, str | None] = {}
             for src in sources_cfg:
-                ns = src.get("namespace")
+                ns = src.get("namespace", GLOBAL_NAMESPACE)
                 domain = src.get("domain")
                 src_type = src.get("type", "")
                 uri = src.get("uri", "")
