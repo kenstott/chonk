@@ -138,7 +138,7 @@ SR plus a coverage-check loop (up to 2 rounds). After the first structured respo
 
 ## TOML config (benchmark CLI)
 
-`demo/graphrag_bench.py` accepts `--config path/to/file.toml`. The canonical base config is at `work/configs/base.toml` (not tracked in git; values below are taken directly from that file).
+`demo/graphrag_bench.py` accepts `--config path/to/file.toml`. The canonical base config is at `work/configs/base.toml`; per-run configs are in `work/configs/runs/`. Both are tracked in git.
 
 ### Schema
 
