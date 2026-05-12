@@ -15,6 +15,41 @@ from typing import Any
 
 from .storage._store import Store
 
+# ── Singleton registry ────────────────────────────────────────────────────────
+# One Indexer per namespace, keyed by namespace id.  Search sessions always
+# open their Store read-only; only the Indexer here holds a write connection.
+_registry: dict[str, Indexer] = {}
+_registry_lock = threading.Lock()
+
+
+def get_indexer(
+    namespace_id: str,
+    store: Store,
+    embed_model: str | Any,
+    **kwargs: Any,
+) -> Indexer:
+    """Return the process-wide Indexer for *namespace_id*, creating it once.
+
+    Subsequent calls with the same namespace_id return the cached instance.
+    *store* and *embed_model* are used only on first creation.
+    """
+    with _registry_lock:
+        if namespace_id not in _registry:
+            _registry[namespace_id] = Indexer(store, embed_model, **kwargs)
+        return _registry[namespace_id]
+
+
+def release_indexer(namespace_id: str) -> None:
+    """Remove the Indexer for *namespace_id* from the registry.
+
+    Aborts any in-progress run first. Call when the namespace is deleted or
+    the process is shutting down a namespace cleanly.
+    """
+    with _registry_lock:
+        indexer = _registry.pop(namespace_id, None)
+    if indexer is not None:
+        indexer.abort()
+
 
 class IndexHandle:
     """Handle returned by index_source_async. Call .join() to wait for completion."""

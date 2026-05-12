@@ -119,6 +119,28 @@ CHUNK_ENTITIES_MIGRATE_NAMESPACE = """
 ALTER TABLE chunk_entities ADD COLUMN IF NOT EXISTS namespace TEXT
 """.strip()
 
+ENTITY_DESCRIPTIONS_DDL = """
+CREATE TABLE IF NOT EXISTS entity_descriptions (
+    entity_id   TEXT    NOT NULL,
+    namespace   TEXT    NOT NULL DEFAULT 'global',
+    description TEXT    NOT NULL,
+    source      TEXT    NOT NULL DEFAULT 'llm',
+    updated_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (entity_id, namespace)
+)
+""".strip()
+
+ENTITY_ALIASES_DDL = """
+CREATE TABLE IF NOT EXISTS entity_aliases (
+    alias       TEXT    NOT NULL,
+    entity_id   TEXT    NOT NULL,
+    namespace   TEXT    NOT NULL DEFAULT 'global',
+    source      TEXT    NOT NULL DEFAULT 'llm',
+    created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (alias, namespace)
+)
+""".strip()
+
 DOCUMENTS_DDL = """
 CREATE TABLE IF NOT EXISTS documents (
     document_name TEXT PRIMARY KEY,
@@ -152,5 +174,7 @@ def get_ddl(embedding_dim: int = 1024) -> list[str]:
         ENTITIES_DDL,
         CHUNK_ENTITIES_DDL,
         CHUNK_ENTITIES_MIGRATE_NAMESPACE,
+        ENTITY_DESCRIPTIONS_DDL,
+        ENTITY_ALIASES_DDL,
         DOCUMENTS_DDL,
     ]

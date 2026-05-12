@@ -285,6 +285,35 @@ class TestApplyConfig:
         assert args.srr_model == "gpt-4o-mini"
         assert args.srr_provider == "openai"
 
+    # ── index.features ───────────────────────────────────────────────────────
+
+    def test_svo_feature_sets_with_svo(self):
+        args = _ns(with_svo=False)
+        _bench._apply_config({"index": {"features": {"svo": True}}}, args)
+        assert args.with_svo is True
+
+    def test_svo_feature_not_overridden_when_already_set(self):
+        args = _ns(with_svo=True)
+        _bench._apply_config({"index": {"features": {"svo": False}}}, args)
+        assert args.with_svo is True
+
+    def test_community_feature_sets_with_community(self):
+        args = _ns(with_community=False)
+        _bench._apply_config({"index": {"features": {"community": True}}}, args)
+        assert args.with_community is True
+
+    def test_ner_feature_sets_with_ner(self):
+        args = _ns(with_ner=False)
+        _bench._apply_config({"index": {"features": {"ner": True}}}, args)
+        assert args.with_ner is True
+
+    def test_features_absent_leaves_flags_unchanged(self):
+        args = _ns(with_svo=False, with_community=False, with_ner=False)
+        _bench._apply_config({"index": {}}, args)
+        assert args.with_svo is False
+        assert args.with_community is False
+        assert args.with_ner is False
+
     # ── vocab.entities ───────────────────────────────────────────────────────
 
     def test_vocab_entities_applied_from_config(self):

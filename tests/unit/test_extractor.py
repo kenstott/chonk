@@ -3,10 +3,10 @@
 """Unit tests for LLMClient protocol and SVOExtractor."""
 
 import json
+
 import pytest
 
-from chonk.graph import LLMClient, SVOExtractor, SVOTriple, VERB_SET
-
+from chonk.graph import VERB_SET, LLMClient, SVOExtractor
 
 # ---------------------------------------------------------------------------
 # Stub LLM clients
@@ -261,6 +261,257 @@ class TestSVOExtractorOverrides:
     def test_default_verb_set_unchanged_without_override(self):
         extractor = SVOExtractor(StubLLM("[]"))
         assert extractor._verb_set is VERB_SET
+
+
+# ---------------------------------------------------------------------------
+# Entity-anchored extraction
+# ---------------------------------------------------------------------------
+
+def _ea_payload(triples=None, descriptions=None, aliases=None):
+    return json.dumps({
+        "triples": triples or [],
+        "descriptions": descriptions or {},
+        "aliases": aliases or {},
+    })
+
+
+class TestExtractEntityAnchored:
+    def _entities(self):
+        return [
+            {"id": "CustomerRiskScore", "type": "db_column", "description": ""},
+            {"id": "FactTable",         "type": "db_table",  "description": "Central fact table"},
+            {"id": "CompliancePolicy",  "type": "concept",   "description": ""},
+        ]
+
+    def test_returns_triples_and_descriptions(self):
+        payload = _ea_payload(
+            triples=[{"subject_id": "CustomerRiskScore", "verb": "part_of",
+                      "object_id": "FactTable", "confidence": 0.9}],
+            descriptions={"CustomerRiskScore": "Risk score per customer", "CompliancePolicy": "Regulatory rules"},
+        )
+        triples, descs, _ = SVOExtractor(StubLLM(payload)).extract_entity_anchored(
+            "some text", "c1", self._entities()
+        )
+        assert len(triples) == 1
+        assert triples[0].subject_id == "CustomerRiskScore"
+        assert triples[0].verb == "part_of"
+        assert triples[0].object_id == "FactTable"
+        assert descs["CustomerRiskScore"] == "Risk score per customer"
+        # FactTable already had a description — not in new_descriptions
+        assert "FactTable" not in descs
+
+    def test_filters_triples_with_unknown_subject(self):
+        payload = _ea_payload(
+            triples=[{"subject_id": "UnknownEntity", "verb": "part_of",
+                      "object_id": "FactTable", "confidence": 0.8}]
+        )
+        triples, _, _2 = SVOExtractor(StubLLM(payload)).extract_entity_anchored(
+            "text", "c1", self._entities()
+        )
+        assert triples == []
+
+    def test_filters_triples_with_invalid_verb(self):
+        payload = _ea_payload(
+            triples=[{"subject_id": "CustomerRiskScore", "verb": "invented_verb",
+                      "object_id": "FactTable", "confidence": 0.9}]
+        )
+        triples, _, _2 = SVOExtractor(StubLLM(payload)).extract_entity_anchored(
+            "text", "c1", self._entities()
+        )
+        assert triples == []
+
+    def test_fewer_than_two_entities_returns_empty(self):
+        triples, descs, aliases = SVOExtractor(StubLLM(_ea_payload())).extract_entity_anchored(
+            "text", "c1", [{"id": "OnlyOne", "type": "concept", "description": ""}]
+        )
+        assert triples == []
+        assert descs == {}
+        assert aliases == {}
+
+    def test_malformed_json_returns_empty(self):
+        triples, descs, aliases = SVOExtractor(StubLLM("not json")).extract_entity_anchored(
+            "text", "c1", self._entities()
+        )
+        assert triples == []
+        assert descs == {}
+        assert aliases == {}
+
+    def test_entity_with_description_marked_in_prompt(self):
+        captured = []
+        class CaptureLLM:
+            def complete(self, prompt):
+                captured.append(prompt)
+                return _ea_payload()
+        SVOExtractor(CaptureLLM()).extract_entity_anchored("text", "c1", self._entities())
+        assert "[✓] FactTable" in captured[0]
+        assert "[ ] CustomerRiskScore" in captured[0]
+
+    def test_source_chunk_id_set_on_triples(self):
+        payload = _ea_payload(
+            triples=[{"subject_id": "CustomerRiskScore", "verb": "part_of",
+                      "object_id": "FactTable", "confidence": 0.7}]
+        )
+        triples, _, _2 = SVOExtractor(StubLLM(payload)).extract_entity_anchored(
+            "text", "chunk-42", self._entities()
+        )
+        assert triples[0].source_chunk_id == "chunk-42"
+
+
+# ---------------------------------------------------------------------------
+# entity_descriptions Store methods
+# ---------------------------------------------------------------------------
+
+class TestEntityDescriptionsStore:
+    def test_upsert_and_get(self, tmp_path):
+        from chonk.storage._store import Store
+        with Store(tmp_path / "t.duckdb") as store:
+            store.upsert_entity_description("ent_a", "A description", source="llm")
+            result = store.get_entity_descriptions(["ent_a"])
+        assert result["ent_a"] == "A description"
+
+    def test_user_not_overwritten_by_llm(self, tmp_path):
+        from chonk.storage._store import Store
+        with Store(tmp_path / "t.duckdb") as store:
+            store.upsert_entity_description("e", "User desc", source="user")
+            store.upsert_entity_description("e", "LLM desc",  source="llm")
+            result = store.get_entity_descriptions(["e"])
+        assert result["e"] == "User desc"
+
+    def test_schema_not_overwritten_by_llm(self, tmp_path):
+        from chonk.storage._store import Store
+        with Store(tmp_path / "t.duckdb") as store:
+            store.upsert_entity_description("e", "Schema desc", source="schema")
+            store.upsert_entity_description("e", "LLM desc",    source="llm")
+            result = store.get_entity_descriptions(["e"])
+        assert result["e"] == "Schema desc"
+
+    def test_llm_overwrites_nothing_higher_priority(self, tmp_path):
+        from chonk.storage._store import Store
+        with Store(tmp_path / "t.duckdb") as store:
+            store.upsert_entity_description("e", "First LLM", source="llm")
+            store.upsert_entity_description("e", "Second LLM", source="llm")
+            result = store.get_entity_descriptions(["e"])
+        # second llm call same priority — does NOT overwrite (>=)
+        assert result["e"] == "First LLM"
+
+    def test_user_overwrites_schema(self, tmp_path):
+        from chonk.storage._store import Store
+        with Store(tmp_path / "t.duckdb") as store:
+            store.upsert_entity_description("e", "Schema desc", source="schema")
+            store.upsert_entity_description("e", "User override", source="user")
+            result = store.get_entity_descriptions(["e"])
+        assert result["e"] == "User override"
+
+    def test_batch_upsert(self, tmp_path):
+        from chonk.storage._store import Store
+        with Store(tmp_path / "t.duckdb") as store:
+            n = store.upsert_entity_descriptions_batch(
+                {"a": "desc a", "b": "desc b", "c": "desc c"}, source="llm"
+            )
+        assert n == 3
+
+    def test_get_missing_entity_returns_empty(self, tmp_path):
+        from chonk.storage._store import Store
+        with Store(tmp_path / "t.duckdb") as store:
+            result = store.get_entity_descriptions(["nonexistent"])
+        assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# Entity aliases — extractor parses aliases from LLM response
+# ---------------------------------------------------------------------------
+
+class TestExtractEntityAnchoredAliases:
+    def _entities(self):
+        return [
+            {"id": "CustomerRiskScore", "type": "db_column", "description": ""},
+            {"id": "FactTable",         "type": "db_table",  "description": "Central fact table"},
+        ]
+
+    def test_aliases_parsed_from_response(self):
+        payload = _ea_payload(
+            aliases={"CustomerRiskScore": ["CRS", "Risk Score"], "FactTable": ["FT"]},
+        )
+        _, _, aliases = SVOExtractor(StubLLM(payload)).extract_entity_anchored(
+            "text", "c1", self._entities()
+        )
+        assert aliases["CustomerRiskScore"] == ["CRS", "Risk Score"]
+        assert aliases["FactTable"] == ["FT"]
+
+    def test_unknown_entity_aliases_dropped(self):
+        payload = _ea_payload(
+            aliases={"UnknownEntity": ["UE"]},
+        )
+        _, _, aliases = SVOExtractor(StubLLM(payload)).extract_entity_anchored(
+            "text", "c1", self._entities()
+        )
+        assert "UnknownEntity" not in aliases
+
+    def test_empty_alias_list_dropped(self):
+        payload = _ea_payload(
+            aliases={"CustomerRiskScore": []},
+        )
+        _, _, aliases = SVOExtractor(StubLLM(payload)).extract_entity_anchored(
+            "text", "c1", self._entities()
+        )
+        assert "CustomerRiskScore" not in aliases
+
+    def test_no_aliases_key_returns_empty_dict(self):
+        raw = json.dumps({"triples": [], "descriptions": {}})
+        _, _, aliases = SVOExtractor(StubLLM(raw)).extract_entity_anchored(
+            "text", "c1", self._entities()
+        )
+        assert aliases == {}
+
+
+# ---------------------------------------------------------------------------
+# Entity aliases — Store methods
+# ---------------------------------------------------------------------------
+
+class TestEntityAliasesStore:
+    def test_add_and_get_alias(self, tmp_path):
+        from chonk.storage._store import Store
+        with Store(tmp_path / "t.duckdb") as store:
+            store.add_entity_alias("CRS", "CustomerRiskScore")
+            result = store.get_entity_aliases("CustomerRiskScore")
+        assert "CRS" in result
+
+    def test_resolve_alias(self, tmp_path):
+        from chonk.storage._store import Store
+        with Store(tmp_path / "t.duckdb") as store:
+            store.add_entity_alias("CRS", "CustomerRiskScore")
+            result = store.resolve_entity_alias("CRS")
+        assert result == "CustomerRiskScore"
+
+    def test_resolve_missing_alias_returns_none(self, tmp_path):
+        from chonk.storage._store import Store
+        with Store(tmp_path / "t.duckdb") as store:
+            result = store.resolve_entity_alias("nonexistent")
+        assert result is None
+
+    def test_llm_first_registration_wins(self, tmp_path):
+        from chonk.storage._store import Store
+        with Store(tmp_path / "t.duckdb") as store:
+            store.add_entity_alias("CRS", "CustomerRiskScore", source="llm")
+            store.add_entity_alias("CRS", "OtherEntity", source="llm")
+            result = store.resolve_entity_alias("CRS")
+        assert result == "CustomerRiskScore"
+
+    def test_user_source_overwrites_llm(self, tmp_path):
+        from chonk.storage._store import Store
+        with Store(tmp_path / "t.duckdb") as store:
+            store.add_entity_alias("CRS", "CustomerRiskScore", source="llm")
+            store.add_entity_alias("CRS", "CorrectEntity", source="user")
+            result = store.resolve_entity_alias("CRS")
+        assert result == "CorrectEntity"
+
+    def test_batch_aliases(self, tmp_path):
+        from chonk.storage._store import Store
+        with Store(tmp_path / "t.duckdb") as store:
+            n = store.add_entity_aliases_batch(
+                {"alias_a": "EntityA", "alias_b": "EntityB"}, source="llm"
+            )
+        assert n == 2
 
 
 # ---------------------------------------------------------------------------

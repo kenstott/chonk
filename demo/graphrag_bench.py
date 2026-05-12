@@ -142,6 +142,14 @@ def _apply_config(cfg: dict, args: argparse.Namespace) -> None:
     if idx.get("db_name") and not getattr(args, "db_name", None):
         args.db_name = idx["db_name"]
 
+    features = idx.get("features", {})
+    if features.get("svo") and not getattr(args, "with_svo", False):
+        args.with_svo = True
+    if features.get("community") and not getattr(args, "with_community", False):
+        args.with_community = True
+    if features.get("ner") and not getattr(args, "with_ner", False):
+        args.with_ner = True
+
     rnk = cfg.get("rerank", {})
     if rnk.get("enabled") and not getattr(args, "rerank", False):
         args.rerank = True
@@ -349,6 +357,17 @@ def cmd_inspect(args: argparse.Namespace) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 # Corpus builder (shared)
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _table_exists(con, table_name: str) -> bool:
+    """Return True if *table_name* exists in the connected DuckDB."""
+    try:
+        return con.execute(
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = ?",
+            [table_name],
+        ).fetchone()[0] > 0
+    except Exception:
+        return False
+
 
 def _build_corpus(out_dir: Path) -> list[tuple[str, str]]:
     """Returns list of (doc_id, text)."""
@@ -595,6 +614,26 @@ def cmd_index(args: argparse.Namespace) -> None:
         n = store.count()
 
     print(f"Index complete: {n:,} chunks → {db_path}")
+
+    # Populate entity descriptions from DB schema chunks (source='schema').
+    # Table/column comments extracted at crawl time — free, no LLM needed.
+    _SCHEMA_CHUNK_TYPES = {"db_table", "db_column", "api_endpoint",
+                           "api_graphql_type", "api_field"}
+    schema_chunks = [c for c in all_chunks if c.chunk_type in _SCHEMA_CHUNK_TYPES]
+    if schema_chunks:
+        with Store(db_path, embedding_dim=EMBED_DIM) as _sd_store:
+            schema_descs: dict[str, str] = {}
+            for sc in schema_chunks:
+                if sc.content and sc.document_name:
+                    # Use the chunk's document_name as the entity_id (normalized)
+                    eid = sc.document_name.split(":")[-1].strip()
+                    if eid and sc.content.strip():
+                        schema_descs[eid] = sc.content.strip()[:300]
+            if schema_descs:
+                n_schema = _sd_store.upsert_entity_descriptions_batch(
+                    schema_descs, source="schema"
+                )
+                print(f"Populated {n_schema:,} schema entity descriptions → {db_path}")
 
     if getattr(args, "with_ner", False):
         with Store(db_path, embedding_dim=EMBED_DIM) as store:
@@ -1205,27 +1244,74 @@ def cmd_build_svo(args: argparse.Namespace) -> None:
 
     con_ro = duckdb.connect(str(db_path), read_only=True)
     rows = con_ro.execute("SELECT chunk_id, content FROM embeddings").fetchall()
+
+    # Build chunk → entity list from chunk_entities join table.
+    # Each entry: (entity_id, entity_type) — type from entities table where available.
+    chunk_entity_rows = con_ro.execute("""
+        SELECT ce.chunk_id, ce.entity_id,
+               COALESCE(e.entity_type, 'concept') AS entity_type
+        FROM chunk_entities ce
+        LEFT JOIN entities e ON e.id = ce.entity_id
+    """).fetchall()
+
+    # Load existing descriptions so the prompt can mark them with ✓
+    desc_rows = con_ro.execute(
+        "SELECT entity_id, description FROM entity_descriptions"
+    ).fetchall() if _table_exists(con_ro, "entity_descriptions") else []
+    existing_descriptions: dict[str, str] = {r[0]: r[1] for r in desc_rows}
     con_ro.close()
+
+    # Index: chunk_id → [{id, type, description}]
+    from collections import defaultdict as _defaultdict
+    chunk_entities_map: dict[str, list[dict]] = _defaultdict(list)
+    for chunk_id, entity_id, entity_type in chunk_entity_rows:
+        chunk_entities_map[chunk_id].append({
+            "id": entity_id,
+            "type": entity_type,
+            "description": existing_descriptions.get(entity_id, ""),
+        })
+
+    chunks_with_entities = [(cid, content) for cid, content in rows
+                            if len(chunk_entities_map.get(cid, [])) >= 2]
+    chunks_without_entities = [(cid, content) for cid, content in rows
+                               if len(chunk_entities_map.get(cid, [])) < 2]
+
     print(f"Loaded {len(rows):,} chunks from {db_path}")
+    print(f"  {len(chunks_with_entities):,} chunks have ≥2 entities → entity-anchored extraction")
+    print(f"  {len(chunks_without_entities):,} chunks have <2 entities → skipped")
 
     relationship_index = RelationshipIndex()
+    new_descriptions: dict[str, str] = {}
 
     def _extract_one(row):
         chunk_id, content = row
-        return extractor.extract(content or "", chunk_id=chunk_id)
+        entities = chunk_entities_map.get(chunk_id, [])
+        if len(entities) >= 2:
+            triples, descs, aliases = extractor.extract_entity_anchored(
+                content or "", chunk_id, entities
+            )
+            return triples, descs, aliases
+        return [], {}, {}
 
+    new_aliases: dict[str, list[str]] = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as pool:
-        futures = {pool.submit(_extract_one, row): row for row in rows}
+        futures = {pool.submit(_extract_one, row): row for row in chunks_with_entities}
         done = 0
         for fut in concurrent.futures.as_completed(futures):
-            triples = fut.result()
+            triples, descs, aliases = fut.result()
             for t in triples:
                 relationship_index.add(t)
+            new_descriptions.update(descs)
+            for eid, alias_list in aliases.items():
+                new_aliases.setdefault(eid, []).extend(alias_list)
             done += 1
-            if done % 100 == 0 or done == len(rows):
-                print(f"  {done:,}/{len(rows):,} chunks processed, {len(relationship_index):,} triples so far")
+            if done % 100 == 0 or done == len(chunks_with_entities):
+                print(f"  {done:,}/{len(chunks_with_entities):,} chunks processed, "
+                      f"{len(relationship_index):,} triples so far")
 
     import time as _time
+
+    from chonk.storage._store import Store as _Store
     for _attempt in range(60):
         try:
             con_rw = duckdb.connect(str(db_path))
@@ -1241,6 +1327,96 @@ def cmd_build_svo(args: argparse.Namespace) -> None:
                 raise
     else:
         raise RuntimeError("Could not acquire write lock on DB after 10 minutes.")
+
+    # Persist LLM-generated descriptions (source='llm'; never overwrites 'user'/'schema')
+    if new_descriptions:
+        with _Store(db_path, embedding_dim=EMBED_DIM) as _desc_store:
+            n_desc = _desc_store.upsert_entity_descriptions_batch(
+                new_descriptions, source="llm"
+            )
+        print(f"Persisted {n_desc:,} new entity descriptions → {db_path}")
+
+    # Persist LLM-generated aliases (first-registration wins per alias/namespace)
+    if new_aliases:
+        flat_aliases = {
+            alias: eid
+            for eid, alias_list in new_aliases.items()
+            for alias in alias_list
+        }
+        with _Store(db_path, embedding_dim=EMBED_DIM) as _alias_store:
+            n_alias = _alias_store.add_entity_aliases_batch(flat_aliases, source="llm")
+        print(f"Persisted {n_alias:,} entity aliases → {db_path}")
+
+    # Embed entities as chunk_type='entity' rows in the embeddings table
+    _upsert_entity_chunk_embeddings(db_path)
+
+
+def _upsert_entity_chunk_embeddings(db_path: Path) -> None:
+    """Embed all entities using name + aliases + description and upsert as chunk_type='entity'."""
+    import duckdb
+    import numpy as np
+    from sentence_transformers import SentenceTransformer
+
+    from chonk.models import DocumentChunk
+    from chonk.storage._store import Store as _Store
+
+    con_ro = duckdb.connect(str(db_path), read_only=True)
+    try:
+        entity_rows = con_ro.execute("""
+            SELECT e.id, e.name,
+                   COALESCE(ed.description, '') AS description,
+                   e.entity_type
+            FROM entities e
+            LEFT JOIN entity_descriptions ed ON ed.entity_id = e.id AND ed.namespace = 'global'
+        """).fetchall()
+
+        if not entity_rows:
+            con_ro.close()
+            return
+
+        # Gather aliases per entity
+        alias_rows = con_ro.execute(
+            "SELECT entity_id, alias FROM entity_aliases WHERE namespace = 'global'"
+        ).fetchall() if _table_exists(con_ro, "entity_aliases") else []
+    finally:
+        con_ro.close()
+
+    from collections import defaultdict as _dd
+    aliases_map: dict[str, list[str]] = _dd(list)
+    for eid, alias in alias_rows:
+        aliases_map[eid].append(alias)
+
+    texts: list[str] = []
+    chunks: list[DocumentChunk] = []
+    for entity_id, name, description, entity_type in entity_rows:
+        alias_str = ", ".join(aliases_map.get(entity_id, []))
+        parts = [name]
+        if alias_str:
+            parts.append(alias_str)
+        if description:
+            parts.append(description)
+        text = ". ".join(parts)
+        texts.append(text)
+        chunks.append(DocumentChunk(
+            document_name=f"__entity__{entity_id}",
+            content=text,
+            chunk_index=0,
+            chunk_type="entity",
+        ))
+
+    print(f"  Embedding {len(chunks):,} entities for semantic search...")
+    embed_model = SentenceTransformer(EMBED_MODEL)
+    vecs = embed_model.encode(
+        texts, normalize_embeddings=True, show_progress_bar=False, batch_size=512
+    ).astype("float32")
+    del embed_model
+
+    # chunk_id for entity rows = entity_id; use document_name as the lookup key
+    with _Store(db_path, embedding_dim=EMBED_DIM) as store:
+        # Remove stale entity rows before re-inserting
+        store._db.execute("DELETE FROM embeddings WHERE chunk_type = 'entity'")
+        store.add_document(chunks, np.array(vecs))
+    print(f"  Persisted {len(chunks):,} entity embeddings → {db_path}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1849,7 +2025,9 @@ def cmd_run(args: argparse.Namespace) -> None:
         )
 
     use_sr  = getattr(args, "sr", False)
-    use_srr = getattr(args, "srr", False) or use_sr
+    # use_srr must NOT be forced True by use_sr — the gap-fill retry is gated on
+    # `use_srr and not use_sr`, so merging them here silently disables the retry.
+    use_srr = getattr(args, "srr", False)
     use_multi_step = getattr(args, "multi_step", False)
     embed_model = None
     if use_entity_ref_retry or (use_srr and not use_sr):
@@ -2312,7 +2490,7 @@ def cmd_run(args: argparse.Namespace) -> None:
     # Build dedicated SRR client (may differ from gen client)
     _srr_provider = getattr(args, "srr_provider", None) or args.gen_provider
     _srr_model    = getattr(args, "srr_model", None) or args.gen_model
-    if use_srr and (_srr_provider != args.gen_provider or _srr_model != args.gen_model):
+    if (use_srr or use_sr) and (_srr_provider != args.gen_provider or _srr_model != args.gen_model):
         if _srr_provider == "together":
             srr_client = openai.OpenAI(api_key=os.environ["TOGETHER_API_KEY"], base_url=TOGETHER_BASE_URL, timeout=120.0)
         elif _srr_provider == "anthropic":
@@ -2354,7 +2532,7 @@ def cmd_run(args: argparse.Namespace) -> None:
 
         answer: str = ""
         srr_stats: dict | None = None
-        if use_srr:
+        if use_srr or use_sr:
             _sc = srr_client if srr_client is not None else client
             _sm = _srr_model
             context = item["context"]

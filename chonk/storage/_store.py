@@ -42,6 +42,9 @@ class Store:
             db_path: Path to DuckDB file, or ":memory:" for an in-memory store.
             embedding_dim: Embedding vector dimension. Must match your model.
             read_only: Open in read-only mode (allows multiple concurrent readers).
+                Multiple search sessions from the same user should open the
+                namespace DB with read_only=True to avoid the single-writer
+                DuckDB limit. Only the background Indexer needs write access.
         """
         db_path = str(db_path)
         self._db = ThreadLocalDuckDB(db_path, read_only=read_only)
@@ -308,8 +311,12 @@ class Store:
         within that namespace the user has activated. Global namespace domains
         are always folded in when include_global=True.
 
-        Example::
+        Search sessions should open the store read-only so multiple concurrent
+        sessions never conflict with each other or with a background Indexer::
 
+            # Any number of these can run concurrently — read-only, no conflict.
+            store = Store("user_alice.duckdb", read_only=True)
+            store.attach_global("global.duckdb")
             domain_ids = store.resolve_session("user:alice", ["my_notes", "finance"])
             results = store.search(query_vec, domain_ids=domain_ids)
         """
@@ -531,6 +538,208 @@ class Store:
     def delete_document(self, document_name: str) -> int:
         """Delete all chunks for a document. Returns count deleted."""
         return self.vector.delete_by_document(document_name)
+
+    # ── Entity descriptions ───────────────────────────────────────────────────
+
+    # Priority order — lower number wins; never overwrite with higher number.
+    _DESC_PRIORITY: dict[str, int] = {"user": 0, "schema": 1, "llm": 2}
+
+    def update_entity_description(
+        self,
+        entity_id: str,
+        description: str,
+        namespace: str = GLOBAL_NAMESPACE,
+    ) -> None:
+        """Update an entity description unconditionally, marking source as 'user'.
+
+        Use this for client curation — always wins over 'llm' and 'schema' sources.
+        """
+        conn = self.vector._conn
+        conn.execute(
+            """
+            INSERT INTO entity_descriptions (entity_id, namespace, description, source, updated_at)
+            VALUES (?, ?, ?, 'user', now())
+            ON CONFLICT (entity_id, namespace) DO UPDATE SET
+                description = excluded.description,
+                source      = 'user',
+                updated_at  = now()
+            """,
+            [entity_id, namespace, description],
+        )
+
+    def upsert_entity_description(
+        self,
+        entity_id: str,
+        description: str,
+        source: str = "llm",
+        namespace: str = GLOBAL_NAMESPACE,
+    ) -> None:
+        """Upsert one entity description.
+
+        Lower-priority sources never overwrite higher-priority ones:
+        ``user`` > ``schema`` > ``llm``.
+        """
+        conn = self.vector._conn
+        existing = conn.execute(
+            "SELECT source FROM entity_descriptions WHERE entity_id = ? AND namespace = ?",
+            [entity_id, namespace],
+        ).fetchone()
+        if existing:
+            existing_pri = self._DESC_PRIORITY.get(existing[0], 99)
+            new_pri = self._DESC_PRIORITY.get(source, 99)
+            if new_pri >= existing_pri:
+                return
+        conn.execute(
+            """
+            INSERT INTO entity_descriptions (entity_id, namespace, description, source, updated_at)
+            VALUES (?, ?, ?, ?, now())
+            ON CONFLICT (entity_id, namespace) DO UPDATE SET
+                description = excluded.description,
+                source      = excluded.source,
+                updated_at  = now()
+            """,
+            [entity_id, namespace, description, source],
+        )
+
+    def upsert_entity_descriptions_batch(
+        self,
+        descriptions: dict[str, str],
+        source: str = "llm",
+        namespace: str = GLOBAL_NAMESPACE,
+    ) -> int:
+        """Upsert multiple entity descriptions. Returns count written."""
+        written = 0
+        for entity_id, description in descriptions.items():
+            before = self.vector._conn.execute(
+                "SELECT source FROM entity_descriptions WHERE entity_id = ? AND namespace = ?",
+                [entity_id, namespace],
+            ).fetchone()
+            if before:
+                existing_pri = self._DESC_PRIORITY.get(before[0], 99)
+                new_pri = self._DESC_PRIORITY.get(source, 99)
+                if new_pri >= existing_pri:
+                    continue
+            self.vector._conn.execute(
+                """
+                INSERT INTO entity_descriptions (entity_id, namespace, description, source, updated_at)
+                VALUES (?, ?, ?, ?, now())
+                ON CONFLICT (entity_id, namespace) DO UPDATE SET
+                    description = excluded.description,
+                    source      = excluded.source,
+                    updated_at  = now()
+                """,
+                [entity_id, namespace, description, source],
+            )
+            written += 1
+        return written
+
+    def get_entity_descriptions(
+        self,
+        entity_ids: list[str],
+        namespace: str = GLOBAL_NAMESPACE,
+    ) -> dict[str, str]:
+        """Return ``{entity_id: description}`` for the given IDs."""
+        if not entity_ids:
+            return {}
+        conn = self.vector._conn
+        placeholders = ", ".join(["?" for _ in entity_ids])
+        rows = conn.execute(
+            f"SELECT entity_id, description FROM entity_descriptions "
+            f"WHERE entity_id IN ({placeholders}) AND namespace = ?",
+            entity_ids + [namespace],
+        ).fetchall()
+        return {r[0]: r[1] for r in rows}
+
+    def get_chunk_entity_ids(self, chunk_id: str) -> list[str]:
+        """Return all entity_ids associated with a chunk."""
+        conn = self.vector._conn
+        rows = conn.execute(
+            "SELECT entity_id FROM chunk_entities WHERE chunk_id = ?",
+            [chunk_id],
+        ).fetchall()
+        return [r[0] for r in rows]
+
+    # ── Entity aliases ────────────────────────────────────────────────────────
+
+    def add_entity_alias(
+        self,
+        alias: str,
+        entity_id: str,
+        source: str = "llm",
+        namespace: str = GLOBAL_NAMESPACE,
+    ) -> None:
+        """Register *alias* as an alternate name for *entity_id*.
+
+        An alias is unique per namespace — the first registration wins unless
+        source is ``'user'``, which always overwrites.
+        """
+        conn = self.vector._conn
+        if source == "user":
+            conn.execute(
+                """
+                INSERT INTO entity_aliases (alias, entity_id, namespace, source)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT (alias, namespace) DO UPDATE SET
+                    entity_id = excluded.entity_id,
+                    source    = excluded.source
+                """,
+                [alias, entity_id, namespace, source],
+            )
+        else:
+            conn.execute(
+                """
+                INSERT INTO entity_aliases (alias, entity_id, namespace, source)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT (alias, namespace) DO NOTHING
+                """,
+                [alias, entity_id, namespace, source],
+            )
+
+    def add_entity_aliases_batch(
+        self,
+        aliases: dict[str, str],
+        source: str = "llm",
+        namespace: str = GLOBAL_NAMESPACE,
+    ) -> int:
+        """Register multiple aliases. ``aliases`` maps alias → entity_id.
+
+        Returns count inserted (conflicts silently ignored for non-user sources).
+        """
+        written = 0
+        for alias, entity_id in aliases.items():
+            before = self.vector._conn.execute(
+                "SELECT source FROM entity_aliases WHERE alias = ? AND namespace = ?",
+                [alias, namespace],
+            ).fetchone()
+            if before and source != "user":
+                continue
+            self.add_entity_alias(alias, entity_id, source=source, namespace=namespace)
+            written += 1
+        return written
+
+    def resolve_entity_alias(
+        self,
+        alias: str,
+        namespace: str = GLOBAL_NAMESPACE,
+    ) -> str | None:
+        """Return the canonical entity_id for *alias*, or None if unknown."""
+        row = self.vector._conn.execute(
+            "SELECT entity_id FROM entity_aliases WHERE alias = ? AND namespace = ?",
+            [alias, namespace],
+        ).fetchone()
+        return row[0] if row else None
+
+    def get_entity_aliases(
+        self,
+        entity_id: str,
+        namespace: str = GLOBAL_NAMESPACE,
+    ) -> list[str]:
+        """Return all aliases registered for *entity_id*."""
+        rows = self.vector._conn.execute(
+            "SELECT alias FROM entity_aliases WHERE entity_id = ? AND namespace = ?",
+            [entity_id, namespace],
+        ).fetchall()
+        return [r[0] for r in rows]
 
     def count(self) -> int:
         """Return total number of stored chunks."""

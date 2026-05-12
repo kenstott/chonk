@@ -29,7 +29,7 @@ from .graph import (
     SVOExtractor,
     SVOTriple,
 )
-from .indexer import Indexer, IndexHandle
+from .indexer import Indexer, IndexHandle, get_indexer, release_indexer
 from .loader import DocumentLoader
 from .models import (
     ClusterRecord,
@@ -98,6 +98,8 @@ __all__ = [
     "DocumentLoader",
     "Indexer",
     "IndexHandle",
+    "get_indexer",
+    "release_indexer",
     # Transports & Crawlers
     "Transport",
     "FetchResult",

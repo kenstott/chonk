@@ -8,6 +8,7 @@
 
 from ._index import EntityIndex
 from ._merge import merge_matches
+from ._normalizer import EntityNormalizer, canonical_key, normalize_entity
 from ._pipeline import NerPipeline
 from ._schema import SchemaMatcher, normalize_schema_term
 from ._schema_vocab import SchemaVocabBuilder
@@ -27,4 +28,7 @@ __all__ = [
     "normalize_schema_term",
     "SchemaVocabBuilder",
     "NerPipeline",
+    "EntityNormalizer",
+    "normalize_entity",
+    "canonical_key",
 ]
