@@ -59,6 +59,8 @@ def build_ner(
     use_schema_vocab: bool = False,
     vocab_entities: list[dict] | None = None,
     force: bool = False,
+    build_context_graph: bool = False,
+    namespace: str = "global",
 ) -> int:
     """Run NER on all chunks in *store* and persist results to ``chunk_entities``.
 
@@ -139,6 +141,9 @@ def build_ner(
         if cid not in skip:
             chunks_to_process.append((cid, c))
 
+    # entity_id -> (name, display_name, entity_type) — populated from matches
+    entity_meta: dict[str, tuple[str, str, str]] = {}
+
     for chunk_id, chunk in chunks_to_process:
         if schema_matcher is not None or data_matcher is not None:
             from ._merge import merge_matches
@@ -154,9 +159,16 @@ def build_ner(
                     source_text=chunk.content,
                 )
             combined = merge_matches(vocab_hits, matcher.match(chunk.content), source_text=chunk.content)
+            for m in combined:
+                if m.entity_id not in entity_meta:
+                    entity_meta[m.entity_id] = (m.name, m.display_name, m.entity_type or "concept")
             entity_index.index_chunk(chunk_id, chunk.content, combined)
         else:
-            entity_index.run_ner(chunk_id, chunk.content, matcher)
+            matches = matcher.match(chunk.content)
+            for m in matches:
+                if m.entity_id not in entity_meta:
+                    entity_meta[m.entity_id] = (m.name, m.display_name, m.entity_type or "concept")
+            entity_index.index_chunk(chunk_id, chunk.content, matches)
 
     entity_index.recompute_scores()
 
@@ -168,17 +180,20 @@ def build_ner(
         ns_row = con.execute(
             "SELECT namespace FROM embeddings WHERE chunk_id = ?", [a["chunk_id"]]
         ).fetchone()
-        namespace = ns_row[0] if ns_row else None
+        chunk_namespace = ns_row[0] if ns_row else None
         con.execute(
             "INSERT OR REPLACE INTO chunk_entities"
             "(chunk_id, entity_id, frequency, positions_json, score, namespace)"
             " VALUES (?,?,?,?,?,?)",
             [a["chunk_id"], a["entity_id"], a["frequency"],
-             json.dumps(a["positions"]), a["score"], namespace],
+             json.dumps(a["positions"]), a["score"], chunk_namespace],
+        )
+        name, display_name, entity_type = entity_meta.get(
+            a["entity_id"], (a["entity_id"], a["entity_id"], "concept")
         )
         con.execute(
-            "INSERT OR IGNORE INTO entities(id, name, display_name) VALUES (?,?,?)",
-            [a["entity_id"], a["entity_id"], a["entity_id"]],
+            "INSERT OR IGNORE INTO entities(id, name, display_name, entity_type) VALUES (?,?,?,?)",
+            [a["entity_id"], name, display_name, entity_type],
         )
         alias = _strip_id_alias(a["entity_id"])
         if alias:
@@ -191,5 +206,9 @@ def build_ner(
         "INSERT OR REPLACE INTO ner_cache(config_fingerprint, chunk_count) VALUES (?, ?)",
         [fingerprint, len(all_chunk_ids)],
     )
+
+    if build_context_graph:
+        from ..graph._context_graph import build_context_graph_edges
+        build_context_graph_edges(con, namespace=namespace, force=True)
 
     return len(data["associations"])

@@ -169,6 +169,12 @@ def _apply_config(cfg: dict, args: argparse.Namespace) -> None:
         args.redundancy_threshold = ret["redundancy_threshold"]
     if ret.get("cluster") and not getattr(args, "cluster", False):
         args.cluster = True
+    if ret.get("context_graph") and not getattr(args, "context_graph", False):
+        args.context_graph = True
+    if ret.get("context_graph_min_weight") is not None and getattr(args, "context_graph_min_weight", None) in (None, 0.1):
+        args.context_graph_min_weight = ret["context_graph_min_weight"]
+    if ret.get("context_graph_top_k") is not None and getattr(args, "context_graph_top_k", None) in (None, 5):
+        args.context_graph_top_k = ret["context_graph_top_k"]
     if ret.get("vanilla") and not getattr(args, "vanilla", False):
         args.vanilla = True
     if ret.get("multi_step") and not getattr(args, "multi_step", False):
@@ -447,6 +453,7 @@ def cmd_build_ner(args: argparse.Namespace) -> None:
     use_schema_vocab = getattr(args, "with_schema_vocab", False)
     vocab_entities   = getattr(args, "vocab_entities", None)
 
+    with_context_graph = getattr(args, "with_context_graph", False)
     from chonk.ner import build_ner
     with Store(db_path, embedding_dim=EMBED_DIM) as store:
         n_written = build_ner(
@@ -455,8 +462,11 @@ def cmd_build_ner(args: argparse.Namespace) -> None:
             use_schema_vocab=use_schema_vocab,
             vocab_entities=vocab_entities,
             force=force,
+            build_context_graph=with_context_graph,
         )
     print(f"  Persisted {n_written:,} associations → {db_path}")
+    if with_context_graph:
+        print("  Context graph built.")
 
     # Build entity embeddings if requested or not yet present
     with_embeddings = getattr(args, "with_embeddings", False)
@@ -1533,6 +1543,15 @@ def cmd_build_svo(args: argparse.Namespace) -> None:
     # Embed entities as chunk_type='entity' rows in the embeddings table
     _upsert_entity_chunk_embeddings(db_path)
 
+    if getattr(args, "with_context_graph", False):
+        import duckdb as _ddb
+
+        from chonk.graph._context_graph import build_context_graph_edges
+        _con = _ddb.connect(str(db_path))
+        stats = build_context_graph_edges(_con, namespace="global", force=True)
+        _con.close()
+        print(f"  Context graph built: {stats.entity_count:,} entities, {stats.edge_count:,} edges")
+
 
 def _upsert_entity_chunk_embeddings(db_path: Path) -> None:
     """Embed all entities using name + aliases + description and upsert as chunk_type='entity'."""
@@ -1587,9 +1606,9 @@ def _upsert_entity_chunk_embeddings(db_path: Path) -> None:
         ))
 
     print(f"  Embedding {len(chunks):,} entities for semantic search...")
-    embed_model = SentenceTransformer(EMBED_MODEL)
+    embed_model = SentenceTransformer(EMBED_MODEL, device="cpu")
     vecs = embed_model.encode(
-        texts, normalize_embeddings=True, show_progress_bar=False, batch_size=512
+        texts, normalize_embeddings=True, show_progress_bar=False, batch_size=64
     ).astype("float32")
     del embed_model
 
@@ -1599,6 +1618,44 @@ def _upsert_entity_chunk_embeddings(db_path: Path) -> None:
         store._db.conn.execute("DELETE FROM embeddings WHERE chunk_type = 'entity'")
         store.add_document(chunks, np.array(vecs))
     print(f"  Persisted {len(chunks):,} entity embeddings → {db_path}")
+
+
+def cmd_build_context_graph(args: argparse.Namespace) -> None:
+    """Build context graph edges from chunk_entities (and optionally svo_triples)."""
+    from chonk.storage._store import Store
+
+    data_dir = Path(args.out_dir) / "data"
+    db_name  = getattr(args, "db_name", None) or DB_FILENAME
+    db_path  = data_dir / db_name
+    force    = getattr(args, "force", False)
+    namespace_arg = getattr(args, "namespace", "global")
+    namespace = None if namespace_arg == "all" else namespace_arg
+    min_weight = getattr(args, "min_weight", 0.1)
+    algorithm  = getattr(args, "algorithm", "agglomerative")
+    min_chunks = getattr(args, "min_chunks", 10)
+
+    if not db_path.exists():
+        raise FileNotFoundError(f"Index DB not found: {db_path}")
+
+    print(f"Building context graph: {db_path}")
+    ns_label = "all namespaces" if namespace is None else repr(namespace)
+    print(f"  namespace={ns_label}, min_weight={min_weight}, algorithm={algorithm!r}, min_chunks={min_chunks}")
+
+    with Store(str(db_path), embedding_dim=EMBED_DIM) as store:
+        result = store.build_context_graph(
+            namespace=namespace,
+            min_weight=min_weight,
+            force=force,
+            algorithm=algorithm,
+            min_chunks=min_chunks,
+        )
+
+    if isinstance(result, dict):
+        for ns, stats in result.items():
+            print(f"  [{ns}] {stats.entity_count:,} entities, {stats.edge_count:,} edges, {stats.chunk_count:,} chunks")
+    else:
+        stats = result
+        print(f"  {stats.entity_count:,} entities, {stats.edge_count:,} edges, {stats.chunk_count:,} chunks")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1858,7 +1915,7 @@ def _prune_redundant(hits, db_conn, threshold):
     return selected
 
 
-def _build_enhanced_search(store, db_path: Path | None = None, use_ner_x: bool = False, embed_model=None, entity_ref_expansion: bool = False, entity_ref_expansion_k: int = 20, entity_ref_expansion_per_k: int | None = None, entity_ref_expansion_min_sim: float | None = None, use_cluster: bool = False, lane_entity_min_sim: float | None = None, namespaces: list[str] | None = None, domain_ids: list[str] | None = None, community_index=None):
+def _build_enhanced_search(store, db_path: Path | None = None, use_ner_x: bool = False, embed_model=None, entity_ref_expansion: bool = False, entity_ref_expansion_k: int = 20, entity_ref_expansion_per_k: int | None = None, entity_ref_expansion_min_sim: float | None = None, use_cluster: bool = False, lane_entity_min_sim: float | None = None, namespaces: list[str] | None = None, domain_ids: list[str] | None = None, community_index=None, context_graph_expansion: bool = False, context_graph_min_weight: float = 0.1, context_graph_top_k: int = 5):
     """Load EnhancedSearch: from pre-built DB tables if available, else rebuild in memory."""
     import duckdb
 
@@ -1940,6 +1997,9 @@ def _build_enhanced_search(store, db_path: Path | None = None, use_ner_x: bool =
                 session_fingerprint=_session_fingerprint,
                 community_index=community_index,
                 query_entity_id_fn=query_entity_id_fn,
+                context_graph_expansion=context_graph_expansion,
+                context_graph_min_weight=context_graph_min_weight,
+                context_graph_top_k=context_graph_top_k,
                 **ner_x_kwargs,
                 **embed_fn_kwargs,
             )
@@ -1980,6 +2040,9 @@ def _build_enhanced_search(store, db_path: Path | None = None, use_ner_x: bool =
         lane_entity_min_sim=lane_entity_min_sim,
         session_fingerprint=_session_fingerprint,
         community_index=community_index,
+        context_graph_expansion=context_graph_expansion,
+        context_graph_min_weight=context_graph_min_weight,
+        context_graph_top_k=context_graph_top_k,
     )
 
 
@@ -2030,6 +2093,9 @@ def cmd_run(args: argparse.Namespace) -> None:
     entity_ref_expansion_per_k  = getattr(args, "entity_ref_expansion_per_k", None)
     entity_ref_expansion_min_sim = getattr(args, "entity_ref_expansion_min_sim", None)
     use_cluster = getattr(args, "cluster", False)
+    use_context_graph = getattr(args, "context_graph", False)
+    context_graph_min_weight = getattr(args, "context_graph_min_weight", 0.1)
+    context_graph_top_k = getattr(args, "context_graph_top_k", 5)
     search_mode = getattr(args, "search_mode", "vector_first")
     use_entity_ref_retry     = getattr(args, "entity_ref_retry", False)
     use_structured_gen       = getattr(args, "structured_gen", False)
@@ -2086,6 +2152,9 @@ def cmd_run(args: argparse.Namespace) -> None:
         "breadcrumb_context": use_breadcrumb_context,
         "breadcrumb_style": breadcrumb_style,
         "cluster": use_cluster,
+        "context_graph": use_context_graph,
+        "context_graph_min_weight": context_graph_min_weight,
+        "context_graph_top_k": context_graph_top_k,
         "ner_x": use_ner_x,
         "srr": getattr(args, "srr", False),
         "search_mode": search_mode,
@@ -2354,6 +2423,9 @@ def cmd_run(args: argparse.Namespace) -> None:
             namespaces=namespaces,
             domain_ids=domain_ids,
             community_index=community_index,
+            context_graph_expansion=use_context_graph,
+            context_graph_min_weight=context_graph_min_weight,
+            context_graph_top_k=context_graph_top_k,
         ) if use_enhanced else None
 
         # Build concentration fallback search (entity ref expansion) if gating is enabled
@@ -4515,6 +4587,8 @@ def _make_parser() -> argparse.ArgumentParser:
                    help="Also embed entity strings and store in entity_embeddings table (required for --ner-x)")
     p.add_argument("--with-schema-vocab", action="store_true", dest="with_schema_vocab",
                    help="Augment spaCy NER with SchemaMatcher built from schema/API chunks in the index")
+    p.add_argument("--with-context-graph", action="store_true", dest="with_context_graph",
+                   help="Build context graph immediately after NER (cooccur + cluster signals)")
     p.add_argument("--force", action="store_true", help="Rebuild even if tables already populated")
     p.set_defaults(func=cmd_build_ner)
 
@@ -4567,6 +4641,12 @@ def _make_parser() -> argparse.ArgumentParser:
                        help="Per-entity retrieval k for --entity-ref-expansion (default: k / n_missing)")
     g_exp.add_argument("--entity-ref-expansion-min-sim", type=float, default=None, dest="entity_ref_expansion_min_sim",
                        help="Min cosine sim for --entity-ref-expansion hits (default: no filter)")
+    g_exp.add_argument("--context-graph", action="store_true", dest="context_graph",
+                       help="Expand ref-expansion via context graph edges (requires build-context-graph first)")
+    g_exp.add_argument("--context-graph-min-weight", type=float, default=0.1, dest="context_graph_min_weight",
+                       help="Min edge weight for context graph expansion (default: 0.1)")
+    g_exp.add_argument("--context-graph-top-k", type=int, default=5, dest="context_graph_top_k",
+                       help="Max context graph edges to follow per missing entity (default: 5)")
     g_exp.add_argument("--breadcrumb-embed", action="store_true",
                        help="Use bc-in-embedding index (chunkymonkey_1100_2200.duckdb); improves seed quality for structured docs")
 
@@ -4672,7 +4752,25 @@ def _make_parser() -> argparse.ArgumentParser:
                         "One JSON line per chunk: {done, total, chunk_id, triples, "
                         "descriptions, aliases, rel_descriptions}. Suitable for "
                         "tailing by a web service and forwarding as SSE.")
+    p.add_argument("--with-context-graph", action="store_true", dest="with_context_graph",
+                   help="Rebuild context graph after SVO extraction (adds svo_signal to all edges)")
     p.set_defaults(func=cmd_build_svo)
+
+    # build-context-graph
+    p = sub.add_parser("build-context-graph", help="Build context graph edges from chunk_entities + svo_triples")
+    p.add_argument("--out-dir", default="/tmp/grb", metavar="DIR")
+    p.add_argument("--db-name", default=None, dest="db_name",
+                   help=f"DB filename inside {{out_dir}}/data/ (default: {DB_FILENAME})")
+    p.add_argument("--namespace", default="global",
+                   help="Namespace to build graph for, or 'all' for every namespace (default: global)")
+    p.add_argument("--min-weight", type=float, default=0.1, dest="min_weight",
+                   help="Prune edges below this weight (default: 0.1)")
+    p.add_argument("--algorithm", default="agglomerative", choices=["agglomerative", "dbscan", "leiden"],
+                   help="Clustering algorithm for chunk clusters (default: agglomerative)")
+    p.add_argument("--min-chunks", type=int, default=10, dest="min_chunks",
+                   help="Minimum chunks before clustering runs (default: 10)")
+    p.add_argument("--force", action="store_true", help="Rebuild even if cache is valid")
+    p.set_defaults(func=cmd_build_context_graph)
 
     # use-endpoints — run benchmark against existing Together dedicated endpoints
     p = sub.add_parser("use-endpoints", help="Run benchmark using existing Together dedicated endpoints")
