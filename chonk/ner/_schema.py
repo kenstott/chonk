@@ -8,16 +8,17 @@
 
 Pure Python — no spaCy dependency required.
 """
+
 from __future__ import annotations
 
 import re
 
 from ._vocabulary import EntityMatch, _auto_id
 
-
 # ---------------------------------------------------------------------------
 # Normalisation helper (exported from chonk.ner)
 # ---------------------------------------------------------------------------
+
 
 def normalize_schema_term(term: str, to_singular: bool = False) -> str:
     """Convert a schema/API term to a normalized space-separated string.
@@ -55,17 +56,18 @@ def normalize_schema_term(term: str, to_singular: bool = False) -> str:
 # Variant generation
 # ---------------------------------------------------------------------------
 
+
 def _variants(term: str) -> list[str]:
     """Return all surface-form variants for a term, all lowercase."""
-    normalized = normalize_schema_term(term)           # "performance reviews"
+    normalized = normalize_schema_term(term)  # "performance reviews"
     singular = normalize_schema_term(term, to_singular=True)  # "performance review"
     result = {normalized, singular}
     # Underscore form — only if the original contains an underscore
     if "_" in term:
-        result.add(term.lower())                       # "performance_reviews"
+        result.add(term.lower())  # "performance_reviews"
     # Joined forms (no spaces)
-    result.add(normalized.replace(" ", ""))            # "performancereviews"
-    result.add(singular.replace(" ", ""))              # "performancereview"
+    result.add(normalized.replace(" ", ""))  # "performancereviews"
+    result.add(singular.replace(" ", ""))  # "performancereview"
     # Filter out empty strings and single-char noise
     return [v for v in result if len(v) > 1]
 
@@ -73,6 +75,7 @@ def _variants(term: str) -> list[str]:
 # ---------------------------------------------------------------------------
 # SchemaMatcher
 # ---------------------------------------------------------------------------
+
 
 class SchemaMatcher:
     """Vocabulary-based matcher for schema, API, and business terms.
@@ -112,8 +115,8 @@ class SchemaMatcher:
             (business_terms or [], "term"),
         ):
             for term in terms:
-                eid = _auto_id(term)
-                canonical = normalize_schema_term(term)
+                canonical = normalize_schema_term(term, to_singular=True)
+                eid = _auto_id(canonical)
                 self._entities[eid] = (canonical, term, etype)
                 for variant in _variants(term):
                     # First registration wins on collision
@@ -158,13 +161,15 @@ class SchemaMatcher:
         for eid, spans in found.items():
             canonical, display_name, etype = self._entities[eid]
             deduped = sorted({s: None for s in spans})  # stable unique spans
-            results.append(EntityMatch(
-                entity_id=eid,
-                name=canonical,
-                display_name=display_name,
-                entity_type=etype,
-                frequency=len(deduped),
-                positions=[s[0] for s in deduped],
-                spans=deduped,
-            ))
+            results.append(
+                EntityMatch(
+                    entity_id=eid,
+                    name=canonical,
+                    display_name=display_name,
+                    entity_type=etype,
+                    frequency=len(deduped),
+                    positions=[s[0] for s in deduped],
+                    spans=deduped,
+                )
+            )
         return results

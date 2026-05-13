@@ -1,0 +1,11 @@
+extends = "../base.toml"
+run_name = "ner_ref_graph_first_k10_grid"
+
+[index.features]
+svo = true
+
+[retrieval]
+enhanced = true
+entity_ref_expansion = true
+search_mode = "graph_first"
+top_k = 10

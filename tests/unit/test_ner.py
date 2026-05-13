@@ -3,17 +3,12 @@
 """Unit tests for NER vocabulary matching and entity index."""
 
 import json
-import math
-import tempfile
-from pathlib import Path
 
 import pytest
 
-from chonk.ner._vocabulary import VocabularyMatcher, EntityMatch, _auto_id
 from chonk.ner._index import EntityIndex
-from chonk.ner._merge import merge_matches, _strip_span, _overlaps
-from chonk.models import EntityAssociation
-
+from chonk.ner._merge import _overlaps, _strip_span, merge_matches
+from chonk.ner._vocabulary import EntityMatch, VocabularyMatcher, _auto_id
 
 # ---------------------------------------------------------------------------
 # VocabularyMatcher
@@ -136,8 +131,8 @@ class TestVocabularyMatcher:
         matcher = VocabularyMatcher.from_file(vocab_file)
         matches = matcher.match("The balance sheet shows revenue recognition items.")
         ids = {m.entity_id for m in matches}
-        assert "ent_balance_sheet" in ids
-        assert "ent_revenue_recognition" in ids
+        assert "balance_sheet" in ids
+        assert "revenue_recognition" in ids
 
     def test_entity_ids(self):
         matcher = VocabularyMatcher(SAMPLE_ENTITIES)
@@ -145,8 +140,8 @@ class TestVocabularyMatcher:
 
 
 def test_auto_id():
-    assert _auto_id("HCA Healthcare") == "ent_hca_healthcare"
-    assert _auto_id("OFAC Screening") == "ent_ofac_screening"
+    assert _auto_id("HCA Healthcare") == "hca_healthcare"
+    assert _auto_id("OFAC Screening") == "ofac_screening"
 
 
 # ---------------------------------------------------------------------------
@@ -385,7 +380,7 @@ class TestSpacyMatcher:
         Regression: str(SpacyLabel.ORG) returns 'SpacyLabel.ORG' not 'ORG',
         so building self._types with str() caused all labels to be rejected.
         """
-        from chonk.ner import SpacyMatcher, SpacyLabel
+        from chonk.ner import SpacyLabel, SpacyMatcher
         matcher = SpacyMatcher(
             model="en_core_web_sm",
             entity_types=[SpacyLabel.GPE, SpacyLabel.ORG, SpacyLabel.PERSON],

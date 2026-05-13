@@ -478,7 +478,7 @@ class DuckDBVectorBackend:
         rows = self._conn.execute(
             f"""
             SELECT document_name, content, section, chunk_index,
-                   source_offset, source_length, breadcrumb, source_detail
+                   source_offset, source_length, breadcrumb, source_detail, chunk_type
             FROM {self._read_table}
             ORDER BY document_name, chunk_index
             """
@@ -494,6 +494,7 @@ class DuckDBVectorBackend:
                 breadcrumb=row[6],
                 embedding_content=f"{row[6]}\n\n{row[1]}" if row[6] else row[1],
                 source_detail=json.loads(row[7]) if row[7] else None,
+                chunk_type=row[8] or "document",
             )
             for row in rows
         ]

@@ -6,6 +6,7 @@
 
 """chonk NER — vocabulary-based entity matching and chunk association index."""
 
+from ._build import build_ner
 from ._index import EntityIndex
 from ._merge import merge_matches
 from ._normalizer import EntityNormalizer, canonical_key, normalize_entity
@@ -17,6 +18,7 @@ from ._spacy_labels import ALL_SPACY_LABELS, SpacyLabel
 from ._vocabulary import EntityMatch, VocabularyMatcher
 
 __all__ = [
+    "build_ner",
     "VocabularyMatcher",
     "EntityMatch",
     "EntityIndex",

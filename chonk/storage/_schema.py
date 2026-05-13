@@ -99,8 +99,13 @@ CREATE TABLE IF NOT EXISTS entities (
     name         TEXT NOT NULL,
     display_name TEXT NOT NULL,
     entity_type  TEXT NOT NULL DEFAULT 'concept',
+    description  TEXT,
     created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )
+""".strip()
+
+ENTITIES_MIGRATE_DESCRIPTION = """
+ALTER TABLE entities ADD COLUMN IF NOT EXISTS description TEXT
 """.strip()
 
 CHUNK_ENTITIES_DDL = """
@@ -117,17 +122,6 @@ CREATE TABLE IF NOT EXISTS chunk_entities (
 
 CHUNK_ENTITIES_MIGRATE_NAMESPACE = """
 ALTER TABLE chunk_entities ADD COLUMN IF NOT EXISTS namespace TEXT
-""".strip()
-
-ENTITY_DESCRIPTIONS_DDL = """
-CREATE TABLE IF NOT EXISTS entity_descriptions (
-    entity_id   TEXT    NOT NULL,
-    namespace   TEXT    NOT NULL DEFAULT 'global',
-    description TEXT    NOT NULL,
-    source      TEXT    NOT NULL DEFAULT 'llm',
-    updated_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (entity_id, namespace)
-)
 """.strip()
 
 ENTITY_ALIASES_DDL = """
@@ -148,6 +142,14 @@ CREATE TABLE IF NOT EXISTS documents (
     source_uri    TEXT NOT NULL DEFAULT '',
     indexed_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     chunk_count   INTEGER NOT NULL DEFAULT 0
+)
+""".strip()
+
+NER_CACHE_DDL = """
+CREATE TABLE IF NOT EXISTS ner_cache (
+    config_fingerprint  VARCHAR PRIMARY KEY,
+    chunk_count         INTEGER NOT NULL,
+    created_at          TIMESTAMP DEFAULT current_timestamp
 )
 """.strip()
 
@@ -172,9 +174,10 @@ def get_ddl(embedding_dim: int = 1024) -> list[str]:
         DOMAINS_MIGRATE_PARENT_ID,
         SOURCES_DDL,
         ENTITIES_DDL,
+        ENTITIES_MIGRATE_DESCRIPTION,
         CHUNK_ENTITIES_DDL,
         CHUNK_ENTITIES_MIGRATE_NAMESPACE,
-        ENTITY_DESCRIPTIONS_DDL,
         ENTITY_ALIASES_DDL,
         DOCUMENTS_DDL,
+        NER_CACHE_DDL,
     ]

@@ -15,6 +15,11 @@ from collections.abc import Sequence
 from ._llm import LLMClient
 from ._svo import VERB_SET, SVOTriple
 
+_RETRY_SUFFIX = (
+    "\n\nYour previous response was not valid JSON. "
+    "Return ONLY the JSON object or array — no prose, no markdown fences, no explanation."
+)
+
 _SYSTEM_PROMPT = """\
 You are a knowledge-graph extractor. Given a text passage, extract Subject-Verb-Object triples.
 
@@ -43,23 +48,27 @@ Extract triples as JSON array.
 _ENTITY_ANCHORED_SYSTEM_PROMPT = """\
 You are a knowledge-graph extractor. Given a text passage and the entities that co-occur in it, \
 extract Subject-Verb-Object triples between those entities and, for any entity lacking a description, \
-generate a concise one-sentence description and a short list of aliases (alternate names or abbreviations).
+generate a concise one-sentence description and a short list of aliases (alternate names or abbreviations). \
+Also generate a one-sentence description for every extracted triple.
 
 Rules:
 - subject_id and object_id must be EXACTLY entity IDs from the provided entity list — no others
-- verb must be EXACTLY one value from the allowed vocabulary (no synonyms, no invention)
+- verb must be EXACTLY one value from the allowed vocabulary (no synonyms, no invention); choose the most specific verb that fits — use "references" only when no more precise verb applies (e.g. prefer "part_of", "contains", "derived_from", "governs", "depends_on" when they accurately describe the relationship)
 - confidence must be a float in [0.0, 1.0]
-- descriptions must be one sentence, grounded in the text
-- aliases must be a list of 1–3 alternate names or common abbreviations for the entity; omit if none apply
-- Return ONLY a JSON object with exactly three keys — no prose, no markdown fences:
+- descriptions must be one sentence describing what the entity means in the business domain — not technical implementation details, code identifiers, schema structure, or how the entity appears in data. Write as if explaining to a business analyst, not a developer. Bad: "customer info referenced by customer_id". Good: "An individual or organisation that purchases products or services."
+- aliases must be a list of 1–3 meaningful alternate names or common abbreviations — never include plural or singular grammatical variants of the entity name itself (e.g. do not alias "order" with "orders"); omit if none apply
+- rel_descriptions keys are "subject_id|verb|object_id" — one sentence describing the business meaning of the relationship, not technical implementation details (e.g. not "via a foreign key"). Write as if explaining to a business analyst.
+- Return ONLY a JSON object with exactly four keys — no prose, no markdown fences:
   {{
     "triples": [{{"subject_id": "...", "verb": "...", "object_id": "...", "confidence": 0.0}}],
     "descriptions": {{"entity_id": "one-sentence description"}},
-    "aliases": {{"entity_id": ["alias1", "alias2"]}}
+    "aliases": {{"entity_id": ["alias1", "alias2"]}},
+    "rel_descriptions": {{"subject_id|verb|object_id": "one-sentence relationship description"}}
   }}
 - Omit an entity from "descriptions" if it already has one (marked with ✓ below)
 - Include aliases for ALL entities regardless of whether they already have a description
-- If no clear relationships exist, return {{"triples": [], "descriptions": {{}}, "aliases": {{}}}}
+- Include a rel_description for every triple in "triples"
+- If no clear relationships exist, return {{"triples": [], "descriptions": {{}}, "aliases": {{}}, "rel_descriptions": {{}}}}
 
 Allowed verbs:
 {verbs}
@@ -123,7 +132,11 @@ class SVOExtractor:
             text=text,
         )
         raw = self._llm.complete(prompt)
-        return self._parse(raw, chunk_id)
+        result = self._parse(raw, chunk_id)
+        if result is None:
+            raw = self._llm.complete(prompt + _RETRY_SUFFIX)
+            result = self._parse(raw, chunk_id)
+        return result or []
 
     def extract_batch(
         self,
@@ -147,7 +160,7 @@ class SVOExtractor:
         text: str,
         chunk_id: str | None,
         entities: list[dict],
-    ) -> tuple[list[SVOTriple], dict[str, str], dict[str, list[str]]]:
+    ) -> tuple[list[SVOTriple], dict[str, str], dict[str, list[str]], dict[str, str]]:
         """Entity-anchored extraction using co-occurrence hints.
 
         Args:
@@ -158,13 +171,14 @@ class SVOExtractor:
                 subject/object.
 
         Returns:
-            ``(triples, new_descriptions, new_aliases)`` where
+            ``(triples, new_descriptions, new_aliases, rel_descriptions)`` where
             ``new_descriptions`` maps entity_id → description for entities
-            that lacked one, and ``new_aliases`` maps entity_id → list of
-            alternate names/abbreviations.
+            that lacked one, ``new_aliases`` maps entity_id → list of
+            alternate names/abbreviations, and ``rel_descriptions`` maps
+            ``"subject_id|verb|object_id"`` → one-sentence relationship description.
         """
         if len(entities) < 2:
-            return [], {}, {}
+            return [], {}, {}, {}
 
         valid_ids: set[str] = {e["id"] for e in entities}
         lines = []
@@ -184,7 +198,11 @@ class SVOExtractor:
             text=text,
         )
         raw = self._llm.complete(prompt)
-        return self._parse_entity_anchored(raw, chunk_id, valid_ids)
+        result = self._parse_entity_anchored(raw, chunk_id, valid_ids)
+        if result is None:
+            raw = self._llm.complete(prompt + _RETRY_SUFFIX)
+            result = self._parse_entity_anchored(raw, chunk_id, valid_ids)
+        return result or ([], {}, {}, {})
 
 
 
@@ -192,17 +210,16 @@ class SVOExtractor:
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _parse(self, raw: str, chunk_id: str | None) -> list[SVOTriple]:
-        """Parse LLM response into validated SVOTriples, dropping bad rows."""
-        # Strip markdown fences if the LLM ignored the instruction
+    def _parse(self, raw: str, chunk_id: str | None) -> list[SVOTriple] | None:
+        """Parse LLM response into validated SVOTriples. Returns None on JSON failure."""
         cleaned = re.sub(r"```(?:json)?|```", "", raw).strip()
         try:
             rows = json.loads(cleaned)
         except json.JSONDecodeError:
-            return []
+            return None
 
         if not isinstance(rows, list):
-            return []
+            return None
 
         triples: list[SVOTriple] = []
         for row in rows:
@@ -227,16 +244,22 @@ class SVOExtractor:
         raw: str,
         chunk_id: str | None,
         valid_ids: set[str],
-    ) -> tuple[list[SVOTriple], dict[str, str], dict[str, list[str]]]:
-        """Parse entity-anchored LLM response."""
+    ) -> tuple[list[SVOTriple], dict[str, str], dict[str, list[str]], dict[str, str]] | None:
+        """Parse entity-anchored LLM response. Returns None on JSON failure."""
         cleaned = re.sub(r"```(?:json)?|```", "", raw).strip()
         try:
             obj = json.loads(cleaned)
         except json.JSONDecodeError:
-            return [], {}, {}
+            return None
 
         if not isinstance(obj, dict):
-            return [], {}, {}
+            return None
+
+        # Parse rel_descriptions first so they can be attached to triples
+        rel_descriptions: dict[str, str] = {}
+        for key, desc in (obj.get("rel_descriptions") or {}).items():
+            if isinstance(key, str) and isinstance(desc, str) and desc.strip():
+                rel_descriptions[key] = desc.strip()
 
         triples: list[SVOTriple] = []
         for row in obj.get("triples", []):
@@ -248,12 +271,14 @@ class SVOExtractor:
                     continue
                 if subj not in valid_ids or obj_ not in valid_ids:
                     continue
+                rel_key = f"{subj}|{verb}|{obj_}"
                 triples.append(SVOTriple(
                     subject_id=subj,
                     verb=verb,
                     object_id=obj_,
                     confidence=float(row["confidence"]),
                     source_chunk_id=chunk_id,
+                    description=rel_descriptions.get(rel_key, ""),
                 ))
             except (KeyError, TypeError, ValueError):
                 continue
@@ -270,4 +295,4 @@ class SVOExtractor:
                 if clean:
                     aliases[eid] = clean
 
-        return triples, descriptions, aliases
+        return triples, descriptions, aliases, rel_descriptions

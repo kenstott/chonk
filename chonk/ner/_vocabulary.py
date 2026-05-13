@@ -21,12 +21,13 @@ from pathlib import Path
 @dataclass
 class EntityMatch:
     """A single entity matched within a chunk of text."""
+
     entity_id: str
     name: str
     display_name: str
     entity_type: str
     frequency: int
-    positions: list[int]        # character offsets of each match start
+    positions: list[int]  # character offsets of each match start
     spans: list[tuple[int, int]] = field(default_factory=list)  # (start, end) pairs
 
 
@@ -122,15 +123,17 @@ class VocabularyMatcher:
         for eid, info in found.items():
             meta = self._entities[eid]
             spans = sorted(info["spans"])
-            results.append(EntityMatch(
-                entity_id=eid,
-                name=meta["name"],
-                display_name=info["display_name"],
-                entity_type=info["type"],
-                frequency=len(spans),
-                positions=[s[0] for s in spans],
-                spans=spans,
-            ))
+            results.append(
+                EntityMatch(
+                    entity_id=eid,
+                    name=meta["name"],
+                    display_name=info["display_name"],
+                    entity_type=info["type"],
+                    frequency=len(spans),
+                    positions=[s[0] for s in spans],
+                    spans=spans,
+                )
+            )
         return results
 
     def entity_ids(self) -> list[str]:
@@ -147,7 +150,7 @@ class VocabularyMatcher:
         path: str | Path,
         match_mode: str = "case_insensitive",
         min_entity_length: int = 2,
-    ) -> "VocabularyMatcher":
+    ) -> VocabularyMatcher:
         """Load a VocabularyMatcher from a JSON or plain-text file.
 
         JSON files must contain a list of entity objects (see class docstring).
@@ -160,13 +163,17 @@ class VocabularyMatcher:
             raw = json.loads(text)
             entities = []
             for item in raw:
-                entities.append({
-                    "id": item.get("id", _auto_id(item.get("name", item.get("display_name", "")))),
-                    "name": item.get("name", item.get("display_name", "")).lower(),
-                    "display_name": item.get("display_name", item.get("name", "")),
-                    "type": item.get("type", item.get("entity_type", "concept")),
-                    "aliases": item.get("aliases", []),
-                })
+                entities.append(
+                    {
+                        "id": item.get(
+                            "id", _auto_id(item.get("name", item.get("display_name", "")))
+                        ),
+                        "name": item.get("name", item.get("display_name", "")).lower(),
+                        "display_name": item.get("display_name", item.get("name", "")),
+                        "type": item.get("type", item.get("entity_type", "concept")),
+                        "aliases": item.get("aliases", []),
+                    }
+                )
         else:
             # Plain text: one display name per line
             entities = []
@@ -174,17 +181,18 @@ class VocabularyMatcher:
                 line = line.strip()
                 if not line or line.startswith("#"):
                     continue
-                entities.append({
-                    "id": _auto_id(line),
-                    "name": line.lower(),
-                    "display_name": line,
-                    "type": "concept",
-                    "aliases": [],
-                })
+                entities.append(
+                    {
+                        "id": _auto_id(line),
+                        "name": line.lower(),
+                        "display_name": line,
+                        "type": "concept",
+                        "aliases": [],
+                    }
+                )
         return cls(entities, match_mode=match_mode, min_entity_length=min_entity_length)
 
 
 def _auto_id(display_name: str) -> str:
     """Generate a stable entity ID from a display name."""
-    slug = re.sub(r"[^a-z0-9]+", "_", display_name.lower()).strip("_")
-    return f"ent_{slug}"
+    return re.sub(r"[^a-z0-9]+", "_", display_name.lower()).strip("_")

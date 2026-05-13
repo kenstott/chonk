@@ -3,14 +3,15 @@
 """Unit tests for SVOTriple and RelationshipIndex (Phase 4.1)."""
 
 import json
+
 import pytest
 
-from chonk.graph import SVOTriple, VERB_SET, RelationshipIndex, SVOExtractor
-
+from chonk.graph import VERB_SET, RelationshipIndex, SVOExtractor, SVOTriple
 
 # ---------------------------------------------------------------------------
 # SVOTriple
 # ---------------------------------------------------------------------------
+
 
 class TestSVOTriple:
     def test_valid_construction(self):
@@ -49,31 +50,42 @@ class TestSVOTriple:
 
     def test_verb_set_contents(self):
         # spot-check one from each category
-        assert "type_of" in VERB_SET           # taxonomy
-        assert "contains" in VERB_SET          # structure
-        assert "references" in VERB_SET        # lineage
-        assert "governs" in VERB_SET           # governance
-        assert "manages" in VERB_SET           # ownership
-        assert "equivalent_to" in VERB_SET     # equivalence
-        assert "depends_on" in VERB_SET        # causation
-        assert "produces" in VERB_SET          # data flow
+        assert "type_of" in VERB_SET  # taxonomy
+        assert "contains" in VERB_SET  # structure
+        assert "references" in VERB_SET  # lineage
+        assert "governs" in VERB_SET  # governance
+        assert "manages" in VERB_SET  # ownership
+        assert "equivalent_to" in VERB_SET  # equivalence
+        assert "depends_on" in VERB_SET  # causation
+        assert "produces" in VERB_SET  # data flow
         assert "located_in" in VERB_SET
         assert "used_for" in VERB_SET
         assert "member_of" in VERB_SET
         assert "inverse_of" in VERB_SET
-        assert len(VERB_SET) == 48
+        assert len(VERB_SET) == 55
 
     def test_removed_verbs_dropped_by_extractor(self):
         # Removed verbs are rejected by SVOExtractor (not the dataclass)
-        removed = ("categorized_under", "inherits_from", "regulated_by",
-                   "subject_to", "synonym_of", "replaces", "computed_from",
-                   "authored_by", "joins_to")
+        removed = (
+            "categorized_under",
+            "inherits_from",
+            "regulated_by",
+            "subject_to",
+            "synonym_of",
+            "replaces",
+            "computed_from",
+            "authored_by",
+            "joins_to",
+        )
 
         class _Stub:
-            def __init__(self, verb): self._verb = verb
-            def complete(self, p): return json.dumps([
-                {"subject_id": "a", "verb": self._verb, "object_id": "b", "confidence": 0.9}
-            ])
+            def __init__(self, verb):
+                self._verb = verb
+
+            def complete(self, p):
+                return json.dumps(
+                    [{"subject_id": "a", "verb": self._verb, "object_id": "b", "confidence": 0.9}]
+                )
 
         for verb in removed:
             extractor = SVOExtractor(_Stub(verb))
@@ -83,6 +95,7 @@ class TestSVOTriple:
 # ---------------------------------------------------------------------------
 # RelationshipIndex
 # ---------------------------------------------------------------------------
+
 
 class TestRelationshipIndex:
     def _make_triple(self, subj, verb, obj, conf=0.9, chunk=None):
@@ -166,6 +179,7 @@ class TestRelationshipIndex:
 
     def test_top_level_import(self):
         import chonk
+
         assert chonk.SVOTriple is SVOTriple
         assert chonk.RelationshipIndex is RelationshipIndex
         assert chonk.VERB_SET is VERB_SET

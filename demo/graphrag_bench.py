@@ -435,29 +435,28 @@ def _naive_chunks(text: str,
 # Phase 2: Index (chunk + embed + store via chonk)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def cmd_build_ner(args: argparse.Namespace) -> None:
     """Run NER on an existing index and persist chunk_entities to DB."""
-    import duckdb
     data_dir = Path(args.out_dir) / "data"
     db_path  = data_dir / args.db_name
     force    = getattr(args, "force", False)
     if not db_path.exists():
         raise FileNotFoundError(f"Index DB not found: {db_path}")
-    con = duckdb.connect(str(db_path), read_only=True)
-    n = con.execute("SELECT COUNT(*) FROM chunk_entities").fetchone()[0]
-    con.close()
-    if n > 0 and not force:
-        print(f"chunk_entities already populated ({n:,} rows) — skipping. Use --force to rebuild.")
-    else:
-        use_schema_vocab = getattr(args, "with_schema_vocab", False)
-        vocab_entities   = getattr(args, "vocab_entities", None)
-        with Store(db_path, embedding_dim=EMBED_DIM) as store:
-            entity_index = _build_entity_index_from_store(
-                store,
-                use_schema_vocab=use_schema_vocab,
-                vocab_entities=vocab_entities,
-            )
-        _persist_entity_index(entity_index, db_path)
+
+    use_schema_vocab = getattr(args, "with_schema_vocab", False)
+    vocab_entities   = getattr(args, "vocab_entities", None)
+
+    from chonk.ner import build_ner
+    with Store(db_path, embedding_dim=EMBED_DIM) as store:
+        n_written = build_ner(
+            store,
+            spacy_model=SPACY_MODEL,
+            use_schema_vocab=use_schema_vocab,
+            vocab_entities=vocab_entities,
+            force=force,
+        )
+    print(f"  Persisted {n_written:,} associations → {db_path}")
 
     # Build entity embeddings if requested or not yet present
     with_embeddings = getattr(args, "with_embeddings", False)
@@ -479,8 +478,12 @@ def cmd_build_ner(args: argparse.Namespace) -> None:
 
 
 def cmd_index(args: argparse.Namespace) -> None:
+    import hashlib as _hl
+
     import numpy as np
     from sentence_transformers import SentenceTransformer
+
+    from chonk.storage._vector import sync_document
 
     out_dir  = Path(args.out_dir)
     data_dir = out_dir / "data"
@@ -491,13 +494,6 @@ def cmd_index(args: argparse.Namespace) -> None:
     base = "chonk_nobc" if embed_content_only else "chonk"
     db_path = data_dir / f"{base}{size_suffix}.duckdb"
 
-    if db_path.exists() and not args.force:
-        with Store(db_path, embedding_dim=EMBED_DIM) as store:
-            n = store.count()
-        print(f"Index already exists: {n:,} chunks at {db_path}")
-        print("Use --force to reindex.")
-        return
-
     if db_path.exists() and args.force:
         db_path.unlink()
         print(f"Removed existing index: {db_path}")
@@ -505,81 +501,24 @@ def cmd_index(args: argparse.Namespace) -> None:
     corpus = _build_corpus(out_dir)
     print(f"Corpus: {len(corpus)} documents")
 
-    print(f"Chunking with header promotion (min={min_chunk}, max={max_chunk})...")
-    all_chunks = []
-    for doc_id, text in corpus:
-        is_novel = doc_id.lower().startswith("novel")
-        if is_novel:
-            promoted = promote_plain_text_headers(
-                text,
-                promote_questions=False,
-                promote_short_phrases=False,
-                structural_levels=NOVEL_STRUCTURAL_LEVELS,
-                toc_proximity=300,
-            )
-        else:
-            promoted = promote_plain_text_headers(
-                text,
-                promote_questions=True,
-                promote_short_phrases=True,
-                strip_isolated_letters=True,
-            )
-        chunks = chunk_document(
-            doc_id, promoted,
-            min_chunk_size=min_chunk,
-            max_chunk_size=max_chunk,
-            include_breadcrumb=True,
-            include_doc_name=False,
-            promote_headings=False,  # already promoted above
-        )
-        chunks = enrich_chunks(chunks)
-        all_chunks.extend(chunks)
+    sources_cfg = getattr(args, "sources", None)
+    # Build per-doc source maps upfront
+    source_ns_map: dict[str, str | None] = {}
+    source_sid_map: dict[str, str | None] = {}
+    source_did_map: dict[str, str | None] = {}
 
-    print(f"Total chunks: {len(all_chunks):,}")
-    avg = sum(len(c.content) for c in all_chunks) / max(1, len(all_chunks))
-    print(f"Avg chunk size: {avg:.0f} chars")
-
-    print(f"Embedding {len(all_chunks):,} chunks with {EMBED_MODEL}...")
-    model = SentenceTransformer(EMBED_MODEL)
-
-    texts = [
-        c.content if embed_content_only else (c.embedding_content if c.embedding_content else c.content)
-        for c in all_chunks
-    ]
-
-    batch_size = 256
-    embeddings = []
-    for i in range(0, len(texts), batch_size):
-        batch = texts[i:i + batch_size]
-        vecs  = model.encode(batch, show_progress_bar=False, normalize_embeddings=True)
-        embeddings.append(vecs)
-        done = min(i + batch_size, len(texts))
-        if (i // batch_size) % 10 == 0:
-            print(f"  {done:,}/{len(texts):,}")
-
-    emb = np.vstack(embeddings).astype("float32")
-    print(f"Embeddings: {emb.shape}")
-
-    print(f"Storing in {db_path}...")
     with Store(db_path, embedding_dim=EMBED_DIM) as store:
-        sources_cfg = getattr(args, "sources", None)
         if sources_cfg:
             store.register_namespace(GLOBAL_NAMESPACE)
             corpus_doc_names = {doc_id for doc_id, _ in corpus}
-            # Build per-doc maps: namespace, source_id, domain_id
-            source_ns_map: dict[str, str | None] = {}
-            source_sid_map: dict[str, str | None] = {}
-            source_did_map: dict[str, str | None] = {}
             for src in sources_cfg:
                 ns = src.get("namespace", GLOBAL_NAMESPACE)
                 domain = src.get("domain")
                 src_type = src.get("type", "")
                 uri = src.get("uri", "")
-                # Deterministic IDs
                 namespace_id = ns if ns else None
                 domain_id = f"{ns}:{domain}" if (ns and domain) else None
                 source_id = f"{ns}:{domain}:{src_type}:{uri[:40]}" if (ns and domain) else None
-                # Register if namespace/domain present
                 if namespace_id:
                     store.register_namespace(namespace_id)
                 if domain_id:
@@ -592,34 +531,80 @@ def cmd_index(args: argparse.Namespace) -> None:
                         source_ns_map[doc_id] = ns
                         source_sid_map[doc_id] = source_id
                         source_did_map[doc_id] = domain_id
-            from collections import defaultdict as _defaultdict
-            # Group by (ns, source_id, domain_id) triple
-            group_key_map: dict[str, tuple] = {}
-            for idx_c, chunk in enumerate(all_chunks):
-                ns = source_ns_map.get(chunk.document_name)
-                sid = source_sid_map.get(chunk.document_name)
-                did = source_did_map.get(chunk.document_name)
-                group_key_map[chunk.document_name] = (ns, sid, did)
-            groups: dict[tuple, list] = _defaultdict(list)
-            group_indices: dict[tuple, list] = _defaultdict(list)
-            for idx_c, chunk in enumerate(all_chunks):
-                key = group_key_map.get(chunk.document_name, (None, None, None))
-                groups[key].append(chunk)
-                group_indices[key].append(idx_c)
-            for (ns, sid, did), grp_chunks in groups.items():
-                grp_emb = emb[group_indices[(ns, sid, did)]]
-                store.add_document(grp_chunks, grp_emb, namespace=ns, source_id=sid, domain_id=did)
-        else:
-            store.add_document(all_chunks, emb)
+
+        model = SentenceTransformer(EMBED_MODEL)
+        n_skipped = n_added = n_updated = 0
+
+        print(f"Chunking and indexing with header promotion (min={min_chunk}, max={max_chunk})...")
+        all_chunks_for_schema: list = []
+
+        for doc_id, text in corpus:
+            content_hash = _hl.sha256(text.encode()).hexdigest()
+            result = sync_document(store.vector, doc_id, content_hash=content_hash)
+            if result.action == "skipped":
+                n_skipped += 1
+                continue
+
+            is_novel = doc_id.lower().startswith("novel")
+            if is_novel:
+                promoted = promote_plain_text_headers(
+                    text,
+                    promote_questions=False,
+                    promote_short_phrases=False,
+                    structural_levels=NOVEL_STRUCTURAL_LEVELS,
+                    toc_proximity=300,
+                )
+            else:
+                promoted = promote_plain_text_headers(
+                    text,
+                    promote_questions=True,
+                    promote_short_phrases=True,
+                    strip_isolated_letters=True,
+                )
+            chunks = chunk_document(
+                doc_id, promoted,
+                min_chunk_size=min_chunk,
+                max_chunk_size=max_chunk,
+                include_breadcrumb=True,
+                include_doc_name=False,
+                promote_headings=False,
+            )
+            chunks = enrich_chunks(chunks)
+
+            texts = [
+                c.content if embed_content_only else (c.embedding_content if c.embedding_content else c.content)
+                for c in chunks
+            ]
+            batch_size = 256
+            doc_vecs = []
+            for i in range(0, len(texts), batch_size):
+                vecs = model.encode(texts[i:i + batch_size], show_progress_bar=False, normalize_embeddings=True)
+                doc_vecs.append(vecs)
+            emb = np.vstack(doc_vecs).astype("float32") if doc_vecs else np.empty((0, EMBED_DIM), dtype="float32")
+
+            ns  = source_ns_map.get(doc_id)
+            sid = source_sid_map.get(doc_id)
+            did = source_did_map.get(doc_id)
+            store.add_document(chunks, emb, namespace=ns, source_id=sid, domain_id=did)
+            store.vector.register_document(doc_id, content_hash, chunk_count=len(chunks))
+
+            all_chunks_for_schema.extend(chunks)
+            if result.action == "updated":
+                n_updated += 1
+            else:
+                n_added += 1
+
         n = store.count()
 
     print(f"Index complete: {n:,} chunks → {db_path}")
+    if n_skipped or n_updated:
+        print(f"  skipped={n_skipped:,} (unchanged)  added={n_added:,}  updated={n_updated:,}")
 
     # Populate entity descriptions from DB schema chunks (source='schema').
     # Table/column comments extracted at crawl time — free, no LLM needed.
     _SCHEMA_CHUNK_TYPES = {"db_table", "db_column", "api_endpoint",
                            "api_graphql_type", "api_field"}
-    schema_chunks = [c for c in all_chunks if c.chunk_type in _SCHEMA_CHUNK_TYPES]
+    schema_chunks = [c for c in all_chunks_for_schema if c.chunk_type in _SCHEMA_CHUNK_TYPES]
     if schema_chunks:
         with Store(db_path, embedding_dim=EMBED_DIM) as _sd_store:
             schema_descs: dict[str, str] = {}
@@ -630,9 +615,7 @@ def cmd_index(args: argparse.Namespace) -> None:
                     if eid and sc.content.strip():
                         schema_descs[eid] = sc.content.strip()[:300]
             if schema_descs:
-                n_schema = _sd_store.upsert_entity_descriptions_batch(
-                    schema_descs, source="schema"
-                )
+                n_schema = _sd_store.set_entity_descriptions_batch(schema_descs)
                 print(f"Populated {n_schema:,} schema entity descriptions → {db_path}")
 
     if getattr(args, "with_ner", False):
@@ -961,6 +944,7 @@ def _build_entity_index_from_store(
     store,
     use_schema_vocab: bool = False,
     vocab_entities: list[dict] | None = None,
+    skip_chunk_ids: set[str] | None = None,
 ) -> EntityIndex:
     """Run NER on all chunks in store and return a populated EntityIndex."""
     from chonk.ner import EntityIndex, SpacyLabel, SpacyMatcher
@@ -997,8 +981,20 @@ def _build_entity_index_from_store(
     else:
         data_matcher = None
 
-    print(f"  Running NER on {len(all_chunks):,} chunks...")
-    for chunk in all_chunks:
+    chunks_to_process = [
+        c for c in all_chunks
+        if (lambda cid: cid not in (skip_chunk_ids or set()))(
+            DuckDBVectorBackend._generate_chunk_id(
+                c.document_name, c.chunk_index,
+                c.embedding_content if c.embedding_content else c.content
+            )
+        )
+    ]
+    skipped = len(all_chunks) - len(chunks_to_process)
+    if skipped:
+        print(f"  Incremental: {skipped:,} chunks already processed, {len(chunks_to_process):,} new")
+    print(f"  Running NER on {len(chunks_to_process):,} chunks...")
+    for chunk in chunks_to_process:
         embed_content = chunk.embedding_content if chunk.embedding_content else chunk.content
         chunk_id = DuckDBVectorBackend._generate_chunk_id(
             chunk.document_name, chunk.chunk_index, embed_content
@@ -1027,14 +1023,15 @@ def _build_entity_index_from_store(
     return entity_index
 
 
-def _persist_entity_index(entity_index, db_path: Path) -> None:
+def _persist_entity_index(entity_index, db_path: Path, *, incremental: bool = False) -> None:
     """Write entity_index associations to chunk_entities/entities tables."""
 
     print("  Persisting to chunk_entities table...")
     data = entity_index.to_dict()
     con = _connect_with_retry(db_path)
-    con.execute("DELETE FROM chunk_entities")
-    con.execute("DELETE FROM entities")
+    if not incremental:
+        con.execute("DELETE FROM chunk_entities")
+        con.execute("DELETE FROM entities")
     for a in data["associations"]:
         ns_row = con.execute(
             "SELECT namespace FROM embeddings WHERE chunk_id = ?", [a["chunk_id"]]
@@ -1178,6 +1175,63 @@ def cmd_build_community(args: argparse.Namespace) -> None:
     else:
         raise RuntimeError("Could not acquire write lock on DB after 10 minutes.")
 
+    # Generate LLM community summaries and embed + store as community_summary chunks
+    gen_provider = getattr(args, "gen_provider", None)
+    gen_model    = getattr(args, "gen_model", GEN_MODEL)
+    if gen_provider:
+        import numpy as np
+        import openai as _oai
+        from sentence_transformers import SentenceTransformer
+
+        from chonk.community import CommunitySummarizer
+
+        if gen_provider == "together":
+            _c_client = _oai.OpenAI(
+                api_key=os.environ["TOGETHER_API_KEY"], base_url=TOGETHER_BASE_URL, timeout=120.0
+            )
+        elif gen_provider == "anthropic":
+            _c_client = _oai.OpenAI(
+                api_key=os.environ["ANTHROPIC_API_KEY"], base_url=ANTHROPIC_BASE_URL,
+                default_headers={"anthropic-version": "2023-06-01"}, timeout=120.0,
+            )
+        else:
+            _c_client = _oai.OpenAI(api_key=os.environ["OPENAI_API_KEY"], timeout=60.0)
+
+        class _CommunityLLM:
+            def complete(self, prompt: str) -> str:
+                resp = _c_client.chat.completions.create(
+                    model=gen_model,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0,
+                )
+                return resp.choices[0].message.content or ""
+
+        chunk_text_map: dict[str, str] = {r[0]: r[1] for r in rows}
+        summarizer = CommunitySummarizer(_CommunityLLM())
+        print(f"  Generating community summaries with {gen_model}...")
+        summary_chunks = summarizer.summarize_all(
+            idx,
+            get_chunk_text=lambda cid: chunk_text_map.get(cid),
+            min_chunks=2,
+        )
+        print(f"  {len(summary_chunks):,} community summaries generated")
+
+        if summary_chunks:
+            embed_model = SentenceTransformer(EMBED_MODEL)
+            texts = [c.content for c in summary_chunks]
+            vecs = embed_model.encode(texts, normalize_embeddings=True,
+                                      show_progress_bar=False, batch_size=256).astype("float32")
+            with Store(db_path, embedding_dim=EMBED_DIM) as _sum_store:
+                # Remove stale summaries before reinserting
+                _sum_store.vector._conn.execute(
+                    "DELETE FROM embeddings WHERE chunk_type = 'community_summary'"
+                )
+                _sum_store.add_document(summary_chunks, vecs,
+                                        session_fingerprint=Store.session_fingerprint(
+                                            domain_ids or ["__all__"]
+                                        ))
+            print(f"  Community summaries embedded and stored → {db_path}")
+
     # Write community cache entry when domain-scoped
     if domain_ids:
         fingerprint = Store.session_fingerprint(domain_ids)
@@ -1197,10 +1251,11 @@ def cmd_build_svo(args: argparse.Namespace) -> None:
     data_dir = Path(args.out_dir) / "data"
     db_name  = getattr(args, "db_name", None) or DB_FILENAME
     db_path  = data_dir / db_name
-    force    = getattr(args, "force", False)
-    gen_model    = getattr(args, "gen_model", GEN_MODEL)
+    force       = getattr(args, "force", False)
+    gen_model   = getattr(args, "gen_model", GEN_MODEL)
     gen_provider = getattr(args, "gen_provider", "openai")
-    concurrency  = getattr(args, "concurrency", 4)
+    concurrency = getattr(args, "concurrency", 4)
+    max_chunks  = getattr(args, "max_chunks", None)
 
     if not db_path.exists():
         raise FileNotFoundError(f"Index DB not found: {db_path}")
@@ -1216,28 +1271,59 @@ def cmd_build_svo(args: argparse.Namespace) -> None:
         except Exception:
             con.close()
 
+    import httpx as _httpx
     import openai as _oai
+
+    _svo_timeout = _httpx.Timeout(connect=10.0, read=60.0, write=10.0, pool=5.0)
 
     if gen_provider == "together":
         _oai_client = _oai.OpenAI(
-            api_key=os.environ["TOGETHER_API_KEY"], base_url=TOGETHER_BASE_URL, timeout=120.0
+            api_key=os.environ["TOGETHER_API_KEY"], base_url=TOGETHER_BASE_URL,
+            timeout=_svo_timeout,
         )
     elif gen_provider == "anthropic":
         _oai_client = _oai.OpenAI(
             api_key=os.environ["ANTHROPIC_API_KEY"], base_url=ANTHROPIC_BASE_URL,
-            default_headers={"anthropic-version": "2023-06-01"}, timeout=120.0,
+            default_headers={"anthropic-version": "2023-06-01"}, timeout=_svo_timeout,
         )
     else:
         _oai_client = _oai.OpenAI(api_key=os.environ["OPENAI_API_KEY"], timeout=60.0)
 
+    import threading as _threading
+    import time as _time
+    _svo_log_lock = _threading.Lock()
+
+    def _svo_log(msg: str) -> None:
+        ts = _time.strftime("%H:%M:%S")
+        with _svo_log_lock:
+            import sys as _sys
+            _sys.stderr.write(f"[svo {ts}] {msg}\n")
+            _sys.stderr.flush()
+
     class _OpenAILLMClient:
         def complete(self, prompt: str) -> str:
-            resp = _oai_client.chat.completions.create(
-                model=gen_model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0,
-            )
-            return resp.choices[0].message.content or ""
+            prompt_chars = len(prompt)
+            _svo_log(f"API call → model={gen_model} prompt={prompt_chars:,}chars")
+            t0 = _time.monotonic()
+            try:
+                resp = _oai_client.chat.completions.create(
+                    model=gen_model,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0,
+                )
+                elapsed = _time.monotonic() - t0
+                content = resp.choices[0].message.content or ""
+                usage = resp.usage
+                _svo_log(
+                    f"API ok  ← {elapsed:.2f}s  "
+                    f"in={usage.prompt_tokens}tok out={usage.completion_tokens}tok  "
+                    f"response={len(content):,}chars"
+                )
+                return content
+            except Exception as exc:
+                elapsed = _time.monotonic() - t0
+                _svo_log(f"API err ← {elapsed:.2f}s  {type(exc).__name__}: {str(exc)[:120]}")
+                raise
 
     llm = _OpenAILLMClient()
     extractor = SVOExtractor(llm)
@@ -1254,11 +1340,13 @@ def cmd_build_svo(args: argparse.Namespace) -> None:
         LEFT JOIN entities e ON e.id = ce.entity_id
     """).fetchall()
 
-    # Load existing descriptions so the prompt can mark them with ✓
-    desc_rows = con_ro.execute(
-        "SELECT entity_id, description FROM entity_descriptions"
-    ).fetchall() if _table_exists(con_ro, "entity_descriptions") else []
-    existing_descriptions: dict[str, str] = {r[0]: r[1] for r in desc_rows}
+    try:
+        desc_rows = con_ro.execute(
+            "SELECT id, COALESCE(description, '') FROM entities"
+        ).fetchall()
+        existing_descriptions: dict[str, str] = {r[0]: r[1] for r in desc_rows if r[1]}
+    except Exception:
+        existing_descriptions = {}
     con_ro.close()
 
     # Index: chunk_id → [{id, type, description}]
@@ -1276,40 +1364,78 @@ def cmd_build_svo(args: argparse.Namespace) -> None:
     chunks_without_entities = [(cid, content) for cid, content in rows
                                if len(chunk_entities_map.get(cid, [])) < 2]
 
+    if max_chunks is not None:
+        chunks_with_entities = chunks_with_entities[:max_chunks]
+
     print(f"Loaded {len(rows):,} chunks from {db_path}")
-    print(f"  {len(chunks_with_entities):,} chunks have ≥2 entities → entity-anchored extraction")
+    print(f"  {len(chunks_with_entities):,} chunks have ≥2 entities → entity-anchored extraction"
+          + (f" (capped at {max_chunks})" if max_chunks is not None else ""))
     print(f"  {len(chunks_without_entities):,} chunks have <2 entities → skipped")
 
     relationship_index = RelationshipIndex()
     new_descriptions: dict[str, str] = {}
+    progress_out = getattr(args, "progress_out", None)
+    _progress_fh = None
+    if progress_out:
+        import sys as _sys
+        _progress_fh = _sys.stdout if progress_out == "-" else open(progress_out, "w", buffering=1)
 
     def _extract_one(row):
         chunk_id, content = row
         entities = chunk_entities_map.get(chunk_id, [])
-        if len(entities) >= 2:
-            triples, descs, aliases = extractor.extract_entity_anchored(
+        n_ent = len(entities)
+        _svo_log(f"chunk start  chunk_id={chunk_id!r} entities={n_ent} content={len(content or ''):,}chars")
+        if n_ent >= 2:
+            t0 = _time.monotonic()
+            triples, descs, aliases, rel_descs = extractor.extract_entity_anchored(
                 content or "", chunk_id, entities
             )
-            return triples, descs, aliases
-        return [], {}, {}
+            elapsed = _time.monotonic() - t0
+            _svo_log(
+                f"chunk done   chunk_id={chunk_id!r} "
+                f"triples={len(triples)} descs={len(descs)} aliases={len(aliases)} "
+                f"elapsed={elapsed:.2f}s"
+            )
+            return triples, descs, aliases, rel_descs
+        _svo_log(f"chunk skip   chunk_id={chunk_id!r} entities={n_ent} (<2)")
+        return [], {}, {}, {}
 
     new_aliases: dict[str, list[str]] = {}
+    total_chunks = len(chunks_with_entities)
     with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as pool:
         futures = {pool.submit(_extract_one, row): row for row in chunks_with_entities}
         done = 0
         for fut in concurrent.futures.as_completed(futures):
-            triples, descs, aliases = fut.result()
+            chunk_id = futures[fut][0]
+            triples, descs, aliases, rel_descs = fut.result()
             for t in triples:
                 relationship_index.add(t)
             new_descriptions.update(descs)
             for eid, alias_list in aliases.items():
                 new_aliases.setdefault(eid, []).extend(alias_list)
             done += 1
-            if done % 100 == 0 or done == len(chunks_with_entities):
-                print(f"  {done:,}/{len(chunks_with_entities):,} chunks processed, "
-                      f"{len(relationship_index):,} triples so far")
+            if _progress_fh is not None:
+                import json as _json
+                event = {
+                    "done": done,
+                    "total": total_chunks,
+                    "chunk_id": chunk_id,
+                    "triples": [
+                        {"subject_id": t.subject_id, "verb": t.verb,
+                         "object_id": t.object_id, "confidence": t.confidence,
+                         "description": t.description}
+                        for t in triples
+                    ],
+                    "descriptions": descs,
+                    "aliases": aliases,
+                    "rel_descriptions": rel_descs,
+                }
+                _progress_fh.write(_json.dumps(event) + "\n")
+            _svo_log(f"progress     {done:,}/{total_chunks:,} total_triples={len(relationship_index):,}")
 
-    import time as _time
+    if _progress_fh is not None and progress_out != "-":
+        _progress_fh.close()
+
 
     from chonk.storage._store import Store as _Store
     for _attempt in range(60):
@@ -1328,12 +1454,9 @@ def cmd_build_svo(args: argparse.Namespace) -> None:
     else:
         raise RuntimeError("Could not acquire write lock on DB after 10 minutes.")
 
-    # Persist LLM-generated descriptions (source='llm'; never overwrites 'user'/'schema')
     if new_descriptions:
         with _Store(db_path, embedding_dim=EMBED_DIM) as _desc_store:
-            n_desc = _desc_store.upsert_entity_descriptions_batch(
-                new_descriptions, source="llm"
-            )
+            n_desc = _desc_store.set_entity_descriptions_batch(new_descriptions)
         print(f"Persisted {n_desc:,} new entity descriptions → {db_path}")
 
     # Persist LLM-generated aliases (first-registration wins per alias/namespace)
@@ -1364,10 +1487,9 @@ def _upsert_entity_chunk_embeddings(db_path: Path) -> None:
     try:
         entity_rows = con_ro.execute("""
             SELECT e.id, e.name,
-                   COALESCE(ed.description, '') AS description,
+                   COALESCE(e.description, '') AS description,
                    e.entity_type
             FROM entities e
-            LEFT JOIN entity_descriptions ed ON ed.entity_id = e.id AND ed.namespace = 'global'
         """).fetchall()
 
         if not entity_rows:
@@ -1414,7 +1536,7 @@ def _upsert_entity_chunk_embeddings(db_path: Path) -> None:
     # chunk_id for entity rows = entity_id; use document_name as the lookup key
     with _Store(db_path, embedding_dim=EMBED_DIM) as store:
         # Remove stale entity rows before re-inserting
-        store._db.execute("DELETE FROM embeddings WHERE chunk_type = 'entity'")
+        store._db.conn.execute("DELETE FROM embeddings WHERE chunk_type = 'entity'")
         store.add_document(chunks, np.array(vecs))
     print(f"  Persisted {len(chunks):,} entity embeddings → {db_path}")
 
@@ -1460,9 +1582,14 @@ def _init_run_db(db_path: Path) -> None:
             retrieved_chunks TEXT,
             retrieved_scores TEXT,
             expansion_stats TEXT,
-            entity_ref_retry TEXT
+            entity_ref_retry TEXT,
+            retrieval_trace TEXT
         )
     """)
+    try:
+        con.execute("ALTER TABLE results ADD COLUMN retrieval_trace TEXT")
+    except Exception:
+        pass  # column already exists
     con.execute("""
         CREATE TABLE IF NOT EXISTS eval_scores (
             id TEXT PRIMARY KEY,
@@ -1490,7 +1617,7 @@ def _upsert_results_to_db(db_path: Path, results: list[dict]) -> None:
     con = _connect_with_retry(db_path)
     for r in results:
         con.execute(
-            "INSERT OR REPLACE INTO results VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT OR REPLACE INTO results VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [
                 r.get("id"), r.get("question"), r.get("source"),
                 r.get("question_type"), r.get("context"),
@@ -1500,6 +1627,7 @@ def _upsert_results_to_db(db_path: Path, results: list[dict]) -> None:
                 _json.dumps(r.get("retrieved_scores")),
                 _json.dumps(r.get("entity_ref_expansion")) if r.get("entity_ref_expansion") else None,
                 _json.dumps(r.get("entity_ref_retry")) if r.get("entity_ref_retry") else None,
+                _json.dumps(r.get("retrieval_trace")) if r.get("retrieval_trace") else None,
             ],
         )
     con.close()
@@ -1516,7 +1644,7 @@ def _write_results_to_db(db_path: Path, results: list[dict]) -> None:
     con.execute("DELETE FROM results")
     for r in results:
         con.execute(
-            "INSERT INTO results VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO results VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [
                 r.get("id"), r.get("question"), r.get("source"),
                 r.get("question_type"), r.get("context"),
@@ -1526,6 +1654,7 @@ def _write_results_to_db(db_path: Path, results: list[dict]) -> None:
                 _json.dumps(r.get("retrieved_scores")),
                 _json.dumps(r.get("entity_ref_expansion")) if r.get("entity_ref_expansion") else None,
                 _json.dumps(r.get("entity_ref_retry")) if r.get("entity_ref_retry") else None,
+                _json.dumps(r.get("retrieval_trace")) if r.get("retrieval_trace") else None,
             ],
         )
     con.close()
@@ -1539,13 +1668,13 @@ def _read_results_from_db(db_path: Path) -> list[dict]:
     rows = con.execute("SELECT * FROM results").fetchall()
     cols = ["id","question","source","question_type","context","evidence",
             "generated_answer","gold_answer","retrieved_chunks","retrieved_scores",
-            "expansion_stats","entity_ref_retry"]
+            "expansion_stats","entity_ref_retry","retrieval_trace"]
     con.close()
     records = []
     for row in rows:
-        r = dict(zip(cols, row))
-        for key in ("evidence","retrieved_chunks","retrieved_scores","expansion_stats","entity_ref_retry"):
-            if r[key]:
+        r = dict(zip(cols[:len(row)], row))
+        for key in ("evidence","retrieved_chunks","retrieved_scores","expansion_stats","entity_ref_retry","retrieval_trace"):
+            if r.get(key):
                 try: r[key] = _json.loads(r[key])
                 except Exception: pass
         records.append(r)
@@ -1669,7 +1798,7 @@ def _prune_redundant(hits, db_conn, threshold):
     return selected
 
 
-def _build_enhanced_search(store, db_path: Path | None = None, use_ner_x: bool = False, embed_model=None, entity_ref_expansion: bool = False, entity_ref_expansion_k: int = 20, entity_ref_expansion_per_k: int | None = None, entity_ref_expansion_min_sim: float | None = None, use_cluster: bool = False, lane_entity_min_sim: float | None = None, namespaces: list[str] | None = None, domain_ids: list[str] | None = None):
+def _build_enhanced_search(store, db_path: Path | None = None, use_ner_x: bool = False, embed_model=None, entity_ref_expansion: bool = False, entity_ref_expansion_k: int = 20, entity_ref_expansion_per_k: int | None = None, entity_ref_expansion_min_sim: float | None = None, use_cluster: bool = False, lane_entity_min_sim: float | None = None, namespaces: list[str] | None = None, domain_ids: list[str] | None = None, community_index=None):
     """Load EnhancedSearch: from pre-built DB tables if available, else rebuild in memory."""
     import duckdb
 
@@ -1700,6 +1829,7 @@ def _build_enhanced_search(store, db_path: Path | None = None, use_ner_x: bool =
 
             matcher = SpacyMatcher(model=SPACY_MODEL, strip_numeric=True)
             query_ner_fn = lambda text: [m.display_name for m in matcher.match(text)]
+            query_entity_id_fn = lambda text: [m.entity_id for m in matcher.match(text)]
 
             ner_x_kwargs: dict = {}
             if use_ner_x and embed_model is not None:
@@ -1748,6 +1878,8 @@ def _build_enhanced_search(store, db_path: Path | None = None, use_ner_x: bool =
                 lane_entity_min_sim=lane_entity_min_sim,
                 relationship_index=relationship_index,
                 session_fingerprint=_session_fingerprint,
+                community_index=community_index,
+                query_entity_id_fn=query_entity_id_fn,
                 **ner_x_kwargs,
                 **embed_fn_kwargs,
             )
@@ -1772,6 +1904,7 @@ def _build_enhanced_search(store, db_path: Path | None = None, use_ner_x: bool =
         cluster_map = ClusterMap.build(entity_index)
         print(f"  {cluster_map.cluster_count():,} clusters across {cluster_map.entity_count():,} entities")
     query_ner_fn = lambda text: [m.display_name for m in matcher.match(text)]
+    query_entity_id_fn = lambda text: [m.entity_id for m in matcher.match(text)]
     return EnhancedSearch(
         store,
         entity_index=entity_index,
@@ -1779,12 +1912,14 @@ def _build_enhanced_search(store, db_path: Path | None = None, use_ner_x: bool =
         structural_expansion=False,
         cluster_expansion=use_cluster,
         query_ner_fn=query_ner_fn,
+        query_entity_id_fn=query_entity_id_fn,
         entity_ref_expansion=entity_ref_expansion,
         entity_ref_expansion_k=entity_ref_expansion_k,
         entity_ref_expansion_per_k=entity_ref_expansion_per_k,
         entity_ref_expansion_min_sim=entity_ref_expansion_min_sim,
         lane_entity_min_sim=lane_entity_min_sim,
         session_fingerprint=_session_fingerprint,
+        community_index=community_index,
     )
 
 
@@ -1859,6 +1994,13 @@ def cmd_run(args: argparse.Namespace) -> None:
         db_path = data_dir / (VANILLA_DB_FILENAME if use_vanilla else _ctx_db)
     top_k        = VANILLA_K if use_vanilla else (getattr(args, "top_k", None) or K)
     gen_temperature = VANILLA_TEMPERATURE  # paper: 0.7 for all systems
+
+    _gen_model_check = getattr(args, "gen_model", GEN_MODEL)
+    if _gen_model_check == "gpt-4o" and top_k > 10:
+        raise SystemExit(
+            f"BLOCKED: gpt-4o with top_k={top_k} > 10 is too expensive (~${top_k * 4071 * 14000 // 4 * 250 // 1_000_000_000} estimated). "
+            f"Use top_k <= 10 or switch to gpt-4o-mini."
+        )
 
     if not db_path.exists():
         print("No index found. Run 'index' first.")
@@ -2080,9 +2222,36 @@ def cmd_run(args: argparse.Namespace) -> None:
             print(f"Loading reranker: {RERANK_MODEL}{'  [device='+_rerank_device+']' if _rerank_device else ''}...")
             reranker = CrossEncoder(RERANK_MODEL, max_length=512, device=_rerank_device) if _rerank_device else CrossEncoder(RERANK_MODEL, max_length=512)
 
-    community_index = _load_community_index(db_path) if use_community_context else None
+    _need_community = use_community_context or search_mode in ("graph_first", "map_reduce_global")
+    community_index = _load_community_index(db_path) if _need_community else None
     if use_community_context and community_index is None:
         print("WARNING: --community-context set but no community index found. Run 'build-community' first.")
+
+    # Build map-reduce LLM fn when needed (before entering the store block)
+    _map_reduce_llm_fn = None
+    if search_mode == "map_reduce_global":
+        import openai as _mr_oai
+        _mr_gen_model = getattr(args, "gen_model", GEN_MODEL)
+        _mr_provider  = getattr(args, "gen_provider", "openai")
+        if _mr_provider == "together":
+            _mr_client = _mr_oai.OpenAI(
+                api_key=os.environ["TOGETHER_API_KEY"], base_url=TOGETHER_BASE_URL, timeout=120.0
+            )
+        elif _mr_provider == "anthropic":
+            _mr_client = _mr_oai.OpenAI(
+                api_key=os.environ["ANTHROPIC_API_KEY"], base_url=ANTHROPIC_BASE_URL,
+                default_headers={"anthropic-version": "2023-06-01"}, timeout=120.0,
+            )
+        else:
+            _mr_client = _mr_oai.OpenAI(api_key=os.environ["OPENAI_API_KEY"], timeout=60.0)
+
+        def _map_reduce_llm_fn(prompt: str) -> str:
+            resp = _mr_client.chat.completions.create(
+                model=_mr_gen_model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0,
+            )
+            return resp.choices[0].message.content or ""
 
     # ── Complexity / concentration helpers ────────────────────────────────────
     _complexity_matcher = None
@@ -2124,6 +2293,7 @@ def cmd_run(args: argparse.Namespace) -> None:
             lane_entity_min_sim=lane_entity_min_sim,
             namespaces=namespaces,
             domain_ids=domain_ids,
+            community_index=community_index,
         ) if use_enhanced else None
 
         # Build concentration fallback search (entity ref expansion) if gating is enabled
@@ -2205,10 +2375,17 @@ def cmd_run(args: argparse.Namespace) -> None:
             del _ms_embed
 
         # Phase 1: vector search for all questions (sequential, DuckDB serialized)
+        # map_reduce_global uses global retrieval (community summary cosine search);
+        # the map-reduce step happens later in context assembly.
+        _retrieval_mode = "global" if search_mode == "map_reduce_global" else search_mode
+        _capture_trace = search_mode == "graph_first" and use_enhanced
+
         _all_hits: list[tuple] = []
         _all_expansion_stats: list = []
+        _all_traces: list = []
         for j, (i, q) in enumerate(pending):
             _q_entities = _precomputed_question_entities[j] if _precomputed_question_entities is not None else None
+            _trace = None
             if use_multi_step and j in _sub_vecs_by_idx:
                 # Retrieve for each sub-query, merge by best score per chunk_id
                 _merged: dict[str, tuple] = {}
@@ -2218,7 +2395,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                             sub_vec, k=fetch_k, query_text=q["question"],
                             query_entities=_q_entities,
                             precomputed_entity_vecs=_precomputed_entity_vecs,
-                            mode=search_mode,
+                            mode=_retrieval_mode,
                             namespaces=namespaces,
                             domain_ids=domain_ids,
                         )
@@ -2237,14 +2414,26 @@ def cmd_run(args: argparse.Namespace) -> None:
                 hits = sorted(_merged.values(), key=lambda x: -x[1])[:fetch_k]
                 expansion_stats = enhanced_search.last_expansion_stats if use_enhanced and enhanced_search else None
             elif use_enhanced and enhanced_search is not None:
-                scored = enhanced_search.search(
-                    q_vecs[j], k=fetch_k, query_text=q["question"],
-                    query_entities=_q_entities,
-                    precomputed_entity_vecs=_precomputed_entity_vecs,
-                    mode=search_mode,
-                    namespaces=namespaces,
-                    domain_ids=domain_ids,
-                )
+                if _capture_trace:
+                    scored, _trace = enhanced_search.search(
+                        q_vecs[j], k=fetch_k, query_text=q["question"],
+                        query_entities=_q_entities,
+                        precomputed_entity_vecs=_precomputed_entity_vecs,
+                        mode=_retrieval_mode,
+                        namespaces=namespaces,
+                        domain_ids=domain_ids,
+                        return_trace=True,
+                    )
+                else:
+                    scored = enhanced_search.search(
+                        q_vecs[j], k=fetch_k, query_text=q["question"],
+                        query_entities=_q_entities,
+                        precomputed_entity_vecs=_precomputed_entity_vecs,
+                        mode=_retrieval_mode,
+                        namespaces=namespaces,
+                        domain_ids=domain_ids,
+                    )
+                    _trace = None
                 hits   = [(sc.chunk_id, sc.score, sc.chunk) for sc in scored]
                 expansion_stats = enhanced_search.last_expansion_stats
             else:
@@ -2277,6 +2466,7 @@ def cmd_run(args: argparse.Namespace) -> None:
 
             _all_hits.append(hits)
             _all_expansion_stats.append(expansion_stats)
+            _all_traces.append(_trace)
             if (j + 1) % 100 == 0 or (j + 1) == len(pending):
                 print(f"  Vector search {j+1}/{len(pending)}", flush=True)
 
@@ -2377,9 +2567,12 @@ def cmd_run(args: argparse.Namespace) -> None:
             print("  Reranking complete.", flush=True)
 
         for j, (i, q) in enumerate(pending):
+            import dataclasses as _dc
             qid  = q.get("id", f"q{i}")
             hits = _all_hits[j]
             expansion_stats = _all_expansion_stats[j]
+            _trace_obj = _all_traces[j] if j < len(_all_traces) else None
+            _trace_dict = _dc.asdict(_trace_obj) if _trace_obj is not None else None
 
             if use_rerank and together_rerank_client is not None:
                 docs   = [chunk.content for _, _, chunk in hits]
@@ -2433,15 +2626,27 @@ def cmd_run(args: argparse.Namespace) -> None:
                     text = f"{_format_breadcrumb(chunk.breadcrumb, style=breadcrumb_style)}\n\n{text}"
                 return text
 
+            if search_mode == "graph_first" and enhanced_search is not None:
+                _ctx = enhanced_search.assemble_graph_context(
+                    hits, query_text=q["question"]
+                )
+            elif search_mode == "map_reduce_global" and enhanced_search is not None and _map_reduce_llm_fn is not None:
+                _ctx = enhanced_search.map_reduce_global_context(
+                    hits, q["question"], llm_fn=_map_reduce_llm_fn,
+                    concurrency=getattr(args, "concurrency", 4),
+                )
+            else:
+                _ctx = community_header + "\n\n".join(
+                    _fmt_chunk(cid, chunk) for cid, _, chunk in hits
+                )
+
             wi = {
                 "_slot":          len(work_items),
                 "qid":            qid,
                 "question":       q["question"],
                 "source":         q.get("source", q.get("subset", "?")),
                 "qtype":          q.get("question_type", "?"),
-                "context":        community_header + "\n\n".join(
-                    _fmt_chunk(cid, chunk) for cid, _, chunk in hits
-                ),
+                "context":        _ctx,
                 "chunk_ids":      [cid for cid, _, _ in hits],
                 "scores":         [float(sc) for _, sc, _ in hits],
                 "chunk_texts":    chunk_texts,
@@ -2449,6 +2654,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                 "evidence":       q.get("evidence", []),
                 "gold":           str(q.get("answer", "")),
                 "sub_queries":    _sub_queries_by_idx.get(j),
+                "retrieval_trace": _trace_dict,
             }
             work_items.append(wi)
 
@@ -2460,6 +2666,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                 "retrieved_scores": wi["scores"],
                 "entity_ref_expansion": wi.get("expansion_stats"),
                 "entity_ref_retry": None,
+                "retrieval_trace": _trace_dict,
             }])
             if (j + 1) % 100 == 0 or (j + 1) == len(pending):
                 pct = 100 * (j + 1) // len(pending)
@@ -4335,9 +4542,9 @@ def _make_parser() -> argparse.ArgumentParser:
     g_misc.add_argument("--entity-ref-retry", action="store_true", dest="entity_ref_retry",
                         help="On refusal answer, retry with partial-answer hint (max 1 retry)")
     g_misc.add_argument("--search-mode", default="vector_first",
-                        choices=["vector_first", "graph_first", "global"],
+                        choices=["vector_first", "graph_first", "global", "map_reduce_global"],
                         dest="search_mode",
-                        help="EnhancedSearch retrieval mode: vector_first (default), graph_first (entity graph traversal), global (community summaries only)")
+                        help="EnhancedSearch retrieval mode: vector_first (default), graph_first (entity graph traversal), global (community summaries only), map_reduce_global (MS-GraphRAG map-reduce over community summaries)")
     g_misc.add_argument("--sr", action="store_true", dest="sr",
                         help="Structured Response: generate with JSON schema (key_claims + evidence_used) once, no coverage check or gap-fill")
     g_misc.add_argument("--srr", action="store_true", dest="srr",
@@ -4376,6 +4583,11 @@ def _make_parser() -> argparse.ArgumentParser:
     p.add_argument("--community-label-strategy", default="ner_embedding",
                    choices=["term_freq", "ner_embedding"], dest="community_label_strategy",
                    help="Community label method: ner_embedding (default) uses entity embeddings; term_freq uses word frequency")
+    p.add_argument("--gen-provider", default=None, dest="gen_provider",
+                   choices=["openai", "together", "anthropic"],
+                   help="LLM provider for community summary generation (omit to skip summaries)")
+    p.add_argument("--gen-model", default=GEN_MODEL, dest="gen_model",
+                   help=f"Model for community summary generation (default: {GEN_MODEL})")
     p.add_argument("--force", action="store_true", help="Rebuild even if already populated")
     p.set_defaults(func=cmd_build_community)
 
@@ -4392,6 +4604,14 @@ def _make_parser() -> argparse.ArgumentParser:
                    help="API provider for LLM (default: openai)")
     p.add_argument("--concurrency", type=int, default=4,
                    help="Parallel extraction workers (default: 4)")
+    p.add_argument("--max-chunks", type=int, default=None, dest="max_chunks",
+                   help="Limit to first N chunks (for testing)")
+    p.add_argument("--progress-out", default=None, dest="progress_out",
+                   metavar="PATH",
+                   help="Write NDJSON progress events to PATH ('-' for stdout). "
+                        "One JSON line per chunk: {done, total, chunk_id, triples, "
+                        "descriptions, aliases, rel_descriptions}. Suitable for "
+                        "tailing by a web service and forwarding as SSE.")
     p.set_defaults(func=cmd_build_svo)
 
     # use-endpoints — run benchmark against existing Together dedicated endpoints
