@@ -141,21 +141,12 @@ class EntityGraphPipeline:
         except Exception:
             chunk_entity_rows = []
 
-        existing_descriptions: dict[str, str] = {}
-        try:
-            desc_rows = conn.execute(
-                "SELECT entity_id, description FROM entity_descriptions"
-            ).fetchall()
-            existing_descriptions = {r[0]: r[1] for r in desc_rows}
-        except Exception:
-            pass
-
         chunk_entities_map: dict[str, list[dict]] = defaultdict(list)
         for chunk_id, entity_id, entity_type in chunk_entity_rows:
             chunk_entities_map[chunk_id].append({
                 "id": entity_id,
                 "type": entity_type,
-                "description": existing_descriptions.get(entity_id, ""),
+                "description": "",
             })
 
         eligible = [(cid, content) for cid, content in rows
@@ -173,7 +164,7 @@ class EntityGraphPipeline:
             chunk_id, content = row
             entities = chunk_entities_map.get(chunk_id, [])
             if len(entities) >= 2:
-                triples, descs, aliases = self._extractor.extract_entity_anchored(
+                triples, descs, aliases, _rel = self._extractor.extract_entity_anchored(
                     content or "", chunk_id, entities
                 )
                 return triples, descs, aliases
@@ -204,8 +195,8 @@ class EntityGraphPipeline:
         # ── Phase 4: persist descriptions ─────────────────────────────
         if new_descriptions:
             _prog(PHASE_PERSIST_DESCRIPTIONS, 0, len(new_descriptions))
-            stats.descriptions_written = store.upsert_entity_descriptions_batch(
-                new_descriptions, source="llm", namespace=self._namespace
+            stats.descriptions_written = store.set_entity_descriptions_batch(
+                new_descriptions
             )
             _prog(PHASE_PERSIST_DESCRIPTIONS, stats.descriptions_written,
                   len(new_descriptions))
@@ -236,12 +227,10 @@ class EntityGraphPipeline:
         conn = store._db.conn
         entity_rows = conn.execute("""
             SELECT e.id, e.name,
-                   COALESCE(ed.description, '') AS description,
+                   COALESCE(e.description, '') AS description,
                    e.entity_type
             FROM entities e
-            LEFT JOIN entity_descriptions ed
-                   ON ed.entity_id = e.id AND ed.namespace = ?
-        """, [self._namespace]).fetchall()
+        """).fetchall()
 
         if not entity_rows:
             return 0

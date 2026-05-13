@@ -267,11 +267,12 @@ class TestSVOExtractorOverrides:
 # Entity-anchored extraction
 # ---------------------------------------------------------------------------
 
-def _ea_payload(triples=None, descriptions=None, aliases=None):
+def _ea_payload(triples=None, descriptions=None, aliases=None, rel_descriptions=None):
     return json.dumps({
         "triples": triples or [],
         "descriptions": descriptions or {},
         "aliases": aliases or {},
+        "rel_descriptions": rel_descriptions or {},
     })
 
 
@@ -289,7 +290,7 @@ class TestExtractEntityAnchored:
                       "object_id": "FactTable", "confidence": 0.9}],
             descriptions={"CustomerRiskScore": "Risk score per customer", "CompliancePolicy": "Regulatory rules"},
         )
-        triples, descs, _ = SVOExtractor(StubLLM(payload)).extract_entity_anchored(
+        triples, descs, _, _rel = SVOExtractor(StubLLM(payload)).extract_entity_anchored(
             "some text", "c1", self._entities()
         )
         assert len(triples) == 1
@@ -305,7 +306,7 @@ class TestExtractEntityAnchored:
             triples=[{"subject_id": "UnknownEntity", "verb": "part_of",
                       "object_id": "FactTable", "confidence": 0.8}]
         )
-        triples, _, _2 = SVOExtractor(StubLLM(payload)).extract_entity_anchored(
+        triples, _, _2, _rel = SVOExtractor(StubLLM(payload)).extract_entity_anchored(
             "text", "c1", self._entities()
         )
         assert triples == []
@@ -315,13 +316,13 @@ class TestExtractEntityAnchored:
             triples=[{"subject_id": "CustomerRiskScore", "verb": "invented_verb",
                       "object_id": "FactTable", "confidence": 0.9}]
         )
-        triples, _, _2 = SVOExtractor(StubLLM(payload)).extract_entity_anchored(
+        triples, _, _2, _rel = SVOExtractor(StubLLM(payload)).extract_entity_anchored(
             "text", "c1", self._entities()
         )
         assert triples == []
 
     def test_fewer_than_two_entities_returns_empty(self):
-        triples, descs, aliases = SVOExtractor(StubLLM(_ea_payload())).extract_entity_anchored(
+        triples, descs, aliases, _ = SVOExtractor(StubLLM(_ea_payload())).extract_entity_anchored(
             "text", "c1", [{"id": "OnlyOne", "type": "concept", "description": ""}]
         )
         assert triples == []
@@ -329,7 +330,7 @@ class TestExtractEntityAnchored:
         assert aliases == {}
 
     def test_malformed_json_returns_empty(self):
-        triples, descs, aliases = SVOExtractor(StubLLM("not json")).extract_entity_anchored(
+        triples, descs, aliases, _ = SVOExtractor(StubLLM("not json")).extract_entity_anchored(
             "text", "c1", self._entities()
         )
         assert triples == []
@@ -351,62 +352,70 @@ class TestExtractEntityAnchored:
             triples=[{"subject_id": "CustomerRiskScore", "verb": "part_of",
                       "object_id": "FactTable", "confidence": 0.7}]
         )
-        triples, _, _2 = SVOExtractor(StubLLM(payload)).extract_entity_anchored(
+        triples, _, _2, _rel = SVOExtractor(StubLLM(payload)).extract_entity_anchored(
             "text", "chunk-42", self._entities()
         )
         assert triples[0].source_chunk_id == "chunk-42"
 
+    def test_rel_description_attached_to_triple(self):
+        payload = _ea_payload(
+            triples=[{"subject_id": "CustomerRiskScore", "verb": "part_of",
+                      "object_id": "FactTable", "confidence": 0.9}],
+            rel_descriptions={"CustomerRiskScore|part_of|FactTable": "Risk score is a column in the fact table."},
+        )
+        triples, _, _2, rel_descs = SVOExtractor(StubLLM(payload)).extract_entity_anchored(
+            "text", "c1", self._entities()
+        )
+        assert triples[0].description == "Risk score is a column in the fact table."
+        assert rel_descs["CustomerRiskScore|part_of|FactTable"] == "Risk score is a column in the fact table."
+
+    def test_rel_description_missing_key_leaves_empty_string(self):
+        payload = _ea_payload(
+            triples=[{"subject_id": "CustomerRiskScore", "verb": "part_of",
+                      "object_id": "FactTable", "confidence": 0.9}],
+            rel_descriptions={},
+        )
+        triples, _, _2, _ = SVOExtractor(StubLLM(payload)).extract_entity_anchored(
+            "text", "c1", self._entities()
+        )
+        assert triples[0].description == ""
+
 
 # ---------------------------------------------------------------------------
-# entity_descriptions Store methods
+# entity description on entities table
 # ---------------------------------------------------------------------------
 
 class TestEntityDescriptionsStore:
-    def test_upsert_and_get(self, tmp_path):
+    def _seed_entity(self, store, eid: str) -> None:
+        store.vector._conn.execute(
+            "INSERT OR IGNORE INTO entities(id, name, display_name) VALUES (?, ?, ?)",
+            [eid, eid, eid],
+        )
+
+    def test_set_and_get(self, tmp_path):
         from chonk.storage._store import Store
         with Store(tmp_path / "t.duckdb") as store:
-            store.upsert_entity_description("ent_a", "A description", source="llm")
+            self._seed_entity(store, "ent_a")
+            store.set_entity_description("ent_a", "A description")
             result = store.get_entity_descriptions(["ent_a"])
         assert result["ent_a"] == "A description"
 
-    def test_user_not_overwritten_by_llm(self, tmp_path):
+    def test_overwrites_previous(self, tmp_path):
         from chonk.storage._store import Store
         with Store(tmp_path / "t.duckdb") as store:
-            store.upsert_entity_description("e", "User desc", source="user")
-            store.upsert_entity_description("e", "LLM desc",  source="llm")
+            self._seed_entity(store, "e")
+            store.set_entity_description("e", "First")
+            store.set_entity_description("e", "Second")
             result = store.get_entity_descriptions(["e"])
-        assert result["e"] == "User desc"
+        assert result["e"] == "Second"
 
-    def test_schema_not_overwritten_by_llm(self, tmp_path):
+    def test_batch_set(self, tmp_path):
         from chonk.storage._store import Store
         with Store(tmp_path / "t.duckdb") as store:
-            store.upsert_entity_description("e", "Schema desc", source="schema")
-            store.upsert_entity_description("e", "LLM desc",    source="llm")
-            result = store.get_entity_descriptions(["e"])
-        assert result["e"] == "Schema desc"
-
-    def test_llm_overwrites_nothing_higher_priority(self, tmp_path):
-        from chonk.storage._store import Store
-        with Store(tmp_path / "t.duckdb") as store:
-            store.upsert_entity_description("e", "First LLM", source="llm")
-            store.upsert_entity_description("e", "Second LLM", source="llm")
-            result = store.get_entity_descriptions(["e"])
-        # second llm call same priority — does NOT overwrite (>=)
-        assert result["e"] == "First LLM"
-
-    def test_user_overwrites_schema(self, tmp_path):
-        from chonk.storage._store import Store
-        with Store(tmp_path / "t.duckdb") as store:
-            store.upsert_entity_description("e", "Schema desc", source="schema")
-            store.upsert_entity_description("e", "User override", source="user")
-            result = store.get_entity_descriptions(["e"])
-        assert result["e"] == "User override"
-
-    def test_batch_upsert(self, tmp_path):
-        from chonk.storage._store import Store
-        with Store(tmp_path / "t.duckdb") as store:
-            n = store.upsert_entity_descriptions_batch(
-                {"a": "desc a", "b": "desc b", "c": "desc c"}, source="llm"
+            for eid in ("a", "b", "c"):
+                self._seed_entity(store, eid)
+            n = store.set_entity_descriptions_batch(
+                {"a": "desc a", "b": "desc b", "c": "desc c"}
             )
         assert n == 3
 
@@ -432,7 +441,7 @@ class TestExtractEntityAnchoredAliases:
         payload = _ea_payload(
             aliases={"CustomerRiskScore": ["CRS", "Risk Score"], "FactTable": ["FT"]},
         )
-        _, _, aliases = SVOExtractor(StubLLM(payload)).extract_entity_anchored(
+        _, _, aliases, _rel = SVOExtractor(StubLLM(payload)).extract_entity_anchored(
             "text", "c1", self._entities()
         )
         assert aliases["CustomerRiskScore"] == ["CRS", "Risk Score"]
@@ -442,7 +451,7 @@ class TestExtractEntityAnchoredAliases:
         payload = _ea_payload(
             aliases={"UnknownEntity": ["UE"]},
         )
-        _, _, aliases = SVOExtractor(StubLLM(payload)).extract_entity_anchored(
+        _, _, aliases, _rel = SVOExtractor(StubLLM(payload)).extract_entity_anchored(
             "text", "c1", self._entities()
         )
         assert "UnknownEntity" not in aliases
@@ -451,14 +460,14 @@ class TestExtractEntityAnchoredAliases:
         payload = _ea_payload(
             aliases={"CustomerRiskScore": []},
         )
-        _, _, aliases = SVOExtractor(StubLLM(payload)).extract_entity_anchored(
+        _, _, aliases, _rel = SVOExtractor(StubLLM(payload)).extract_entity_anchored(
             "text", "c1", self._entities()
         )
         assert "CustomerRiskScore" not in aliases
 
     def test_no_aliases_key_returns_empty_dict(self):
         raw = json.dumps({"triples": [], "descriptions": {}})
-        _, _, aliases = SVOExtractor(StubLLM(raw)).extract_entity_anchored(
+        _, _, aliases, _rel = SVOExtractor(StubLLM(raw)).extract_entity_anchored(
             "text", "c1", self._entities()
         )
         assert aliases == {}

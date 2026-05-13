@@ -305,6 +305,92 @@ class DocumentLoader:
 
         return all_chunks
 
+    def load_from_cassandra(
+        self,
+        contact_points: list[str],
+        dataset_queries: dict[str, str] | list[tuple[str, str]],
+        *,
+        port: int = 9042,
+        keyspace: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        local_dc: str | None = None,
+    ) -> list[DocumentChunk]:
+        """Execute CQL queries against Cassandra and load results as chunks.
+
+        Each query becomes a separate document whose ``document_name`` is the
+        dict key. Results are converted to CSV and chunked through the standard
+        pipeline. Each chunk carries ``source_detail`` annotations with
+        ``db_dialect``, ``db_host``, ``db_port``, ``db_name``, and ``query``.
+
+        Args:
+            contact_points:  One or more Cassandra hosts.
+            dataset_queries: ``{document_name: CQL}`` or ``[(name, CQL)]``.
+            port:            CQL native transport port (default 9042).
+            keyspace:        Default keyspace for the session.
+            username:        Authentication username.
+            password:        Authentication password.
+            local_dc:        Datacenter for ``DCAwareRoundRobinPolicy``.
+
+        Returns:
+            Combined list of DocumentChunk objects from all queries.
+
+        Example::
+
+            chunks = loader.load_from_cassandra(
+                contact_points=["10.0.0.1"],
+                keyspace="clinical",
+                dataset_queries={
+                    "patient_notes": "SELECT patient_id, note FROM clinical_notes",
+                    "diagnoses":     "SELECT patient_id, icd_code, description FROM diagnoses",
+                },
+            )
+        """
+        from .extractors._csv import CsvExtractor
+        from .transports._cassandra import CassandraCrawler
+
+        if isinstance(dataset_queries, dict):
+            pairs = list(dataset_queries.items())
+        else:
+            pairs = list(dataset_queries)
+
+        crawler = CassandraCrawler(
+            contact_points=contact_points,
+            port=port,
+            keyspace=keyspace,
+            username=username,
+            password=password,
+            dataset_queries=dict(pairs),
+            local_dc=local_dc,
+        )
+        crawler.crawl()
+
+        extractor = CsvExtractor()
+        provenance = CassandraCrawler.cassandra_provenance(contact_points, port, keyspace)
+        all_chunks: list[DocumentChunk] = []
+
+        for name, cql in pairs:
+            uri = f"cassandra://{contact_points[0]}/query/{name}"
+            if uri not in crawler._cache:
+                continue
+            result = crawler._cache[uri]
+            text = extractor.extract(result.data, source_path=name)
+            chunks = chunk_document(
+                name, text,
+                self.min_chunk_size, self.max_chunk_size, self.overflow_margin,
+                include_breadcrumb=self.enrich_context,
+                include_doc_name=self.include_doc_name,
+            )
+            chunks = extractor.annotate(chunks, result.data, source_path=name)
+            for chunk in chunks:
+                detail = chunk.source_detail or {}
+                detail["query"] = cql
+                detail.update(provenance)
+                chunk.source_detail = detail
+            all_chunks.extend(self._enrich(chunks))
+
+        return all_chunks
+
     def load_imap(
         self,
         uri: str,

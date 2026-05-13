@@ -541,112 +541,30 @@ class Store:
 
     # ── Entity descriptions ───────────────────────────────────────────────────
 
-    # Priority order — lower number wins; never overwrite with higher number.
-    _DESC_PRIORITY: dict[str, int] = {"user": 0, "schema": 1, "llm": 2}
-
-    def update_entity_description(
-        self,
-        entity_id: str,
-        description: str,
-        namespace: str = GLOBAL_NAMESPACE,
-    ) -> None:
-        """Update an entity description unconditionally, marking source as 'user'.
-
-        Use this for client curation — always wins over 'llm' and 'schema' sources.
-        """
-        conn = self.vector._conn
-        conn.execute(
-            """
-            INSERT INTO entity_descriptions (entity_id, namespace, description, source, updated_at)
-            VALUES (?, ?, ?, 'user', now())
-            ON CONFLICT (entity_id, namespace) DO UPDATE SET
-                description = excluded.description,
-                source      = 'user',
-                updated_at  = now()
-            """,
-            [entity_id, namespace, description],
+    def set_entity_description(self, entity_id: str, description: str) -> None:
+        """Set description on an entity by ID."""
+        self.vector._conn.execute(
+            "UPDATE entities SET description = ? WHERE id = ?",
+            [description, entity_id],
         )
 
-    def upsert_entity_description(
-        self,
-        entity_id: str,
-        description: str,
-        source: str = "llm",
-        namespace: str = GLOBAL_NAMESPACE,
-    ) -> None:
-        """Upsert one entity description.
-
-        Lower-priority sources never overwrite higher-priority ones:
-        ``user`` > ``schema`` > ``llm``.
-        """
+    def set_entity_descriptions_batch(self, descriptions: dict[str, str]) -> int:
+        """Set descriptions for multiple entities keyed by entity_id. Returns count."""
         conn = self.vector._conn
-        existing = conn.execute(
-            "SELECT source FROM entity_descriptions WHERE entity_id = ? AND namespace = ?",
-            [entity_id, namespace],
-        ).fetchone()
-        if existing:
-            existing_pri = self._DESC_PRIORITY.get(existing[0], 99)
-            new_pri = self._DESC_PRIORITY.get(source, 99)
-            if new_pri >= existing_pri:
-                return
-        conn.execute(
-            """
-            INSERT INTO entity_descriptions (entity_id, namespace, description, source, updated_at)
-            VALUES (?, ?, ?, ?, now())
-            ON CONFLICT (entity_id, namespace) DO UPDATE SET
-                description = excluded.description,
-                source      = excluded.source,
-                updated_at  = now()
-            """,
-            [entity_id, namespace, description, source],
-        )
+        rows = [(desc, eid) for eid, desc in descriptions.items()]
+        if rows:
+            conn.executemany("UPDATE entities SET description = ? WHERE id = ?", rows)
+        return len(rows)
 
-    def upsert_entity_descriptions_batch(
-        self,
-        descriptions: dict[str, str],
-        source: str = "llm",
-        namespace: str = GLOBAL_NAMESPACE,
-    ) -> int:
-        """Upsert multiple entity descriptions. Returns count written."""
-        written = 0
-        for entity_id, description in descriptions.items():
-            before = self.vector._conn.execute(
-                "SELECT source FROM entity_descriptions WHERE entity_id = ? AND namespace = ?",
-                [entity_id, namespace],
-            ).fetchone()
-            if before:
-                existing_pri = self._DESC_PRIORITY.get(before[0], 99)
-                new_pri = self._DESC_PRIORITY.get(source, 99)
-                if new_pri >= existing_pri:
-                    continue
-            self.vector._conn.execute(
-                """
-                INSERT INTO entity_descriptions (entity_id, namespace, description, source, updated_at)
-                VALUES (?, ?, ?, ?, now())
-                ON CONFLICT (entity_id, namespace) DO UPDATE SET
-                    description = excluded.description,
-                    source      = excluded.source,
-                    updated_at  = now()
-                """,
-                [entity_id, namespace, description, source],
-            )
-            written += 1
-        return written
-
-    def get_entity_descriptions(
-        self,
-        entity_ids: list[str],
-        namespace: str = GLOBAL_NAMESPACE,
-    ) -> dict[str, str]:
+    def get_entity_descriptions(self, entity_ids: list[str]) -> dict[str, str]:
         """Return ``{entity_id: description}`` for the given IDs."""
         if not entity_ids:
             return {}
         conn = self.vector._conn
-        placeholders = ", ".join(["?" for _ in entity_ids])
+        placeholders = ", ".join("?" * len(entity_ids))
         rows = conn.execute(
-            f"SELECT entity_id, description FROM entity_descriptions "
-            f"WHERE entity_id IN ({placeholders}) AND namespace = ?",
-            entity_ids + [namespace],
+            f"SELECT id, COALESCE(description, '') FROM entities WHERE id IN ({placeholders})",
+            entity_ids,
         ).fetchall()
         return {r[0]: r[1] for r in rows}
 
@@ -740,6 +658,78 @@ class Store:
             [entity_id, namespace],
         ).fetchall()
         return [r[0] for r in rows]
+
+    def get_entity_aliases_by_names(
+        self,
+        entity_names: list[str],
+        namespace: str = GLOBAL_NAMESPACE,
+    ) -> dict[str, list[str]]:
+        """Return ``{entity_name: [alias, ...]}`` for the given names.
+
+        Names with no aliases are omitted from the result.
+        """
+        if not entity_names:
+            return {}
+        conn = self.vector._conn
+        placeholders = ", ".join("?" * len(entity_names))
+        rows = conn.execute(
+            f"SELECT e.name, ea.alias "
+            f"FROM entity_aliases ea "
+            f"JOIN entities e ON ea.entity_id = e.id "
+            f"WHERE e.name IN ({placeholders}) AND ea.namespace = ?",
+            [*entity_names, namespace],
+        ).fetchall()
+        result: dict[str, list[str]] = {}
+        for name, alias in rows:
+            result.setdefault(name, []).append(alias)
+        return result
+
+    _FORWARD_HIERARCHY_VERBS = frozenset({
+        "type_of", "instance_of", "classified_as", "part_of", "member_of", "extends",
+    })
+    _REVERSE_HIERARCHY_VERBS = frozenset({"contains", "composed_of"})
+
+    def get_entity_parents(
+        self,
+        entity_names: list[str],
+        namespace: str = GLOBAL_NAMESPACE,
+    ) -> dict[str, tuple[str, str]]:
+        """Return ``{entity_name: (parent_name, svo_verb)}`` for the given names.
+
+        Only entries with a hierarchy SVO triple are returned.
+        For forward verbs (type_of, part_of, etc.) the object entity is the parent.
+        For reverse verbs (contains, composed_of) the subject entity is the parent.
+        When multiple triples exist for a name, the first result is returned.
+        """
+        if not entity_names:
+            return {}
+        conn = self.vector._conn
+        placeholders = ", ".join("?" * len(entity_names))
+        fwd_verbs = ", ".join(f"'{v}'" for v in sorted(self._FORWARD_HIERARCHY_VERBS))
+        rev_verbs = ", ".join(f"'{v}'" for v in sorted(self._REVERSE_HIERARCHY_VERBS))
+        rows = conn.execute(
+            f"SELECT child_e.name, parent_e.name, st.verb "
+            f"FROM svo_triples st "
+            f"JOIN entities child_e  ON st.subject_id = child_e.id "
+            f"JOIN entities parent_e ON st.object_id  = parent_e.id "
+            f"WHERE child_e.name IN ({placeholders}) "
+            f"  AND st.verb IN ({fwd_verbs}) "
+            f"  AND (st.namespace = ? OR st.namespace IS NULL) "
+            f"UNION ALL "
+            f"SELECT child_e.name, parent_e.name, st.verb "
+            f"FROM svo_triples st "
+            f"JOIN entities child_e  ON st.object_id  = child_e.id "
+            f"JOIN entities parent_e ON st.subject_id = parent_e.id "
+            f"WHERE child_e.name IN ({placeholders}) "
+            f"  AND st.verb IN ({rev_verbs}) "
+            f"  AND (st.namespace = ? OR st.namespace IS NULL)",
+            [*entity_names, namespace, *entity_names, namespace],
+        ).fetchall()
+        result: dict[str, tuple[str, str]] = {}
+        for child_name, parent_name, verb in rows:
+            if child_name not in result:
+                result[child_name] = (parent_name, verb)
+        return result
 
     def count(self) -> int:
         """Return total number of stored chunks."""

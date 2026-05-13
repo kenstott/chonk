@@ -335,6 +335,7 @@ enrichment and is only useful as a baseline for benchmarking.
   )
   ```
 - `loader.load_from_db(connection, queries)` — execute one or more SQL queries or views against a live DB connection and load the results as document chunks. Each query becomes a separate document. `queries` is a `dict[name, sql]` or `list[tuple[name, sql]]`. The same connection used for schema introspection and NER data vocab can be passed here — no second authentication needed.
+- `loader.load_from_cassandra(contact_points, dataset_queries, *, port, keyspace, username, password, local_dc)` — execute CQL queries against Cassandra and load results as document chunks. Each chunk carries `source_detail` annotations (host, port, keyspace, query). For schema indexing and NER vocab, use `CassandraCrawler` directly.
 
 #### Crawl methods
 
@@ -785,6 +786,249 @@ chunks = loader.load_crawl("gmail://me/SENT", crawler=crawler, limit=100)
 
 ---
 
+### `MongoDBCrawler`
+
+`MongoDBCrawler` indexes documents from one or more MongoDB collections. Schema is inferred by sampling up to 500 documents per collection via the `$jsonSchema` validator (falling back to `$sample` aggregation). Each collection emits one schema chunk and one chunk per document. Field names are available for NER vocabulary via `get_field_names()`.
+
+```python
+from chonk.transports import MongoDBCrawler
+from chonk.loader import DocumentLoader
+
+crawler = MongoDBCrawler(
+    uri="mongodb://localhost:27017",
+    database="prod",
+    collections=["articles", "reports"],
+)
+loader = DocumentLoader(extra_transports=[crawler])
+chunks = loader.load_crawl("mongodb://prod/articles", crawler=crawler)
+
+# NER vocabulary: all field names + collection names + database
+vocab = crawler.get_field_names()
+```
+
+| Parameter | Default | Description |
+|---|---|---|
+| `uri` | required | MongoDB connection URI |
+| `database` | required | Database name |
+| `collections` | `None` | Collections to crawl; `None` = all collections |
+| `schema_sample_size` | `500` | Max documents sampled per collection for schema inference |
+| `field_aliases` | `None` | Map raw field names to normalized names for NER |
+
+Each chunk's `source_detail` contains `{"type": "mongodb", "database": ..., "collection": ..., "doc_id": ...}`.
+
+Requires: `pymongo>=4.0` (`pip install pymongo`).
+
+`MongoDBCrawler` is exported from `chonk.transports`.
+
+---
+
+### `ElasticsearchCrawler`
+
+`ElasticsearchCrawler` indexes documents from an Elasticsearch or OpenSearch index. Pagination uses the `search_after` API (no scroll contexts). Schema is retrieved via `GET /{index}/_mapping` and emitted as a single schema chunk. Works with ES ≥ 7.x and OpenSearch ≥ 1.x.
+
+```python
+from chonk.transports import ElasticsearchCrawler
+from chonk.loader import DocumentLoader
+
+crawler = ElasticsearchCrawler(
+    "https://my-cluster.es.io:9243",
+    index="kb-docs",
+    api_key="base64encodedkey==",
+    source_fields=["title", "body", "author"],
+    query={"term": {"published": True}},
+)
+loader = DocumentLoader(extra_transports=[crawler])
+chunks = loader.load_crawl("https://my-cluster.es.io:9243/kb-docs", crawler=crawler)
+
+vocab = crawler.get_field_names()
+```
+
+| Parameter | Default | Description |
+|---|---|---|
+| `base_url` | required | Cluster base URL (e.g. `https://localhost:9200`) |
+| `index` | required | Index name or pattern (e.g. `logs-*`) |
+| `api_key` | `None` | Base-64 encoded `id:key` API key |
+| `username` / `password` | `None` | HTTP Basic auth alternative to `api_key` |
+| `query` | `{"match_all": {}}` | Elasticsearch query DSL |
+| `source_fields` | `None` | Fields to include in `_source`; `None` = all |
+| `page_size` | `200` | Documents per page |
+| `verify_ssl` | `True` | Verify TLS certificates |
+| `field_aliases` | `None` | Map raw field names to normalized names for NER |
+
+Each chunk's `source_detail` contains `{"type": "elasticsearch", "base_url": ..., "index": ..., "doc_id": ...}`.
+
+Requires: `requests>=2.28` (`pip install requests`).
+
+`ElasticsearchCrawler` is exported from `chonk.transports`.
+
+---
+
+### `SolrCrawler`
+
+`SolrCrawler` indexes documents from an Apache Solr collection using cursor-mark pagination for efficient deep pagination. Schema is retrieved via `GET /solr/{collection}/schema` and includes fields, dynamic fields, and copy fields.
+
+```python
+from chonk.transports import SolrCrawler
+from chonk.loader import DocumentLoader
+
+crawler = SolrCrawler(
+    "http://localhost:8983/solr",
+    collection="articles",
+    query="published:true",
+    fields=["id", "title", "body", "author"],
+    username="solr",
+    password="SolrRocks",
+)
+loader = DocumentLoader(extra_transports=[crawler])
+chunks = loader.load_crawl("http://localhost:8983/solr/articles", crawler=crawler)
+
+vocab = crawler.get_field_names()
+```
+
+| Parameter | Default | Description |
+|---|---|---|
+| `base_url` | required | Solr base URL including `/solr` |
+| `collection` | required | Collection or core name |
+| `query` | `"*:*"` | Solr query string |
+| `fields` | `None` | Fields to retrieve; `None` = all (`fl=*`) |
+| `page_size` | `200` | Documents per cursor page |
+| `username` / `password` | `None` | HTTP Basic auth |
+| `verify_ssl` | `True` | Verify TLS certificates |
+| `field_aliases` | `None` | Map raw field names to normalized names for NER |
+
+Each chunk's `source_detail` contains `{"type": "solr", "base_url": ..., "collection": ..., "doc_id": ...}`.
+
+Requires: `requests>=2.28` (`pip install requests`).
+
+`SolrCrawler` is exported from `chonk.transports`.
+
+---
+
+### `DynamoDBCrawler`
+
+`DynamoDBCrawler` indexes items from an AWS DynamoDB table using paginated full table scans (`ExclusiveStartKey`). Schema is inferred by sampling up to 500 items. For large tables, use `filter_expression` to reduce scan cost.
+
+```python
+from chonk.transports import DynamoDBCrawler
+from chonk.loader import DocumentLoader
+
+crawler = DynamoDBCrawler(
+    table="kb-docs",
+    region="us-east-1",
+    aws_access_key_id="AKIA...",
+    aws_secret_access_key="secret",
+    projection_expression="docId, title, body, #ts",
+    expression_attribute_names={"#ts": "timestamp"},
+    field_aliases={"pk": "id", "sk": "sort_key"},
+)
+loader = DocumentLoader(extra_transports=[crawler])
+chunks = loader.load_crawl("dynamodb://kb-docs", crawler=crawler)
+
+vocab = crawler.get_field_names()
+```
+
+| Parameter | Default | Description |
+|---|---|---|
+| `table` | required | DynamoDB table name |
+| `region` | `"us-east-1"` | AWS region |
+| `aws_access_key_id` / `aws_secret_access_key` | `None` | Explicit credentials; falls back to IAM role / env vars |
+| `aws_session_token` | `None` | STS session token |
+| `endpoint_url` | `None` | Override endpoint (DynamoDB Local) |
+| `filter_expression` | `None` | `boto3` `Attr` filter expression |
+| `projection_expression` | `None` | Comma-separated attribute names to return |
+| `expression_attribute_names` | `None` | Substitution map for reserved words |
+| `page_size` | `100` | Items per scan page |
+| `schema_sample_size` | `500` | Max items sampled for schema inference |
+| `field_aliases` | `None` | Map raw attribute names to normalized names for NER |
+
+Each chunk's `source_detail` contains `{"type": "dynamodb", "table": ..., "region": ..., "endpoint": ...}`.
+
+Requires: `boto3>=1.26` (`pip install boto3`).
+
+`DynamoDBCrawler` is exported from `chonk.transports`.
+
+---
+
+### `FirestoreCrawler`
+
+`FirestoreCrawler` indexes documents from one or more Google Cloud Firestore collections. Authentication uses Application Default Credentials (ADC) or an explicit service-account key file. Schema is inferred per collection by sampling up to 500 documents.
+
+```python
+from chonk.transports import FirestoreCrawler
+from chonk.loader import DocumentLoader
+
+crawler = FirestoreCrawler(
+    project="my-gcp-project",
+    collections=["articles", "reports"],
+    credentials_path="/path/to/service-account.json",
+    field_aliases={"createdAt": "created_at"},
+)
+loader = DocumentLoader(extra_transports=[crawler])
+chunks = loader.load_crawl("firestore://my-gcp-project/articles", crawler=crawler)
+
+vocab = crawler.get_field_names()
+```
+
+| Parameter | Default | Description |
+|---|---|---|
+| `project` | required | GCP project ID |
+| `collections` | required | Top-level collection names to crawl |
+| `credentials_path` | `None` | Path to service-account JSON key; `None` uses ADC |
+| `database` | `"(default)"` | Firestore database ID |
+| `schema_sample_size` | `500` | Max docs sampled per collection for schema inference |
+| `field_aliases` | `None` | Map raw field names to normalized names for NER |
+
+Each chunk's `source_detail` contains `{"type": "firestore", "project": ..., "database": ..., "collection": ..., "doc_id": ...}`.
+
+Requires: `google-cloud-firestore>=2.11` (`pip install google-cloud-firestore`).
+
+`FirestoreCrawler` is exported from `chonk.transports`.
+
+---
+
+### `CosmosCrawler`
+
+`CosmosCrawler` indexes items from one or more Azure Cosmos DB containers (NoSQL API). Schema is inferred per container by sampling up to 500 items. One schema chunk and one chunk per item are emitted per container.
+
+```python
+from chonk.transports import CosmosCrawler
+from chonk.loader import DocumentLoader
+
+crawler = CosmosCrawler(
+    url="https://myaccount.documents.azure.com:443/",
+    key="base64key==",
+    database="mydb",
+    containers=["articles", "reports"],
+    query="SELECT c.id, c.title, c.body FROM c WHERE c.published = true",
+    max_item_count=500,
+    field_aliases={"_ts": "timestamp"},
+)
+loader = DocumentLoader(extra_transports=[crawler])
+chunks = loader.load_crawl("cosmos://mydb/articles", crawler=crawler)
+
+vocab = crawler.get_field_names()
+```
+
+| Parameter | Default | Description |
+|---|---|---|
+| `url` | required | Cosmos DB account endpoint URL |
+| `key` | required | Account key or resource token |
+| `database` | required | Database name |
+| `containers` | `None` | Container names to crawl; `None` = all containers |
+| `query` | `"SELECT * FROM c"` | Cosmos DB SQL query |
+| `max_item_count` | `200` | Max items per request page |
+| `connection_mode` | `"Gateway"` | `"Gateway"` or `"Direct"` |
+| `schema_sample_size` | `500` | Max items sampled per container for schema inference |
+| `field_aliases` | `None` | Map raw field names to normalized names for NER |
+
+Each chunk's `source_detail` contains `{"type": "cosmos", "url": ..., "database": ..., "container": ..., "item_id": ...}`.
+
+Requires: `azure-cosmos>=4.5` (`pip install azure-cosmos`).
+
+`CosmosCrawler` is exported from `chonk.transports`.
+
+---
+
 ## Code indexing
 
 Python, TypeScript/JavaScript, and Java files are first-class document types. The
@@ -910,6 +1154,68 @@ result = transport.fetch("sqlquery://customer_360",
 
 ---
 
+### `CassandraCrawler`
+
+`CassandraCrawler` brings the same four-capability pattern as the relational DB
+stack to Apache Cassandra:
+
+| Capability | Method |
+|---|---|
+| Schema chunks (keyspace/table/column metadata) | `crawl()` → schema `FetchResult`s |
+| NER vocab from table/column names | `get_table_meta()` → `SchemaVocabBuilder.add_tables()` |
+| NER vocab from CQL entity queries | `get_entity_vocab()` → `NerPipeline.add_entities()` |
+| Dataset chunks from CQL queries | `dataset_queries=` / `loader.load_from_cassandra()` |
+
+Each chunk carries `source_detail` with `db_dialect`, `db_host`, `db_port`, `db_name`, and `query`.
+
+```python
+from chonk.transports import CassandraCrawler
+from chonk.loader import DocumentLoader
+from chonk.ner import NerPipeline
+
+crawler = CassandraCrawler(
+    contact_points=["10.0.0.1"],
+    keyspace="clinical",
+    dataset_queries={
+        "patient_notes": "SELECT patient_id, note_text FROM clinical_notes",
+        "diagnoses":     "SELECT patient_id, icd_code, description FROM diagnoses",
+    },
+    entity_queries={
+        "physician": "SELECT full_name FROM physicians",
+        "drug":      "SELECT drug_name FROM formulary",
+    },
+    local_dc="us-east",
+)
+
+# Index schema + datasets
+loader = DocumentLoader(extra_transports=[crawler])
+chunks = loader.load_crawl("cassandra://10.0.0.1/clinical", crawler=crawler)
+
+# NER: Cassandra table vocab + entity vocab
+pipeline = NerPipeline(db_enrich=True, spacy_entities=True)
+pipeline.add_tables(crawler.get_table_meta())
+for entity_type, names in crawler.get_entity_vocab().items():
+    pipeline.add_entities(names, entity_type=entity_type)
+```
+
+Or use the `DocumentLoader` convenience method for dataset-only loading:
+
+```python
+chunks = loader.load_from_cassandra(
+    contact_points=["10.0.0.1"],
+    keyspace="clinical",
+    dataset_queries={
+        "patient_notes": "SELECT patient_id, note_text FROM clinical_notes",
+    },
+    username="service_account",
+    password="...",
+)
+```
+
+Requires `cassandra-driver>=3.25` (`pip install cassandra-driver`).
+
+---
+
 ## Unified DB pattern: find everything about entity X
 
 Most enterprise knowledge lives in three places simultaneously: unstructured documents
@@ -1005,12 +1311,97 @@ How much additional detail is useful varies by format:
 | Python | Class / method heading | `line_start`, `line_end`, `symbol` (e.g. `"MyClass.run"`) — IDE jump-to-line |
 | TypeScript / JavaScript | Class / function heading | `line_start`, `line_end`, `symbol` |
 | Java | Class / method heading | `line_start`, `line_end`, `symbol` |
+| MongoDB | — | `type`, `database`, `collection`, `doc_id` |
+| Elasticsearch / OpenSearch | — | `type`, `base_url`, `index`, `doc_id` |
+| Solr | — | `type`, `base_url`, `collection`, `doc_id` |
+| DynamoDB | — | `type`, `table`, `region`, `endpoint` |
+| Firestore | — | `type`, `project`, `database`, `collection`, `doc_id` |
+| Cosmos DB | — | `type`, `url`, `database`, `container`, `item_id` |
 
 `source_detail` is **not embedded** — it lives on the chunk as metadata only. Use it to
 build source links, IDE jump-to-definition integrations, or citation footnotes.
 
 Custom extractors populate `source_detail` by implementing `annotate()` (see
 [Extending Chonk](#extending-chonk)).
+
+### Using `source_detail` to trace a chunk back to its origin
+
+#### Files
+
+For page-addressable formats the path is `chunk.document_name` and the location is in `source_detail`:
+
+```python
+chunk = results[0]
+print(chunk.document_name)   # "/reports/Q1-2025.pdf"
+print(chunk.source_detail)   # {"page_start": 4, "page_end": 5}
+
+# PDF: open at page
+import subprocess
+subprocess.run(["open", "-a", "Preview", chunk.document_name,
+                "--args", f"-p{chunk.source_detail['page_start']}"])
+
+# XLSX: open sheet at row range
+print(chunk.source_detail)   # {"sheet": "Revenue", "row_start": 12, "row_end": 47}
+
+# Python / TypeScript / Java: jump to symbol
+print(chunk.source_detail)   # {"line_start": 42, "line_end": 67, "symbol": "TokenService.validate"}
+```
+
+#### Web pages
+
+`chunk.document_name` holds the original URL:
+
+```python
+chunk = results[0]
+print(chunk.document_name)   # "https://docs.example.com/api/auth"
+import webbrowser
+webbrowser.open(chunk.document_name)
+```
+
+#### NoSQL databases
+
+`chunk.source_detail` holds enough to reconnect — without any credentials:
+
+```python
+meta = chunk.source_detail
+# {"type": "mongodb", "database": "prod", "collection": "articles", "doc_id": "6627f3..."}
+
+if meta["type"] == "mongodb":
+    from pymongo import MongoClient
+    client = MongoClient(uri)                  # supply credentials separately
+    doc = client[meta["database"]][meta["collection"]].find_one({"_id": meta["doc_id"]})
+
+elif meta["type"] == "elasticsearch":
+    import requests
+    resp = requests.get(
+        f"{meta['base_url']}/{meta['index']}/_doc/{meta['doc_id']}",
+        headers={"Authorization": "ApiKey ..."}
+    )
+
+elif meta["type"] == "dynamodb":
+    import boto3
+    table = boto3.resource("dynamodb", region_name=meta["region"]).Table(meta["table"])
+    # use primary key fields from the original item
+
+elif meta["type"] == "firestore":
+    from google.cloud import firestore
+    client = firestore.Client(project=meta["project"])
+    doc = client.collection(meta["collection"]).document(meta["doc_id"]).get()
+
+elif meta["type"] == "cosmos":
+    from azure.cosmos import CosmosClient
+    client = CosmosClient(meta["url"], credential="...")
+    item = (client.get_database_client(meta["database"])
+                  .get_container_client(meta["container"])
+                  .read_item(meta["item_id"], partition_key=meta["item_id"]))
+
+elif meta["type"] == "solr":
+    import requests
+    resp = requests.get(f"{meta['base_url']}/{meta['collection']}/get",
+                        params={"id": meta["doc_id"]})
+```
+
+Credentials are never stored in `source_detail`. Keep them in environment variables, a secrets manager, or the same credential store used at crawl time.
 
 ---
 
@@ -1398,6 +1789,56 @@ Each layer degrades gracefully to the one below it when its index is absent. You
 | `LLMClient` | Thin protocol / adapter for LLM calls used by the graph and generation layers |
 | `VERB_SET` | Default set of relation verbs used by `SVOExtractor` |
 
+#### `build-svo` streaming progress
+
+`build-svo` supports fine-grained per-chunk progress via `--progress-out`:
+
+```bash
+python demo/graphrag_bench.py build-svo \
+    --out-dir work \
+    --gen-provider together \
+    --gen-model "meta-llama/Llama-3.3-70B-Instruct-Turbo" \
+    --progress-out /tmp/svo_progress.jsonl
+```
+
+One JSON line is written per completed chunk — immediately as each extraction finishes, not in batches:
+
+```json
+{
+  "done": 42,
+  "total": 1927,
+  "chunk_id": "novel_chapter_3:12",
+  "triples": [
+    {"subject_id": "Atticus_Finch", "verb": "has_role", "object_id": "lawyer",
+     "confidence": 0.95, "description": "Atticus Finch serves as a defense attorney."}
+  ],
+  "descriptions": {"Atticus_Finch": "A principled lawyer in Maycomb, Alabama."},
+  "aliases": {"Atticus_Finch": ["Atticus", "Mr. Finch"]},
+  "rel_descriptions": {"Atticus_Finch|has_role|lawyer": "Atticus Finch serves as a defense attorney in the trial."}
+}
+```
+
+Use `-` to write to stdout. A web service can tail the file (or read stdout) and forward each line as a Server-Sent Event:
+
+```python
+# FastAPI / Starlette SSE example (web service wraps the CLI output)
+from sse_starlette.sse import EventSourceResponse
+import subprocess, json
+
+async def svo_progress_stream():
+    proc = subprocess.Popen(
+        ["python", "demo/graphrag_bench.py", "build-svo", "--progress-out", "-", ...],
+        stdout=subprocess.PIPE, text=True,
+    )
+    for line in proc.stdout:
+        event = json.loads(line)
+        yield {"event": "svo_chunk", "data": json.dumps(event)}
+
+@app.get("/svo-progress")
+async def svo_progress():
+    return EventSourceResponse(svo_progress_stream())
+```
+
 ### Community layer
 
 | Name | Description |
@@ -1677,6 +2118,20 @@ Large files (`work/results/*.jsonl`, `work/data/runs/*.duckdb`, `work/data/*.npy
 rclone sync work/results r2:chonk/results
 rclone sync work/data    r2:chonk/data
 ```
+
+### Replication notes
+
+The benchmark spec constrains only the **generator model** (gpt-4o-mini) and **judge model** (gpt-4o-mini). All other pipeline choices are implementation-defined and undisclosed by published entrants, making exact score replication impossible. Known gaps for MS-GraphRAG specifically:
+
+| Implementation detail | MS-GraphRAG disclosure | This project |
+|---|---|---|
+| Knowledge graph extraction LLM | Not disclosed | Configurable; Qwen2.5-72B or gpt-4o-mini used in practice |
+| Chunking strategy | Not disclosed | Structural chunking (section-aware, 1100–2200 chars) |
+| Entity resolution / NER | Not disclosed | spaCy `en_core_web_sm` + domain vocabulary |
+| Community detection parameters | Not disclosed | Leiden algorithm, default resolution |
+| Community summary LLM | Not disclosed | Configurable; same as extraction LLM |
+
+Scores should be interpreted as measuring the same benchmark task under comparable but not identical conditions.
 
 ---
 

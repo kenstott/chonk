@@ -106,42 +106,32 @@ class TestEntityNormalizer:
 
 
 # ---------------------------------------------------------------------------
-# update_entity_description — always writes as 'user' source
+# set_entity_description — description stored on entities table
 # ---------------------------------------------------------------------------
 
 
-class TestUpdateEntityDescription:
-    def test_writes_user_source(self, tmp_path):
+class TestSetEntityDescription:
+    def _seed(self, store, eid: str) -> None:
+        store.vector._conn.execute(
+            "INSERT OR IGNORE INTO entities(id, name, display_name) VALUES (?, ?, ?)",
+            [eid, eid, eid],
+        )
+
+    def test_set_and_get(self, tmp_path):
         from chonk.storage._store import Store
 
         with Store(tmp_path / "t.duckdb") as store:
-            store.update_entity_description("ent", "User-curated description")
+            self._seed(store, "ent")
+            store.set_entity_description("ent", "A description")
             result = store.get_entity_descriptions(["ent"])
-        assert result["ent"] == "User-curated description"
+        assert result["ent"] == "A description"
 
-    def test_overwrites_llm_description(self, tmp_path):
+    def test_overwrites_previous(self, tmp_path):
         from chonk.storage._store import Store
 
         with Store(tmp_path / "t.duckdb") as store:
-            store.upsert_entity_description("ent", "LLM desc", source="llm")
-            store.update_entity_description("ent", "User override")
-            result = store.get_entity_descriptions(["ent"])
-        assert result["ent"] == "User override"
-
-    def test_overwrites_schema_description(self, tmp_path):
-        from chonk.storage._store import Store
-
-        with Store(tmp_path / "t.duckdb") as store:
-            store.upsert_entity_description("ent", "Schema desc", source="schema")
-            store.update_entity_description("ent", "User override")
-            result = store.get_entity_descriptions(["ent"])
-        assert result["ent"] == "User override"
-
-    def test_update_is_idempotent(self, tmp_path):
-        from chonk.storage._store import Store
-
-        with Store(tmp_path / "t.duckdb") as store:
-            store.update_entity_description("ent", "First")
-            store.update_entity_description("ent", "Second")
+            self._seed(store, "ent")
+            store.set_entity_description("ent", "First")
+            store.set_entity_description("ent", "Second")
             result = store.get_entity_descriptions(["ent"])
         assert result["ent"] == "Second"

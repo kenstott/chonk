@@ -18,8 +18,8 @@ A spaCy language model must also be downloaded, e.g.::
 
 from __future__ import annotations
 
+from ._spacy_labels import ALL_SPACY_LABELS, SpacyLabel
 from ._vocabulary import EntityMatch, _auto_id
-from ._spacy_labels import SpacyLabel, ALL_SPACY_LABELS
 
 
 class SpacyMatcher:
@@ -47,10 +47,10 @@ class SpacyMatcher:
             import spacy  # noqa: F401
         except ImportError as exc:
             raise ImportError(
-                "spaCy is required for SpacyMatcher. "
-                "Install with: pip install chonk[spacy]"
+                "spaCy is required for SpacyMatcher. Install with: pip install chonk[spacy]"
             ) from exc
         import spacy as _spacy
+
         self._nlp = _spacy.load(model)
         # Default to all standard labels; accept None as alias for same.
         self._types: set[str] = {
@@ -81,10 +81,13 @@ class SpacyMatcher:
             if self._strip_numeric and surface.strip().lstrip("-+").replace(".", "").isdigit():
                 continue
 
-            eid = _auto_id(surface)
+            # Use root lemma as canonical name so plural/inflected forms
+            # ("customers", "running") resolve to the same entity as singular ("customer", "run")
+            lemma = ent.root.lemma_.lower()
+            eid = _auto_id(lemma)
             if eid not in found:
                 found[eid] = {
-                    "name": surface.lower(),
+                    "name": lemma,
                     "display_name": surface,
                     "type": ent.label_.lower(),
                     "spans": [],
@@ -94,13 +97,15 @@ class SpacyMatcher:
         results = []
         for eid, info in found.items():
             spans = sorted(info["spans"])
-            results.append(EntityMatch(
-                entity_id=eid,
-                name=info["name"],
-                display_name=info["display_name"],
-                entity_type=info["type"],
-                frequency=len(spans),
-                positions=[s[0] for s in spans],
-                spans=spans,
-            ))
+            results.append(
+                EntityMatch(
+                    entity_id=eid,
+                    name=info["name"],
+                    display_name=info["display_name"],
+                    entity_type=info["type"],
+                    frequency=len(spans),
+                    positions=[s[0] for s in spans],
+                    spans=spans,
+                )
+            )
         return results

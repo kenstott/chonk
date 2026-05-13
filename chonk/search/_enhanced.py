@@ -23,6 +23,7 @@ supporting incremental ablation benchmarking.
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal, overload
@@ -136,13 +137,16 @@ class EnhancedSearch:
         entity_ref_expansion_per_k: int | None = None,
         entity_ref_expansion_min_sim: float | None = None,
         query_ner_fn: Callable[[str], list[str]] | None = None,
+        query_entity_id_fn: Callable[[str], list[str]] | None = None,
         lane_entity_min_sim: float | None = None,
         session_fingerprint: str | None = None,
+        community_index: CommunityIndex | None = None,
     ):
         self._store = store
         self._entity_index = entity_index
         self._cluster_map = cluster_map
         self._relationship_index = relationship_index
+        self._community_index = community_index
         self._chunk_cache: dict[str, DocumentChunk] | None = None
         self._embedding_cache: dict[str, list[float]] | None = None
         self._seed_multiplier = seed_pool_multiplier
@@ -166,6 +170,7 @@ class EnhancedSearch:
         self._entity_ref_expansion_per_k = entity_ref_expansion_per_k
         self._entity_ref_expansion_min_sim = entity_ref_expansion_min_sim
         self._query_ner_fn = query_ner_fn
+        self._query_entity_id_fn = query_entity_id_fn
         self._lane_entity_min_sim = lane_entity_min_sim
         self._session_fingerprint = session_fingerprint
         self.last_expansion_stats: dict | None = None
@@ -480,10 +485,10 @@ class EnhancedSearch:
                 domain_ids=domain_ids,
             )
 
-        # Resolve query entities via NER if not supplied
-        ents = query_entities
-        if not ents and self._query_ner_fn is not None and query_text:
-            ents = self._query_ner_fn(query_text)
+        # Resolve query entity IDs (slugs) for graph traversal
+        ents = None
+        if self._query_entity_id_fn is not None and query_text:
+            ents = self._query_entity_id_fn(query_text)
         if not ents:
             return self.search(
                 query_embedding, k=k, query_text=query_text,
@@ -497,17 +502,28 @@ class EnhancedSearch:
         if _trace is not None:
             _trace.query_entities = list(ents)
 
-        # Traverse RelationshipIndex: collect related entity IDs
-        related: set[str] = set()
+        # Traverse RelationshipIndex: 2-hop traversal
+        ents_set = set(ents)
+        hop1: set[str] = set()
         svo_count = 0
         for entity_id in ents:
             for triple in self._relationship_index.get_objects(entity_id):
-                related.add(triple.object_id)
+                hop1.add(triple.object_id)
                 svo_count += 1
             for triple in self._relationship_index.get_subjects(entity_id):
-                related.add(triple.subject_id)
+                hop1.add(triple.subject_id)
                 svo_count += 1
-        related -= set(ents)  # exclude the query entities themselves
+        hop1 -= ents_set
+
+        hop2: set[str] = set()
+        for entity_id in hop1:
+            for triple in self._relationship_index.get_objects(entity_id):
+                hop2.add(triple.object_id)
+            for triple in self._relationship_index.get_subjects(entity_id):
+                hop2.add(triple.subject_id)
+        hop2 -= ents_set | hop1
+
+        related = hop1 | hop2
 
         if _trace is not None:
             _trace.graph_traversal_entities = list(related)
@@ -598,6 +614,239 @@ class EnhancedSearch:
         if _trace is not None:
             _trace.community_chunk_ids = [sc.chunk_id for sc in results]
         return results
+
+    # ------------------------------------------------------------------
+    # MS-GraphRAG context assembly
+    # ------------------------------------------------------------------
+
+    def assemble_graph_context(
+        self,
+        hits: list,
+        query_text: str | None = None,
+        query_entities: list[str] | None = None,
+        context_token_budget: int = 8000,
+    ) -> str:
+        """Assemble MS-GraphRAG-style structured context from retrieved chunks.
+
+        Sections: Entities | Relationships | Community Reports | Source Text
+
+        Each section is budget-trimmed so the total approximate token count
+        (chars / 4) stays within *context_token_budget*.
+
+        Args:
+            hits: List of ``(chunk_id, score, DocumentChunk)`` tuples or ScoredChunk objects.
+            query_text: Optional query text for NER-based entity resolution.
+            query_entities: Pre-resolved entity IDs; used if query_text NER is absent.
+            namespace: Namespace for entity description lookups.
+        """
+        # Normalise hits → (chunk_id, DocumentChunk)
+        chunk_pairs: list[tuple[str, DocumentChunk]] = []
+        for h in hits:
+            if isinstance(h, ScoredChunk):
+                chunk_pairs.append((h.chunk_id, h.chunk))
+            else:
+                chunk_pairs.append((h[0], h[2]))
+        chunk_ids = [cid for cid, _ in chunk_pairs]
+
+        # ── 1. Collect entity IDs from retrieved chunks ────────────────────
+        entity_ids: set[str] = set()
+        if self._entity_index is not None:
+            for cid in chunk_ids:
+                for eid, _ in self._entity_index.get_entities_for_chunk(cid):
+                    entity_ids.add(eid)
+
+        # Add query entity IDs via entity-ID resolver
+        if self._query_entity_id_fn is not None and query_text:
+            entity_ids.update(self._query_entity_id_fn(query_text))
+
+        # ── 2. Fetch entity records (name, type, description) ──────────────
+        entity_records: list[dict] = []
+        if entity_ids:
+            conn = self._store.vector._conn
+            eid_list = list(entity_ids)
+            placeholders = ", ".join("?" * len(eid_list))
+            rows = conn.execute(
+                f"SELECT e.id, e.name, e.entity_type, COALESCE(e.description, '') "
+                f"FROM entities e "
+                f"WHERE e.id IN ({placeholders})",
+                eid_list,
+            ).fetchall()
+            entity_records = [
+                {"id": r[0], "name": r[1], "type": r[2], "description": r[3]}
+                for r in rows
+            ]
+
+        # ── 3. Collect all 1-hop SVO triples from matched entities ────────────
+        # Include all relationships where a matched entity is subject or object,
+        # regardless of whether the far endpoint was retrieved (MS-GraphRAG behaviour).
+        rel_rows: list[tuple[str, str, str, str]] = []  # (subj_name, verb, obj_name, desc)
+        if self._relationship_index is not None and entity_ids:
+            id_to_name = {r["id"]: r["name"] for r in entity_records}
+            seen: set[tuple[str, str, str]] = set()
+            for eid in entity_ids:
+                for t in self._relationship_index.get_objects(eid):
+                    key = (t.subject_id, t.verb, t.object_id)
+                    if key not in seen:
+                        seen.add(key)
+                        rel_rows.append((
+                            id_to_name.get(t.subject_id, t.subject_id),
+                            t.verb,
+                            id_to_name.get(t.object_id, t.object_id),
+                            t.description or "",
+                        ))
+
+        # ── 4. Community summaries for entity communities ──────────────────
+        community_texts: list[str] = []
+        if self._community_index is not None and chunk_ids:
+            comm_ids: set[int] = set()
+            for cid in chunk_ids:
+                c = self._community_index.community_id(cid)
+                if c is not None:
+                    comm_ids.add(c)
+            if comm_ids:
+                conn = self._store.vector._conn
+                names = [f"community:{cid}" for cid in comm_ids]
+                placeholders = ", ".join("?" * len(names))
+                rows = conn.execute(
+                    f"SELECT content FROM embeddings "
+                    f"WHERE document_name IN ({placeholders}) "
+                    f"AND chunk_type = 'community_summary'",
+                    names,
+                ).fetchall()
+                community_texts = [r[0] for r in rows if r[0]]
+
+        # ── 5. Budget-aware assembly ───────────────────────────────────────
+        # Approximate tokens = chars / 4. Fill sections in priority order:
+        # Entities → Relationships → Community Reports → Source Text.
+        budget_chars = context_token_budget * 4
+        used = 0
+        sections: list[str] = []
+
+        def _chars(s: str) -> int:
+            return len(s)
+
+        def _add(block: str) -> bool:
+            nonlocal used
+            c = _chars(block)
+            if used + c > budget_chars:
+                return False
+            sections.append(block)
+            used += c
+            return True
+
+        if entity_records:
+            header = "## Entities\n\n| Name | Type | Description |\n|------|------|-------------|"
+            rows_str = "\n".join(
+                f"| {r['name']} | {r['type']} | {r['description'] or '—'} |"
+                for r in entity_records
+            )
+            _add(f"{header}\n{rows_str}")
+
+        if rel_rows:
+            header = "## Relationships\n\n| Subject | Relationship | Object | Description |\n|---------|-------------|--------|-------------|"
+            rows_str = "\n".join(
+                f"| {subj} | {verb} | {obj} | {desc or '—'} |"
+                for subj, verb, obj, desc in rel_rows
+            )
+            _add(f"{header}\n{rows_str}")
+
+        for text in community_texts:
+            block = f"## Community Reports\n\n{text}" if not any(
+                s.startswith("## Community Reports") for s in sections
+            ) else text
+            if not _add(block):
+                break
+
+        for _, chunk in chunk_pairs:
+            block = f"## Source Text\n\n{chunk.content or ''}" if not any(
+                s.startswith("## Source Text") for s in sections
+            ) else (chunk.content or "")
+            if not _add(block):
+                break
+
+        return "\n\n".join(sections)
+
+    # ------------------------------------------------------------------
+    # MS-GraphRAG map-reduce global context
+    # ------------------------------------------------------------------
+
+    _MAP_PROMPT = (
+        "You are an expert analyst. Using ONLY the community report below, "
+        "provide a concise answer to the question and rate how relevant this "
+        "community report is (0 = not relevant, 100 = fully answers the question).\n\n"
+        "Return ONLY valid JSON: {{\"answer\": \"<answer>\", \"score\": <0-100>}}\n\n"
+        "Question: {query}\n\n"
+        "Community Report:\n{community_text}"
+    )
+
+    def map_reduce_global_context(
+        self,
+        hits: list,
+        query_text: str,
+        llm_fn: Callable[[str], str],
+        concurrency: int = 4,
+    ) -> str:
+        """MS-GraphRAG map-reduce global context assembly.
+
+        Map: call *llm_fn* once per community summary hit with a scoring prompt.
+        Reduce: filter score > 0, sort by score desc, format top answers as context.
+
+        Args:
+            hits: Community summary chunks as ``(chunk_id, score, DocumentChunk)``
+                tuples or ``ScoredChunk`` objects.
+            query_text: The user's question.
+            llm_fn: ``(prompt: str) -> str`` — LLM text completion callable.
+            concurrency: Thread-pool size for parallel map calls.
+
+        Returns:
+            Formatted context string ready for final generation.
+        """
+        import concurrent.futures
+        import json as _json
+
+        chunk_pairs: list[tuple[str, DocumentChunk]] = []
+        for h in hits:
+            if isinstance(h, ScoredChunk):
+                chunk_pairs.append((h.chunk_id, h.chunk))
+            else:
+                chunk_pairs.append((h[0], h[2]))
+
+        def _map_one(pair: tuple[str, DocumentChunk]) -> tuple[str, int] | None:
+            _, chunk = pair
+            text = (chunk.content or "").strip()
+            if not text:
+                return None
+            prompt = self._MAP_PROMPT.format(query=query_text, community_text=text)
+            try:
+                raw = llm_fn(prompt)
+                # Extract JSON from response (may be wrapped in ```json ... ```)
+                m = re.search(r"\{[^{}]*\}", raw, re.DOTALL)
+                parsed = _json.loads(m.group() if m else raw)
+                answer = str(parsed.get("answer", "")).strip()
+                score = int(parsed.get("score", 0))
+            except Exception:
+                return None
+            if not answer or score <= 0:
+                return None
+            return answer, score
+
+        intermediate: list[tuple[str, int]] = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as pool:
+            futures = [pool.submit(_map_one, p) for p in chunk_pairs]
+            for fut in concurrent.futures.as_completed(futures):
+                result = fut.result()
+                if result is not None:
+                    intermediate.append(result)
+
+        if not intermediate:
+            return ""
+
+        intermediate.sort(key=lambda x: x[1], reverse=True)
+
+        lines = ["## Intermediate Answers\n"]
+        for answer, score in intermediate:
+            lines.append(f"### Community Report (relevance: {score})\n{answer}\n")
+        return "\n".join(lines)
 
     # ------------------------------------------------------------------
     # Entity-ref expansion

@@ -23,6 +23,7 @@ from ._json import JsonExtractor
 from ._markdown import MarkdownExtractor
 from ._mime import detect_type_from_source, is_binary_type, normalize_type
 from ._nist import NistRenderer
+from ._nosql import NoSQLRenderer
 from ._odf import OdfExtractor
 from ._parquet import ParquetExtractor
 from ._pdf import PdfExtractor
@@ -49,6 +50,7 @@ def _build_registry() -> list[Extractor]:
         HtmlExtractor(),
         JsonExtractor(
             renderers=[
+                NoSQLRenderer(),
                 CveRenderer(),
                 AttackRenderer(),
                 NistRenderer(),
@@ -129,6 +131,7 @@ __all__ = [
     "AttackRenderer",
     "CweRenderer",
     "NistRenderer",
+    "NoSQLRenderer",
     "ClinicalTrialRenderer",
     "FdaLabelRenderer",
     "FhirRenderer",

@@ -7,9 +7,14 @@
 
 """Document transport backends."""
 
+from ._cassandra import CassandraCrawler
+from ._cosmos import CosmosCrawler
 from ._crawler_protocol import Crawler
 from ._db_schema import DatabaseSchemaCrawler
 from ._directory_crawler import DirectoryCrawler
+from ._dynamodb import DynamoDBCrawler
+from ._elasticsearch import ElasticsearchCrawler
+from ._firestore import FirestoreCrawler
 from ._ftp import FtpTransport
 from ._github import GitHubCrawler
 from ._gmail import GmailCrawler
@@ -17,10 +22,12 @@ from ._http import HttpTransport
 from ._imap import ImapTransport
 from ._import_crawler import ImportCrawler
 from ._local import LocalTransport
+from ._mongodb import MongoCrawler
 from ._protocol import FetchResult, Transport
 from ._s3 import S3Transport
 from ._sftp import SftpTransport
 from ._sharepoint import SharePointCrawler
+from ._solr import SolrCrawler
 from ._sql_query import SqlQueryTransport
 from ._sqlalchemy import SqlAlchemyTransport
 from ._web_crawler import WebCrawler
@@ -46,6 +53,7 @@ __all__ = [
     "Transport",
     "FetchResult",
     "Crawler",
+    "CassandraCrawler",
     "LocalTransport",
     "HttpTransport",
     "S3Transport",
@@ -61,5 +69,11 @@ __all__ = [
     "SqlAlchemyTransport",
     "SqlQueryTransport",
     "ImapTransport",
+    "MongoCrawler",
+    "ElasticsearchCrawler",
+    "SolrCrawler",
+    "DynamoDBCrawler",
+    "FirestoreCrawler",
+    "CosmosCrawler",
     "detect_transport",
 ]
