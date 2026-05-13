@@ -8,12 +8,11 @@
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 from ..graph._llm import LLMClient
 from ..models import DocumentChunk
 from ._index import CommunityIndex
-
 
 _SYSTEM_PROMPT = """\
 You are a knowledge-graph analyst. Given a set of text chunks that belong to the same \
@@ -66,6 +65,7 @@ class CommunitySummarizer:
         community_id: int | str,
         chunk_texts: list[str],
         topic_label: str = "",
+        max_chars: int = 400_000,
     ) -> DocumentChunk | None:
         """Summarize one community and return a DocumentChunk.
 
@@ -73,6 +73,8 @@ class CommunitySummarizer:
             community_id: Identifier stored in the chunk's document_name.
             chunk_texts: Text content of all member chunks.
             topic_label: Optional topic label for the community.
+            max_chars: Truncate combined chunk text to this many characters
+                before building the prompt (~1 char ≈ 0.25 tokens).
 
         Returns:
             A DocumentChunk with chunk_type="community_summary", or None if
@@ -80,10 +82,17 @@ class CommunitySummarizer:
         """
         if not chunk_texts:
             return None
-        prompt = self._system + "\n\n" + self._user_template.format(
-            topic_label=topic_label or "(unlabeled)",
-            n_chunks=len(chunk_texts),
-            chunks="\n---\n".join(chunk_texts),
+        combined = "\n---\n".join(chunk_texts)
+        if len(combined) > max_chars:
+            combined = combined[:max_chars]
+        prompt = (
+            self._system
+            + "\n\n"
+            + self._user_template.format(
+                topic_label=topic_label or "(unlabeled)",
+                n_chunks=len(chunk_texts),
+                chunks=combined,
+            )
         )
         summary = self._llm.complete(prompt)
         return DocumentChunk(
