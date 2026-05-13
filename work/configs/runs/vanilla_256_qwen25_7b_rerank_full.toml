@@ -1,0 +1,15 @@
+extends = "../base.toml"
+run_name = "vanilla_256_qwen25_7b_rerank_full"
+
+[index]
+db_name = "vanilla_rag.duckdb"
+
+[rerank]
+enabled = true
+
+[retrieval]
+vanilla = true
+
+[gen]
+provider = "together"
+model = "Qwen/Qwen2.5-7B-Instruct-Turbo"
