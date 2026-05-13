@@ -1,0 +1,19 @@
+extends = "../base.toml"
+run_name = "ner_ref_laned60_community_k30_qwen25_7b_sr_full"
+
+[retrieval]
+enhanced = true
+entity_ref_expansion = true
+lane_entity_min_sim = 0.60
+top_k = 30
+
+[retrieval.community]
+enabled = true
+min_coherence = 0.5
+
+[gen]
+provider = "together"
+model = "Qwen/Qwen2.5-7B-Instruct-Turbo"
+
+[sr]
+enabled = true
