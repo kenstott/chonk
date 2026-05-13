@@ -51,8 +51,14 @@ class RelationshipIndex:
     def __len__(self) -> int:
         return sum(len(v) for v in self._by_subject.values())
 
-    def save_to_db(self, con) -> int:
-        """Upsert all triples into svo_triples table. Returns count written."""
+    def save_to_db(self, con, incremental: bool = False) -> int:
+        """Upsert all triples into svo_triples table. Returns count written.
+
+        Args:
+            con: Open DuckDB connection.
+            incremental: If True, append rows without clearing the table first.
+                Used for periodic checkpointing during extraction.
+        """
         con.execute("""
             CREATE TABLE IF NOT EXISTS svo_triples (
                 chunk_id    VARCHAR,
@@ -60,11 +66,14 @@ class RelationshipIndex:
                 verb        VARCHAR NOT NULL,
                 object_id   VARCHAR NOT NULL,
                 confidence  FLOAT   NOT NULL DEFAULT 1.0,
-                namespace   VARCHAR
+                namespace   VARCHAR,
+                description TEXT    NOT NULL DEFAULT ''
             )
         """)
         con.execute("ALTER TABLE svo_triples ADD COLUMN IF NOT EXISTS namespace VARCHAR")
-        con.execute("DELETE FROM svo_triples")
+        con.execute("ALTER TABLE svo_triples ADD COLUMN IF NOT EXISTS description TEXT")
+        if not incremental:
+            con.execute("DELETE FROM svo_triples")
         rows = []
         for triples in self._by_subject.values():
             for t in triples:
@@ -72,9 +81,19 @@ class RelationshipIndex:
                     "SELECT namespace FROM embeddings WHERE chunk_id = ?", [t.source_chunk_id]
                 ).fetchone()
                 namespace = ns_row[0] if ns_row else None
-                rows.append((t.source_chunk_id, t.subject_id, t.verb, t.object_id, t.confidence, namespace))
+                rows.append(
+                    (
+                        t.source_chunk_id,
+                        t.subject_id,
+                        t.verb,
+                        t.object_id,
+                        t.confidence,
+                        namespace,
+                        t.description,
+                    )
+                )
         if rows:
-            con.executemany("INSERT INTO svo_triples VALUES (?, ?, ?, ?, ?, ?)", rows)
+            con.executemany("INSERT INTO svo_triples VALUES (?, ?, ?, ?, ?, ?, ?)", rows)
         return len(rows)
 
     @classmethod
@@ -82,24 +101,29 @@ class RelationshipIndex:
         """Load RelationshipIndex from svo_triples table. Returns empty index if table absent."""
         idx = cls()
         try:
-            _view_exists = con.execute(
-                "SELECT COUNT(*) FROM information_schema.tables "
-                "WHERE table_name = 'all_svo_triples'"
-            ).fetchone()[0] > 0
+            _view_exists = (
+                con.execute(
+                    "SELECT COUNT(*) FROM information_schema.tables "
+                    "WHERE table_name = 'all_svo_triples'"
+                ).fetchone()[0]
+                > 0
+            )
             table = "all_svo_triples" if _view_exists else "svo_triples"
             if namespaces is not None:
                 placeholders = ", ".join(["?" for _ in namespaces])
                 rows = con.execute(
-                    f"SELECT chunk_id, subject_id, verb, object_id, confidence FROM {table} WHERE namespace IN ({placeholders})",
+                    f"SELECT chunk_id, subject_id, verb, object_id, confidence, "
+                    f"COALESCE(description, '') FROM {table} WHERE namespace IN ({placeholders})",
                     namespaces,
                 ).fetchall()
             else:
                 rows = con.execute(
-                    f"SELECT chunk_id, subject_id, verb, object_id, confidence FROM {table}"
+                    f"SELECT chunk_id, subject_id, verb, object_id, confidence, "
+                    f"COALESCE(description, '') FROM {table}"
                 ).fetchall()
         except Exception:
             return idx
-        for chunk_id, subject_id, verb, object_id, confidence in rows:
+        for chunk_id, subject_id, verb, object_id, confidence, description in rows:
             idx.add(
                 SVOTriple(
                     subject_id=subject_id,
@@ -107,6 +131,7 @@ class RelationshipIndex:
                     object_id=object_id,
                     confidence=confidence,
                     source_chunk_id=chunk_id,
+                    description=description,
                 )
             )
         return idx

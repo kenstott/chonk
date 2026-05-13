@@ -1260,16 +1260,24 @@ def cmd_build_svo(args: argparse.Namespace) -> None:
     if not db_path.exists():
         raise FileNotFoundError(f"Index DB not found: {db_path}")
 
-    if not force:
-        con = duckdb.connect(str(db_path), read_only=True)
-        try:
-            n = con.execute("SELECT COUNT(*) FROM svo_triples").fetchone()[0]
-            con.close()
-            if n > 0:
-                print(f"svo_triples already populated ({n:,} rows) — skipping. Use --force to rebuild.")
-                return
-        except Exception:
-            con.close()
+    _init_con = duckdb.connect(str(db_path))
+    _init_con.execute("""
+        CREATE TABLE IF NOT EXISTS svo_triples (
+            chunk_id VARCHAR, subject_id VARCHAR NOT NULL, verb VARCHAR NOT NULL,
+            object_id VARCHAR NOT NULL, confidence FLOAT NOT NULL DEFAULT 1.0,
+            namespace VARCHAR, description TEXT NOT NULL DEFAULT ''
+        )
+    """)
+    _init_con.execute("ALTER TABLE svo_triples ADD COLUMN IF NOT EXISTS namespace VARCHAR")
+    _init_con.execute("ALTER TABLE svo_triples ADD COLUMN IF NOT EXISTS description TEXT")
+    if force:
+        _init_con.execute("DELETE FROM svo_triples")
+        print("--force: cleared existing svo_triples", flush=True)
+    else:
+        n = _init_con.execute("SELECT COUNT(*) FROM svo_triples").fetchone()[0]
+        if n > 0:
+            print(f"svo_triples has {n:,} rows — will resume from checkpoint. Use --force to rebuild.")
+    _init_con.close()
 
     import httpx as _httpx
     import openai as _oai
@@ -1359,8 +1367,24 @@ def cmd_build_svo(args: argparse.Namespace) -> None:
             "description": existing_descriptions.get(entity_id, ""),
         })
 
+    # Load already-checkpointed chunk_ids for resume support
+    _checkpointed_chunk_ids: set[str] = set()
+    if not force:
+        try:
+            _ckpt_con = duckdb.connect(str(db_path), read_only=True)
+            _ckpt_con.execute("CREATE TABLE IF NOT EXISTS svo_triples (chunk_id VARCHAR, subject_id VARCHAR NOT NULL, verb VARCHAR NOT NULL, object_id VARCHAR NOT NULL, confidence FLOAT NOT NULL DEFAULT 1.0, namespace VARCHAR, description TEXT NOT NULL DEFAULT '')")
+            _checkpointed_chunk_ids = {
+                r[0] for r in _ckpt_con.execute(
+                    "SELECT DISTINCT chunk_id FROM svo_triples WHERE chunk_id IS NOT NULL"
+                ).fetchall()
+            }
+            _ckpt_con.close()
+        except Exception:
+            pass
+
     chunks_with_entities = [(cid, content) for cid, content in rows
-                            if len(chunk_entities_map.get(cid, [])) >= 2]
+                            if len(chunk_entities_map.get(cid, [])) >= 2
+                            and cid not in _checkpointed_chunk_ids]
     chunks_without_entities = [(cid, content) for cid, content in rows
                                if len(chunk_entities_map.get(cid, [])) < 2]
 
@@ -1368,9 +1392,36 @@ def cmd_build_svo(args: argparse.Namespace) -> None:
         chunks_with_entities = chunks_with_entities[:max_chunks]
 
     print(f"Loaded {len(rows):,} chunks from {db_path}")
+    if _checkpointed_chunk_ids:
+        print(f"  Resuming: {len(_checkpointed_chunk_ids):,} chunks already checkpointed")
     print(f"  {len(chunks_with_entities):,} chunks have ≥2 entities → entity-anchored extraction"
           + (f" (capped at {max_chunks})" if max_chunks is not None else ""))
     print(f"  {len(chunks_without_entities):,} chunks have <2 entities → skipped")
+
+    _CHECKPOINT_INTERVAL = 100
+    _checkpoint_lock = _threading.Lock()
+    _pending_index = RelationshipIndex()      # triples since last checkpoint
+    _pending_descs: dict[str, str] = {}
+    _pending_aliases: dict[str, list[str]] = {}
+
+    def _flush_checkpoint():
+        nonlocal _pending_index, _pending_descs, _pending_aliases
+        if len(_pending_index) == 0:
+            return
+        for _attempt in range(10):
+            try:
+                _con_rw = duckdb.connect(str(db_path))
+                _pending_index.save_to_db(_con_rw, incremental=True)
+                _con_rw.close()
+                break
+            except Exception as _e:
+                if "lock" in str(_e).lower() or "conflict" in str(_e).lower():
+                    _time.sleep(5)
+                else:
+                    raise
+        _pending_index = RelationshipIndex()
+        _pending_descs = {}
+        _pending_aliases = {}
 
     relationship_index = RelationshipIndex()
     new_descriptions: dict[str, str] = {}
@@ -1410,10 +1461,16 @@ def cmd_build_svo(args: argparse.Namespace) -> None:
             triples, descs, aliases, rel_descs = fut.result()
             for t in triples:
                 relationship_index.add(t)
+                _pending_index.add(t)
             new_descriptions.update(descs)
+            _pending_descs.update(descs)
             for eid, alias_list in aliases.items():
                 new_aliases.setdefault(eid, []).extend(alias_list)
+                _pending_aliases.setdefault(eid, []).extend(alias_list)
             done += 1
+            if done % _CHECKPOINT_INTERVAL == 0:
+                with _checkpoint_lock:
+                    _flush_checkpoint()
             if _progress_fh is not None:
                 import json as _json
                 event = {
@@ -1438,10 +1495,13 @@ def cmd_build_svo(args: argparse.Namespace) -> None:
 
 
     from chonk.storage._store import Store as _Store
+    # Flush any remaining pending triples
+    with _checkpoint_lock:
+        _flush_checkpoint()
     for _attempt in range(60):
         try:
             con_rw = duckdb.connect(str(db_path))
-            n_written = relationship_index.save_to_db(con_rw)
+            n_written = con_rw.execute("SELECT COUNT(*) FROM svo_triples").fetchone()[0]
             con_rw.close()
             print(f"Persisted {n_written:,} triples → {db_path}")
             break
