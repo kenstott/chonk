@@ -12,12 +12,24 @@ Usage (from repo root on GPU):
 
 import argparse
 import asyncio
+import os
 import re
 import shutil
 import sys
 import time
 import tomllib
 from dataclasses import dataclass, field
+
+# Load .env before anything else so API keys are available to subprocesses
+_env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
+if os.path.exists(_env_path):
+    with open(_env_path) as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if _line and not _line.startswith("#") and "=" in _line:
+                _k, _, _v = _line.partition("=")
+                if _k and _k == _k.strip() and _k not in os.environ:
+                    os.environ[_k] = _v
 from pathlib import Path
 
 # ── Constants ──────────────────────────────────────────────────────────────────
