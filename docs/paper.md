@@ -93,6 +93,8 @@ Documents
   → Vector store + embeddings
 ```
 
+**Entity extraction QC and canonicalization.** Raw spaCy NER output is filtered and normalized before the EntityIndex is populated. Two categories of span are dropped post-extraction: (1) *Numeric entity types* — spans classified as CARDINAL, ORDINAL, MONEY, PERCENT, or QUANTITY, and any span whose surface form is purely numeric. These labels produce high-frequency entities (counts, prices, percentages) that co-occur broadly across chunks without implying semantic relatedness, creating dense noise edges in the co-occurrence graph. (2) *Stop-word-only spans* — multi-token entities where every token is a function word. Both filters apply before edge construction and require no modification to the spaCy model. Surviving entities are assigned a canonical ID derived from the **root lemma** of the span (``ent.root.lemma_.lower()``), so inflected and plural surface forms — "customers", "ordered", "invoices" — resolve to the same entity node as their singular base form ("customer", "order", "invoice"). Without lemma canonicalization, the same real-world entity appears as multiple fragmented nodes with independent co-occurrence edges, reducing the density and accuracy of SVO triples (subject/object IDs fragment across surface forms) and weakening context graph edge weights (co-occurrence and cluster signals are diluted across variants).
+
 Index cost: off-the-shelf NER (CPU) + co-occurrence matrix (O(chunks²), one-time) + Louvain community detection. **Zero LLM calls.**
 
 ### 3.2 Query-Time Pipeline
