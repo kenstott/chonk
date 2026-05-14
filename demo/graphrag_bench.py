@@ -803,6 +803,14 @@ _UNSTRUCTURED_GEN_SYSTEM = (
     "If the context does not contain enough information, "
     "say so rather than making up an answer."
 )
+# Exact prompt template used by GraphRAG-Bench vanilla RAG baseline (Appendix H.2)
+_VANILLA_GEN_PROMPT = (
+    "You are a helpful assistant.\n"
+    "Based on the following context, answer the question.\n"
+    "Context:\n{context}\n"
+    "Question: {question}\n"
+    "Answer:"
+)
 
 def _extract_structured_answer(text: str) -> str | None:
     """Extract content after 'ANSWER:' marker. Returns None if marker absent."""
@@ -919,7 +927,18 @@ def _srr_gap_fill(
 
 def _generate(question: str, context: str, client, model: str = GEN_MODEL,
               temperature: float = 0.0, retry_hint: str | None = None,
-              structured: bool = False) -> str:
+              structured: bool = False, vanilla: bool = False) -> str:
+    if vanilla:
+        user_content = _VANILLA_GEN_PROMPT.format(context=context, question=question)
+        if retry_hint:
+            user_content += f"\n\n{retry_hint}"
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": user_content}],
+            temperature=temperature,
+            max_tokens=500,
+        )
+        return resp.choices[0].message.content.strip()
     system = _STRUCTURED_GEN_SYSTEM if structured else _UNSTRUCTURED_GEN_SYSTEM
     user_content = f"Context:\n{context}\n\nQuestion: {question}"
     if retry_hint:
@@ -2925,7 +2944,8 @@ def cmd_run(args: argparse.Namespace) -> None:
             for attempt in range(3):
                 try:
                     answer = _generate(item["question"], item["context"], client, model,
-                                       temperature=gen_temperature, structured=use_structured_gen)
+                                       temperature=gen_temperature, structured=use_structured_gen,
+                                       vanilla=use_vanilla)
                     break
                 except Exception as exc:
                     if "insufficient_quota" in str(exc):
@@ -2960,7 +2980,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                     try:
                         retry_answer = _generate(item["question"], item["context"], client, model,
                                                  temperature=gen_temperature, retry_hint=hint,
-                                                 structured=use_structured_gen)
+                                                 structured=use_structured_gen, vanilla=use_vanilla)
                         break
                     except Exception:
                         if attempt == 2:
