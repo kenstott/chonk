@@ -3,7 +3,9 @@
 set -eo pipefail
 
 if [ -f ".env" ]; then
-    set -a; source .env; set +a
+    while IFS= read -r line; do
+        [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] && export "$line"
+    done < .env
 fi
 
 PY="${PY:-/root/miniforge/envs/chonk/bin/python}"
