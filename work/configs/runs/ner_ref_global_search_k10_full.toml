@@ -1,8 +1,0 @@
-extends = "../base.toml"
-run_name = "ner_ref_global_search_k10_full"
-
-[retrieval]
-enhanced = true
-entity_ref_expansion = true
-search_mode = "global"
-top_k = 10
