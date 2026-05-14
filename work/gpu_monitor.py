@@ -6,7 +6,7 @@ Requires in .env:
   NTFY_TOPIC=chunkymonkey-ks-a7f3b2   (pick any unguessable name)
 
 Crontab (add with `crontab -e`):
-  7 * * * * cd /root/chunkymonkey && /root/miniforge/envs/chonk/bin/python work/gpu_monitor.py >> work/logs/monitor.log 2>&1
+  */5 * * * * cd /root/chunkymonkey && /root/miniforge/envs/chonk/bin/python work/gpu_monitor.py >> work/logs/monitor.log 2>&1
 
 Subscribe (bot or browser):
   https://ntfy.sh/<NTFY_TOPIC>
