@@ -66,6 +66,8 @@ MS-GraphRAG, LightRAG, Fast-GraphRAG, HippoRAG, HippoRAG2, and G-reasoner all co
 
 We construct the same graph structures — entity nodes, co-occurrence edges, community partitions — using spaCy NER and Louvain clustering. Index time drops to minutes with zero LLM calls. Query-time traversal follows the same pattern: entity-ref-expansion walks entity edges; community context injection uses community membership; widened retrieval (k) extends traversal depth.
 
+One structural difference from MS-GraphRAG and most LLM-based systems is chunking strategy: MS-GraphRAG uses fixed-size token chunking (typically 300–600 tokens), discarding sentence and paragraph boundaries. Our system uses semantic boundary chunking (1,100–2,200 tokens), splitting only at natural linguistic boundaries. To isolate the contribution of graph signals from chunking strategy, we evaluate graph_first retrieval on both semantic chunks and naive 256-token chunks, providing a controlled comparison that matches MS-GraphRAG's index structure while holding the retrieval mechanism constant.
+
 ### 2.3 Retrieval Augmentation Without Graph Structure
 
 Cross-encoder reranking, RAPTOR (hierarchical summarization), HyDE (hypothetical document embeddings). These improve retrieval without encoding graph structure and serve as our non-graph baselines.
