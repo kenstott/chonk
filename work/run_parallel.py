@@ -86,6 +86,7 @@ class Job:
     out_dir: str
     uses_rerank: bool
     provider: str  # openai | anthropic | together
+    db_name: str = "chunkymonkey_1100_2200.duckdb"  # source DB filename (for isolation copy)
     depends_on: list[str] = field(default_factory=list)  # job names that must complete first
 
     @property
@@ -103,6 +104,16 @@ class Job:
         return self.gen_file.exists()
 
 
+def _replace_db_name(flags: list[str], new_db: str) -> list[str]:
+    out = list(flags)
+    try:
+        i = out.index("--db-name")
+        out[i + 1] = new_db
+    except ValueError:
+        out += ["--db-name", new_db]
+    return out
+
+
 # ── GRB jobs from TOML configs ─────────────────────────────────────────────────
 def _parse_toml_job(toml_path: Path) -> Job | None:
     with open(toml_path, "rb") as f:
@@ -118,6 +129,7 @@ def _parse_toml_job(toml_path: Path) -> Job | None:
 
     uses_rerank = raw.get("rerank", {}).get("enabled", False)
     provider = raw.get("gen", {}).get("provider", "openai")
+    db_name = raw.get("index", {}).get("db_name", "chunkymonkey_1100_2200.duckdb")
 
     run_flags = [
         "--config",
@@ -135,6 +147,7 @@ def _parse_toml_job(toml_path: Path) -> Job | None:
         out_dir=GRB_OUT,
         uses_rerank=uses_rerank,
         provider=provider,
+        db_name=db_name,
     )
 
 
@@ -151,7 +164,13 @@ def build_grb_jobs() -> list[Job]:
 
 # ── FANG jobs (inline) ─────────────────────────────────────────────────────────
 def _fang(
-    name: str, flags: list[str], *, rerank: bool, provider: str, depends_on: list[str] | None = None
+    name: str,
+    flags: list[str],
+    *,
+    rerank: bool,
+    provider: str,
+    db_name: str,
+    depends_on: list[str] | None = None,
 ) -> Job:
     run_flags = flags + ["--run-name", name, "--question-ids", FANG_QIDs]
     return Job(
@@ -161,6 +180,7 @@ def _fang(
         out_dir=FANG_OUT,
         uses_rerank=rerank,
         provider=provider,
+        db_name=db_name,
         depends_on=depends_on or [],
     )
 
@@ -205,42 +225,49 @@ def build_fang_jobs() -> list[Job]:
             ["--vanilla", "--rerank"] + MINI,
             rerank=True,
             provider="openai",
+            db_name=FANG_VANILLA_DB,
         ),
         _fang(
             "fang_vanilla_rerank_srr_mini",
             ["--vanilla", "--rerank", "--srr"] + MINI,
             rerank=True,
             provider="openai",
+            db_name=FANG_VANILLA_DB,
         ),
         _fang(
             "fang_ner_ref_laned60_community_k10_mini",
             ["--rerank"] + LANED60 + db + MINI,
             rerank=True,
             provider="openai",
+            db_name=FANG_DB,
         ),
         _fang(
             "fang_ner_ref_laned60_community_k10_srr_mini",
             ["--rerank", "--srr"] + LANED60 + db + MINI,
             rerank=True,
             provider="openai",
+            db_name=FANG_DB,
         ),
         _fang(
             "fang_ner_ref_cluster_community_k10_mini",
             ["--rerank"] + CLUSTER + db + MINI,
             rerank=True,
             provider="openai",
+            db_name=FANG_DB,
         ),
         _fang(
             "fang_ner_ref_cluster_community_k10_srr_mini",
             ["--rerank", "--srr"] + CLUSTER + db + MINI,
             rerank=True,
             provider="openai",
+            db_name=FANG_DB,
         ),
         _fang(
             "fang_ner_ref_graph_first_k10_mini",
             GF + vdb + MINI,
             rerank=False,
             provider="openai",
+            db_name=FANG_VANILLA_DB,
             depends_on=gf_deps,
         ),
         _fang(
@@ -248,6 +275,7 @@ def build_fang_jobs() -> list[Job]:
             GF + ["--srr"] + vdb + MINI,
             rerank=False,
             provider="openai",
+            db_name=FANG_VANILLA_DB,
             depends_on=gf_deps,
         ),
         # ── claude-haiku-4-5 ─────────────────────────────────────────────────
@@ -256,42 +284,49 @@ def build_fang_jobs() -> list[Job]:
             ["--vanilla", "--rerank"] + HAIKU,
             rerank=True,
             provider="anthropic",
+            db_name=FANG_VANILLA_DB,
         ),
         _fang(
             "fang_vanilla_rerank_srr_haiku",
             ["--vanilla", "--rerank", "--srr"] + HAIKU,
             rerank=True,
             provider="anthropic",
+            db_name=FANG_VANILLA_DB,
         ),
         _fang(
             "fang_ner_ref_laned60_community_k10_haiku",
             ["--rerank"] + LANED60 + db + HAIKU,
             rerank=True,
             provider="anthropic",
+            db_name=FANG_DB,
         ),
         _fang(
             "fang_ner_ref_laned60_community_k10_srr_haiku",
             ["--rerank", "--srr"] + LANED60 + db + HAIKU,
             rerank=True,
             provider="anthropic",
+            db_name=FANG_DB,
         ),
         _fang(
             "fang_ner_ref_cluster_community_k10_haiku",
             ["--rerank"] + CLUSTER + db + HAIKU,
             rerank=True,
             provider="anthropic",
+            db_name=FANG_DB,
         ),
         _fang(
             "fang_ner_ref_cluster_community_k10_srr_haiku",
             ["--rerank", "--srr"] + CLUSTER + db + HAIKU,
             rerank=True,
             provider="anthropic",
+            db_name=FANG_DB,
         ),
         _fang(
             "fang_ner_ref_graph_first_k10_haiku",
             GF + vdb + HAIKU,
             rerank=False,
             provider="anthropic",
+            db_name=FANG_VANILLA_DB,
             depends_on=gf_deps,
         ),
     ]
@@ -355,14 +390,33 @@ async def _execute_job(job: Job, eval_sem: asyncio.Semaphore, completed: set[str
     base_eval = [PY, "demo/graphrag_bench.py", "eval", "--out-dir", job.out_dir]
 
     if not job.gen_done():
-        cmd = base_run + job.run_flags
+        data_dir = Path(job.out_dir) / "data"
+        src_db = data_dir / job.db_name
+        iso_name = f"{job.name}.duckdb"
+        iso_db = data_dir / iso_name
+        iso_wal = data_dir / f"{iso_name}.wal"
+
+        if dry_run:
+            log(f"DRY-RUN COPY-DB {job.db_name} → {iso_name}")
+        else:
+            shutil.copy2(str(src_db), str(iso_db))
+            wal = src_db.with_suffix(".duckdb.wal")
+            if wal.exists():
+                shutil.copy2(str(wal), str(iso_wal))
+
+        iso_run_flags = _replace_db_name(job.run_flags, iso_name)
+        cmd = base_run + iso_run_flags
         if dry_run:
             log(f"DRY-RUN GEN {job.name}: {' '.join(cmd)}")
+            rc = 0
         else:
             rc = await run_cmd(cmd, f"GEN {job.name}")
-            if rc != 0:
-                log(f"ERROR GEN {job.name} — skipping eval")
-                return False
+            for p in (iso_db, iso_wal):
+                if p.exists():
+                    p.unlink()
+        if rc != 0:
+            log(f"ERROR GEN {job.name} — skipping eval")
+            return False
 
     if not job.gen_done() and not dry_run:
         log(f"SKIP EVAL {job.name} — no gen output")
