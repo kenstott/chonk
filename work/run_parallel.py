@@ -329,6 +329,14 @@ def build_fang_jobs() -> list[Job]:
             db_name=FANG_VANILLA_DB,
             depends_on=gf_deps,
         ),
+        _fang(
+            "fang_ner_ref_graph_first_k10_srr_haiku",
+            GF + ["--srr"] + vdb + HAIKU,
+            rerank=False,
+            provider="anthropic",
+            db_name=FANG_VANILLA_DB,
+            depends_on=gf_deps,
+        ),
     ]
 
 
@@ -372,57 +380,63 @@ async def run_job(
         completed.add(job.name)
         return True
 
-    sems = [global_sem, provider_sems[job.provider]]
-    if job.uses_rerank:
-        sems.append(rerank_sem)
-
-    async with sems[0]:
-        async with sems[1]:
-            if len(sems) > 2:
-                async with sems[2]:
-                    return await _execute_job(job, eval_sem, completed, dry_run)
-            else:
-                return await _execute_job(job, eval_sem, completed, dry_run)
-
-
-async def _execute_job(job: Job, eval_sem: asyncio.Semaphore, completed: set[str], dry_run: bool) -> bool:
-    base_run = [PY, "demo/graphrag_bench.py", "run", "--out-dir", job.out_dir]
-    base_eval = [PY, "demo/graphrag_bench.py", "eval", "--out-dir", job.out_dir]
-
+    # ── Gen phase: hold global + provider (+ rerank) semaphores ──────────────
     if not job.gen_done():
-        data_dir = Path(job.out_dir) / "data"
-        src_db = data_dir / job.db_name
-        iso_name = f"{job.name}.duckdb"
-        iso_db = data_dir / iso_name
-        iso_wal = data_dir / f"{iso_name}.wal"
+        gen_sems = [global_sem, provider_sems[job.provider]]
+        if job.uses_rerank:
+            gen_sems.append(rerank_sem)
 
-        if dry_run:
-            log(f"DRY-RUN COPY-DB {job.db_name} → {iso_name}")
-        else:
-            shutil.copy2(str(src_db), str(iso_db))
-            wal = src_db.with_suffix(".duckdb.wal")
-            if wal.exists():
-                shutil.copy2(str(wal), str(iso_wal))
+        loop = asyncio.get_event_loop()
 
-        iso_run_flags = _replace_db_name(job.run_flags, iso_name)
-        cmd = base_run + iso_run_flags
-        if dry_run:
-            log(f"DRY-RUN GEN {job.name}: {' '.join(cmd)}")
-            rc = 0
-        else:
-            rc = await run_cmd(cmd, f"GEN {job.name}")
-            for p in (iso_db, iso_wal):
-                if p.exists():
-                    p.unlink()
-        if rc != 0:
-            log(f"ERROR GEN {job.name} — skipping eval")
+        async with gen_sems[0]:
+            async with gen_sems[1]:
+                ctx = gen_sems[2] if len(gen_sems) > 2 else None
+
+                async def _run_gen() -> bool:
+                    data_dir = Path(job.out_dir) / "data"
+                    src_db = data_dir / job.db_name
+                    iso_name = f"{job.name}.duckdb"
+                    iso_db = data_dir / iso_name
+                    iso_wal = data_dir / f"{iso_name}.wal"
+
+                    if dry_run:
+                        log(f"DRY-RUN COPY-DB {job.db_name} → {iso_name}")
+                    else:
+                        log(f"COPY-DB {job.db_name} → {iso_name}")
+                        await loop.run_in_executor(None, shutil.copy2, str(src_db), str(iso_db))
+                        wal = src_db.with_suffix(".duckdb.wal")
+                        if wal.exists():
+                            await loop.run_in_executor(None, shutil.copy2, str(wal), str(iso_wal))
+
+                    iso_flags = _replace_db_name(job.run_flags, iso_name)
+                    cmd = [PY, "demo/graphrag_bench.py", "run", "--out-dir", job.out_dir] + iso_flags
+                    if dry_run:
+                        log(f"DRY-RUN GEN {job.name}: {' '.join(cmd)}")
+                        return True
+                    rc = await run_cmd(cmd, f"GEN {job.name}")
+                    for p in (iso_db, iso_wal):
+                        if p.exists():
+                            p.unlink()
+                    if rc != 0:
+                        log(f"ERROR GEN {job.name} — skipping eval")
+                        return False
+                    return True
+
+                if ctx:
+                    async with ctx:
+                        ok = await _run_gen()
+                else:
+                    ok = await _run_gen()
+
+        if not ok:
             return False
 
     if not job.gen_done() and not dry_run:
         log(f"SKIP EVAL {job.name} — no gen output")
         return False
 
-    # copy gen → rp if needed
+    # ── Eval phase: gen semaphores released; only hold eval_sem ──────────────
+    base_eval = [PY, "demo/graphrag_bench.py", "eval", "--out-dir", job.out_dir]
     rp_src = job.gen_file
     rp_dst = Path(job.out_dir) / "results" / f"{job.name}_rp.jsonl"
     if dry_run:
