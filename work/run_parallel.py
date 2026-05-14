@@ -312,6 +312,7 @@ async def run_job(
     global_sem: asyncio.Semaphore,
     rerank_sem: asyncio.Semaphore,
     provider_sems: dict[str, asyncio.Semaphore],
+    eval_sem: asyncio.Semaphore,
     completed: set[str],
     dry_run: bool,
 ) -> bool:
@@ -332,12 +333,12 @@ async def run_job(
         async with sems[1]:
             if len(sems) > 2:
                 async with sems[2]:
-                    return await _execute_job(job, completed, dry_run)
+                    return await _execute_job(job, eval_sem, completed, dry_run)
             else:
-                return await _execute_job(job, completed, dry_run)
+                return await _execute_job(job, eval_sem, completed, dry_run)
 
 
-async def _execute_job(job: Job, completed: set[str], dry_run: bool) -> bool:
+async def _execute_job(job: Job, eval_sem: asyncio.Semaphore, completed: set[str], dry_run: bool) -> bool:
     base_run = [PY, "demo/graphrag_bench.py", "run", "--out-dir", job.out_dir]
     base_eval = [PY, "demo/graphrag_bench.py", "eval", "--out-dir", job.out_dir]
 
@@ -367,7 +368,8 @@ async def _execute_job(job: Job, completed: set[str], dry_run: bool) -> bool:
     if dry_run:
         log(f"DRY-RUN EVAL {job.name}_rp: {' '.join(eval_cmd)}")
     else:
-        rc = await run_cmd(eval_cmd, f"EVAL {job.name}_rp")
+        async with eval_sem:
+            rc = await run_cmd(eval_cmd, f"EVAL {job.name}_rp")
         if rc != 0:
             log(f"ERROR EVAL {job.name}_rp")
             return False
@@ -423,6 +425,7 @@ async def main(grb_only: bool, fang_only: bool, dry_run: bool) -> None:
 
     global_sem = asyncio.Semaphore(3)
     rerank_sem = asyncio.Semaphore(1)
+    eval_sem = asyncio.Semaphore(1)  # all evals share gpt-4o-mini judge; serialize to avoid RPM compounding
     provider_sems = {
         "openai": asyncio.Semaphore(1),
         "anthropic": asyncio.Semaphore(1),
@@ -447,7 +450,7 @@ async def main(grb_only: bool, fang_only: bool, dry_run: bool) -> None:
             log("FATAL: FANG index-vanilla failed — graph_first jobs will stall")
 
     tasks = [
-        asyncio.create_task(run_job(job, global_sem, rerank_sem, provider_sems, completed, dry_run))
+        asyncio.create_task(run_job(job, global_sem, rerank_sem, provider_sems, eval_sem, completed, dry_run))
         for job in jobs
     ]
     results = await asyncio.gather(*tasks, return_exceptions=True)
