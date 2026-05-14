@@ -153,9 +153,9 @@ temperature  = 0.0
 [sr]
 enabled = false            # JSON schema output (key_claims + evidence_used)
 
-# ── Structured Response Retry (SRR) ──────────────────────────────────────────
+# ── Structured Response with Evidence-Compliance Reprompt (SRR) ─────────────
 [srr]
-enabled   = false          # SR + coverage check + gap-fill (up to 2 rounds)
+enabled   = false          # JSON schema (key_claims + evidence_used) + one reprompt when evidence_used=[]
 
 # ── Evaluation ────────────────────────────────────────────────────────────────
 [eval]

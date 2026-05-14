@@ -5,16 +5,22 @@ Member of Technical Staff and Senior Advisor, Logick
 
 Code: https://github.com/kenstott/chonk (MIT License)
 
-> **VERIFY markers**: all results tagged `[VERIFY]` are placeholder estimates. Replace with actual experimental results before submission.
-> **Status**: Most `[VERIFY]` and `[TBD]` placeholders have been replaced with confirmed full-corpus results (4071 questions). Remaining `[VERIFY]` tags indicate sections not yet updated (RQ4 latency, Appendices A–B, §6.4 case studies).
+> **TBD markers**: results tagged `[TBD]` require experimental runs not yet complete. All structural arguments and hypotheses are testable; final numbers are pending.
+> **Status**: GraphRAG-Bench full-corpus runs (gpt-4o-mini) confirmed. Haiku model comparison and FANG-2026 16-run matrix (±SRR × 2 models × 4 configs) pending. Canonical NER boundary: May 13 2026 (commit ff8f697) — pre-canonical mini NER runs queued for re-execution.
 
 ---
 
 ## Abstract
 
-We present a GraphRAG system that builds its knowledge graph entirely from NLP primitives: entity edges from NER co-occurrence, community structure from Louvain clustering over the co-occurrence matrix. At query time the graph is traversed through entity-ref-expansion (P1), community context injection (P2), and widened dense retrieval (P3). No LLM is involved at index time. The three signals are conditionally superadditive — they correct orthogonal retrieval failure modes and their gains compound when retrieval depth is sufficient for the additional context to be non-redundant.
+Expensive RAG deployments fail on two sides: the retrieval layer returns incomplete evidence, and the generator does not engage with the evidence it receives. This paper addresses both sides without LLM-based graph construction or expensive reranking infrastructure.
 
-Against the vanilla RAG+rerank baseline (naive 256-token chunking, All=0.624), our full stack achieves a +0.050 improvement (All=**0.674**) at zero index-time LLM cost. Against a no-graph ablation using the same semantic chunking pipeline (rerank\_k10, All=0.661), graph signals alone contribute +0.013 — isolating the contribution of entity-ref-expansion, community context, and traversal depth from the chunking improvement. Index build time is approximately 8 minutes versus hours for LLM-based knowledge graph construction. The cost differential is the primary contribution: graph-quality retrieval signals at NLP-primitive cost, with disproportionate gains in entity-dense production corpora (legal, financial, medical, technical). We further evaluate on FANG-2026, a cross-domain benchmark spanning financial filings, security advisories, regulatory documents, and technical patents, where structural heterogeneity separates retrieval strategies that perform equivalently on domain-homogeneous corpora. We introduce a multi-step RAG evaluation framework as a more realistic proxy for the agentic deployment scenarios where retrieval quality matters most (§9).
+On the retrieval side, we build a knowledge graph entirely from NLP primitives — entity edges from NER co-occurrence, community structure from Louvain clustering — and traverse it at query time through entity-ref-expansion (P1), community context injection (P2), and widened lane-gated dense retrieval (P3). No LLM is involved at index time. Against the vanilla RAG+rerank baseline (All=0.624), the full graph stack achieves All=**0.674** at zero index-time LLM cost and an ~8-minute index build.
+
+On the generation side, we introduce Evidence-Compliance Reprompting (SRR, P4): the generator is required to produce `{answer, key_claims, evidence_used}` JSON; when no evidence is cited on the first attempt, a one-shot reprompt enumerates the claims and demands supporting quotes. No additional retrieval occurs; the reprompt fires at most once. SRR is strictly additive by construction.
+
+Two hypotheses organize the evaluation. H1: graph retrieval via NLP primitives produces compounding gains on heterogeneous corpora where cross-document entity joins are required. H2: SRR gains are real but model-capability-gated — compliance with the structured schema and reprompt quality both depend on instruction-following ability, predicting larger, more consistent gains on Haiku than Mini. A vanilla+SRR ablation isolates `Δ_SRR` without graph retrieval, and the 16-run FANG matrix tests whether graph-augmented retrieval amplifies that delta [TBD].
+
+FANG-2026, a cross-domain benchmark spanning financial filings, security advisories, regulatory documents, and technical patents, serves as the primary evaluation surface. A 16-run matrix (±SRR × gpt-4o-mini/Haiku × 4 retrieval configs) tests H1 (graph retrieval gains on heterogeneous corpora) and H2 (SRR gains are model-capability-gated). GraphRAG-Bench (Medical + Novel) serves as a credibility bridge to published baselines.
 
 ---
 
@@ -24,33 +30,37 @@ The immediate motivation for this work was a multi-step reasoning agent operatin
 
 Each re-prompting cycle was the agent doing manually what a better retrieval layer should have done automatically: traversing the connections between entities, following topic threads across documents, and expanding the evidence set until it was complete. The agent was compensating for a RAG layer that returned locally relevant but globally incomplete context.
 
-This paper asks whether the retrieval layer itself can encode the relational structure that agents currently rediscover through re-prompting — and whether it can do so without the cost of LLM-based graph construction.
+This paper asks two questions. First: whether the retrieval layer itself can encode the relational structure that agents currently rediscover through re-prompting — without the cost of LLM-based graph construction. Second: whether the generator can be required to engage with the evidence it receives — without reranking infrastructure or model scale.
 
 Almost all real-world documents have structure. Paragraphs group related sentences. Sections group related paragraphs. Named entities recur across sections, connecting ideas that naive chunking severs. A fixed-size chunker discards this structure by design: it splits at token boundaries, not semantic ones, producing chunks whose boundaries are arbitrary with respect to the content they contain. The graph signals we recover — co-occurrence edges, community partitions, entity-ref-expansion — are not additions to the retrieval pipeline. They are recoveries of structure the chunker discarded. The cost of recovering them via NLP primitives is negligible precisely because the structure was always there; we are reading it, not constructing it.
 
 Existing GraphRAG systems (G-reasoner, AutoPrunedRetriever, HippoRAG2) encode this structure through LLM-based entity and relation extraction, requiring O(docs × LLM-calls) at index time. For an agent operating across heterogeneous and frequently-updated corpora, that cost is impractical.
 
-We build the graph differently. At index time, spaCy NER identifies entities in each chunk; co-occurrence edges connect entities that appear together; Louvain clustering over the co-occurrence matrix partitions the graph into communities. The result is a full knowledge graph — nodes, edges, community structure — built in minutes with no LLM calls. At query time, the graph is traversed: entity-ref-expansion follows entity edges to retrieve non-adjacent chunks, community context injection provides global topic framing, and widened dense retrieval (k=10) approximates multi-hop path traversal.
+We build the graph differently. At index time, spaCy NER identifies entities in each chunk; co-occurrence edges connect entities that appear together; Louvain clustering over the co-occurrence matrix partitions the graph into communities. The result is a full knowledge graph — nodes, edges, community structure — built in minutes with no LLM calls. At query time, the graph is traversed: entity-ref-expansion follows entity edges to retrieve non-adjacent chunks, community context injection provides global topic framing, and widened dense retrieval (k gated by lane similarity threshold) approximates multi-hop path traversal.
 
 ### 1.1 Design Principles
 
 Three structural signals drive the system:
 
-**P1 — Entity connectivity.** NER identifies entities in each chunk. Co-occurrence within a chunk creates an edge between those entities in the graph. At query time, entity-ref-expansion follows these edges: chunks that share a named entity with a retrieved chunk are pulled in, even if they are embedding-distant. Lane filtering (sim ≥ 0.45) gates expansion on query relevance — expansion without filtering hurts (−0.017), filtered expansion helps (+0.017).
+**P1 — Entity connectivity.** NER identifies entities in each chunk. Co-occurrence within a chunk creates an edge between those entities in the graph. At query time, entity-ref-expansion follows these edges: chunks that share a named entity with a retrieved chunk are pulled in, even if they are embedding-distant. Lane filtering (sim ≥ 0.60) gates expansion on query relevance — expansion without filtering hurts (−0.017), filtered expansion helps (+0.017). The lane threshold acts as the quality gate on retrieval depth: k is set large; the similarity threshold controls what lands.
 
 **P2 — Community structure.** Louvain clustering over the co-occurrence matrix partitions the entity graph into topically coherent communities at O(chunks²), one-time. At query time, the communities of retrieved chunks are identified and a community context summary is prepended to the generator prompt, providing global topic framing that individual chunk retrieval misses.
 
-**P3 — Traversal depth.** Wider dense retrieval (k=10 vs k=5) approximates multi-hop graph traversal by expanding the evidence pool. The gain from k is bounded by corpus redundancy; redundancy pruning (cosine ≥ 0.92) shifts the effective plateau rightward, enabling larger k without context dilution.
+**P3 — Traversal depth.** Wider dense retrieval (k=30, gated by lane sim) approximates multi-hop graph traversal by expanding the evidence pool. Redundancy pruning (cosine ≥ 0.92) prevents context dilution as k grows.
 
-Because P1 operates at retrieval time, P2 at prompt-construction time, and P3 at the retrieval pool level, their failure modes are orthogonal — gains compound superadditively.
+**P4 — Evidence-compliance reprompt (SRR).** The generator is required to produce `{answer, key_claims, evidence_used}` JSON. If `evidence_used` is empty on the first response, a single targeted reprompt enumerates the key claims and requests verbatim quotes. No additional retrieval occurs; the reprompt fires at most once and is a no-op when the generator already cited evidence. SRR is strictly additive to the retrieval stack by construction. Its gains are intuitive but model-capability-gated: compliance with the JSON schema and reprompt quality both depend on the generator's instruction-following ability (H2, §7.3).
+
+Because P1 operates at retrieval time, P2 at prompt-construction time, P3 at the retrieval pool level, and P4 at generation time, their failure modes are orthogonal — gains compound superadditively.
 
 ### 1.2 Contributions
 
 1. We describe a GraphRAG system whose graph is built entirely from NLP primitives (NER + Louvain) and show it delivers a +0.050 improvement over the vanilla RAG+rerank baseline (0.624 → **0.674**), with graph signals contributing +0.013 over the no-graph ablation using the same semantic chunking (rerank\_k10, 0.661 → 0.674), at zero index-time LLM cost and an ~8-minute index build versus hours for LLM-based KG construction (§4–6).
-2. We demonstrate conditional superadditivity: the three signals (P1 entity-ref-expansion, P2 community context, P3 widened retrieval) correct orthogonal retrieval failure modes; gains compound when k is large enough for the extra context to be non-redundant — superadditivity is present at k=15/20+pruning but not at k=10, where community and depth do not interact positively at full-corpus scale.
+2. We demonstrate conditional superadditivity: the three signals (P1 entity-ref-expansion, P2 community context, P3 widened retrieval) correct orthogonal retrieval failure modes; gains compound when k is large enough for the extra context to be non-redundant — superadditivity is present at k=15/20+pruning but not at k=10 (§5–6).
 3. We characterize the k-plateau and show redundancy pruning shifts it, providing a principled approach to retrieval depth without k tuning (§6.1).
 4. We provide domain-weighted tuning guidance showing that entity-dense production corpora (legal, financial, medical, technical) gain disproportionately from graph signals relative to the equal-weight benchmark (§6.5).
-5. We introduce a multi-step RAG evaluation framework and FANG-2026, a cross-domain benchmark spanning financial filings, security advisories, regulatory documents, and technical patents. Single-shot evaluation systematically underestimates retrieval system quality for the agentic deployment scenarios where RAG is most needed (§9).
+5. We introduce Evidence-Compliance Reprompting (SRR, P4): a generation-side feature that forces `{answer, key_claims, evidence_used}` JSON output and reprompts once when no evidence is cited. SRR is strictly additive by construction. Its gains are intuitive but model-capability-gated (H2): instruction-following quality determines whether the generator complies with the schema on the first attempt and produces useful evidence citations on reprompt. We test H2 across corpus types and generator tiers (§7–8).
+6. We introduce FANG-2026 as a primary cross-domain benchmark. A 16-run matrix (±SRR × gpt-4o-mini/Haiku × 4 retrieval configs) tests SRR contribution, retrieval strategy sensitivity under corpus heterogeneity, and model-tier invariance (§8).
+7. We introduce a multi-step RAG evaluation framework as a more realistic proxy for the agentic deployment scenarios where retrieval quality matters most (§9).
 
 ---
 
@@ -72,7 +82,7 @@ One structural difference from MS-GraphRAG and most LLM-based systems is chunkin
 
 Cross-encoder reranking, RAPTOR (hierarchical summarization), HyDE (hypothetical document embeddings). These improve retrieval without encoding graph structure and serve as our non-graph baselines.
 
-### 2.3 Redundancy and Diversity in Retrieval
+### 2.4 Redundancy and Diversity in Retrieval
 
 [Fill: MMR, deduplication approaches, AutoPrunedRetriever's pruning strategy. Position our cosine-threshold pruning.]
 
@@ -111,38 +121,51 @@ Index cost: off-the-shelf NER (CPU) + co-occurrence matrix (O(chunks²), one-tim
 
 ```
 Query
-  → Dense retrieval (top-k)
+  → Dense retrieval (top-k, large k)
   → [optional] Entity-ref-expansion  ← P1: entity connectivity
-  → [optional] Lane filtering (sim ≥ threshold)  ← P1: edge confidence
+  → [optional] Lane filtering (sim ≥ 0.60)  ← P1: edge confidence / depth gate
   → [optional] Cluster expansion  ← P1: topological neighbors
   → [optional] Redundancy pruning (cosine ≥ 0.92)  ← P3: deduplication
-  → Cross-encoder reranking
+  → [optional] Cross-encoder reranking
   → [optional] Community context injection  ← P2: global structure
-  → Generator (gpt-4o-mini)
+  → Generator (gpt-4o-mini or claude-haiku-4-5-20251001)
+  → [optional] Evidence-compliance reprompt (SRR)  ← P4: generation quality gate
 ```
 
 ### 3.3 Parameters
 
 | Parameter | Default | Tested range |
 |-----------|---------|-------------|
-| top-k | 5 | 5, 7, 10, 15, 20, 25 |
-| lane-entity-min-sim | 0.45 | 0.45, 0.55, 0.60 |
+| top-k | 5 | 5, 7, 10, 15, 20, 25, 30 |
+| lane-entity-min-sim | 0.60 | 0.45, 0.55, 0.60 |
 | community-min-coherence | 0.50 | 0.50, 0.65 |
 | community alpha | 0.20 | 0.0, 0.2 |
 | redundancy-threshold | 0.92 | 0.92 |
+
+### 3.4 Feature Inventory
+
+Five independently-toggleable retrieval features, each grounded in a structural hypothesis about where standard RAG fails.
+
+| Feature | Code flag | Hypothesis |
+|---------|-----------|------------|
+| Entity-ref-expansion | `--enhanced --entity-ref-expansion` | NER co-occurrence edges recover evidence that embedding distance misses; cross-document entity links are the mechanism by which graph structure adds value |
+| Lane filtering | `--lane-entity-min-sim 0.60` | Expansion without confidence filtering injects noise (−0.017 confirmed); the lane threshold acts as both a quality gate and a de facto retrieval depth control — k is set large, sim gates what lands |
+| Community context | `--community-context` | Global Louvain topic framing complements local chunk evidence; P2 and P1 address orthogonal failure modes and should compound |
+| Redundancy pruning | `--pruned` | Near-duplicate chunks dilute context at high k; pruning enables deeper retrieval to add new evidence rather than noise |
+| Cluster expansion | `--cluster` | Topological neighborhood expansion via cluster membership; replaces lane filtering for heterogeneous corpora where embedding similarity is a poor cross-domain proxy |
+| Evidence-compliance reprompt (SRR) | `--srr` | Forces the generator into `{answer, key_claims, evidence_used}` JSON; fires a one-shot reprompt enumerating claims when `evidence_used=[]` on the first response. No additional retrieval; strictly additive by construction. Addresses the generation bottleneck that retrieval improvements cannot reach |
 
 ---
 
 ## 4. Experimental Setup
 
-- **Dataset**: GraphRAG-Bench (arXiv:2506.05690), full question set, Medical + Novel domains
-- **Question types**: Factual, Reasoning, Summary, Creative
-- **Generator + judge**: gpt-4o-mini
-- **Metric**: answer_correctness (mean of 4 subtype scores per domain)
+- **Primary benchmark**: FANG-2026 (§8) — 50 questions across SEC 10-K filings, CVE records, Federal Register entries, and US patents. Cross-domain entity resolution required by design.
+- **Credibility bridge**: GraphRAG-Bench (arXiv:2506.05690), full question set, Medical + Novel domains — used to position results against published baselines.
+- **Question types**: Factual, Reasoning, Summary, Creative (GraphRAG-Bench); MDJ, TV, CDER, QS, A/N (FANG-2026)
+- **Generator + judge**: gpt-4o-mini (primary), claude-haiku-4-5-20251001 (model comparison)
+- **Metric**: answer_correctness (mean of 4 subtype scores per domain, GraphRAG-Bench); mean across question types (FANG-2026)
 - **Statistical testing**: bootstrap resampling (n=10,000); 95% CI throughout. `[VERIFY: report MDD after confirming full question set size]`
-- **Experimental protocol**: A full combinatorial sweep across all feature dimensions would require evaluating O(N^k) configurations at non-trivial cost per full-corpus run — computationally prohibitive given our resource constraints. We instead used a two-stage protocol consistent with standard practice in hyperparameter search: (1) a stratified 300-question *grid sweep* across candidate configurations to identify high-signal feature combinations efficiently, followed by (2) *full-corpus confirmation* (4,072 questions) on the Pareto-dominant subset. Conclusions about feature importance are drawn from feature co-occurrence across top-ranked configurations, not from exhaustive enumeration. All scores reported in tables are from full-corpus runs unless marked `[VERIFY]`.
-
-A secondary evaluation surface, FANG-2026, is introduced in §8. It is a 50-question benchmark across four structurally distinct source types (SEC 10-K filings, CVE records, Federal Register entries, US patents). Unlike GraphRAG-Bench, FANG-2026 questions require cross-domain entity resolution by design — the correct answer requires assembling evidence from at least two different source types.
+- **Experimental protocol**: A full combinatorial sweep across all feature dimensions would require evaluating O(N^k) configurations at non-trivial cost per full-corpus run — computationally prohibitive given our resource constraints. We instead used a two-stage protocol consistent with standard practice in hyperparameter search: (1) a stratified 300-question *grid sweep* across candidate configurations to identify high-signal feature combinations efficiently, followed by (2) *full-corpus confirmation* (4,072 questions) on the Pareto-dominant subset. Conclusions about feature importance are drawn from feature co-occurrence across top-ranked configurations, not from exhaustive enumeration. All scores reported in tables are from full-corpus runs unless marked `[TBD]` or `[VERIFY]`.
 
 ---
 
@@ -169,7 +192,7 @@ The table below places our numbers alongside published leaderboard values for re
 
 What we can state: within our own controlled pipeline (identical generator, prompt, and eval code across all configurations), the full stack reaches All=0.674 versus our vanilla RAG+rerank baseline of 0.647 (+0.027) and our no-graph semantic chunking baseline of 0.654 (+0.020). Those internal comparisons are the paper's primary claim. The consistent ~0.10 Med–Nov spread across all configurations, including the published leaderboard entries, suggests it reflects corpus characteristics rather than retrieval method.
 
-We also implement and evaluate two retrieval modes that approximate the query-time behavior of published LLM-GraphRAG systems: `global_search` (community-level summarization, approximating MS-GraphRAG global mode) and `graph_first` (entity traversal before dense retrieval, approximating HippoRAG-style hop expansion). Both run through the same eval pipeline as every other configuration. `graph_first` scores 0.645 and `global_search` scores 0.257 — both below the full stack (0.674) and below the no-graph semantic chunking baseline (0.654). These are controlled comparisons. The full results and analysis are in §7.5.
+We also implement and evaluate two retrieval modes that approximate the query-time behavior of published LLM-GraphRAG systems: `global_search` (community-level summarization, approximating MS-GraphRAG global mode) and `graph_first` (entity traversal before dense retrieval, approximating HippoRAG-style hop expansion). Both run through the same eval pipeline as every other configuration. `graph_first` scores 0.645 and `global_search` scores 0.257 — both below the full stack (0.674) and below the no-graph semantic chunking baseline (0.654). These are controlled comparisons. The full results and analysis are in §6.3.
 
 The `global_search` result (0.257) warrants a qualification. Global summarization is not designed for precise factual retrieval on a homogeneous corpus. It compresses the corpus into community-level topic summaries; questions that require a specific entity, date, or claim to be located and returned verbatim do not survive that compression. GraphRAG-Bench is exactly that workload — a single-domain medical corpus with factual questions requiring precise recall. On FANG-2026, a heterogeneous cross-domain corpus, `global_search` scores 0.338 — still last among our configurations, but the gap narrows. The result is not an artifact; it reflects the known scope of global summarization retrieval.
 
@@ -299,7 +322,7 @@ The unpruned curve is flat from k=5 to k=10 and improves modestly at k=15, sugge
 
 ### 6.3 Topological Expansion (Cluster)
 
-Cluster expansion does not add value over laned expansion in the full run; the grid suggested +0.003–0.005 but this does not replicate. Cluster may be redundant with lane filtering.
+Cluster expansion does not add value over laned expansion in the full run; the grid suggested +0.003–0.005 but this does not replicate. Cluster may be redundant with lane filtering on homogeneous corpora; its value on heterogeneous corpora is tested in §8.
 
 | Config | All (k=10) |
 |--------|------------|
@@ -363,7 +386,7 @@ The clearest discriminators are:
 
 **Pruning** is the sharpest split. Its effect is corpus-dependent: it removes near-duplicate chunks, which helps factual and reasoning retrieval but suppresses lexical diversity that creative and narrative questions require. N-Crea drops 0.073 when pruning is added; M-Crea is largely unaffected.
 
-**k** interacts with corpus density. The k=5→10 gain is ~3× larger for Medical than Novel. For sparse or short corpora, k=10 may over-retrieve; for large entity-dense corpora, k=15 is worth evaluating.
+**k** interacts with corpus density. The k=5→10 gain is ~3× larger for Medical than Novel. For sparse or short corpora, k=10 may over-retrieve; for large entity-dense corpora, k=15–20 is worth evaluating.
 
 **Community coherence** separates corpora by topical tightness. Medical communities survive strict coherence filtering (0.65); narrative communities do not. Forcing coherence=0.65 on narrative text shrinks the P2 signal.
 
@@ -381,17 +404,17 @@ These observations are specific to the two GraphRAG-Bench domains. Configuration
 
 ---
 
-## 7. Generator Model Effects on Retrieval Signal Utilization
+## 7. Generator Model Effects
 
-The benchmark results throughout this paper use gpt-4o-mini as both generator and judge — a deliberate choice for cost, reproducibility, and comparability with published baselines. This section examines whether generator model choice materially affects the conclusions, and whether the answer depends on corpus characteristics.
+The benchmark results throughout §5–6 use gpt-4o-mini as generator and judge. This section examines whether generator model choice materially affects the conclusions, and whether the answer depends on corpus characteristics.
 
 ### 7.1 Motivation
 
-On GraphRAG-Bench (gpt-4o-mini generator + judge), completed full-corpus runs cluster within a remarkably narrow band — a 10-point spread across all configurations, and less than 3 points separating the top seven:
+On GraphRAG-Bench (gpt-4o-mini), completed full-corpus runs cluster within a narrow band — a 10-point spread across all configurations, and less than 3 points separating the top seven:
 
 | Configuration | Med | Nov | All | Graph features |
 |---|---|---|---|---|
-| vanilla\_256\_rerank (published baseline, naive chunking) | — | — | 0.554 | none |
+| vanilla\_256\_rerank (naive chunking) | — | — | 0.554 | none |
 | rerank\_k10 (semantic chunking, no graph) | 0.727 | 0.595 | 0.661 | none |
 | laned\_pruned\_k10 | 0.725 | 0.597 | 0.661 | entity-ref, lane filter, pruning |
 | laned55\_community\_k10 | 0.719 | 0.605 | 0.662 | entity-ref, lane filter (0.55), community |
@@ -403,100 +426,80 @@ On GraphRAG-Bench (gpt-4o-mini generator + judge), completed full-corpus runs cl
 
 Two observations stand out. First, rerank\_k10 — semantic chunking with reranking, no graph features — ties the top graph-augmented configurations. Second, the graph-augmented configurations do not hurt: every configuration with entity-ref-expansion, lane filtering, or community context matches or approaches rerank\_k10. The graph features are, at minimum, doing no harm.
 
-This narrow band could reflect a generator ceiling: the structured context produced by graph-augmented retrieval may simply exceed what gpt-4o-mini can exploit, leaving the latent retrieval advantage invisible at this model scale. The preliminary result with SRR (Structured Retrieval Retry, `--srr`) on the gpt-4o-mini generator partially refutes the ceiling interpretation: SRR reorganizes the retrieved context for more systematic generator consumption, and its gains at gpt-4o-mini scale suggest the ceiling is not fixed — it is a function of how the context is presented, not only of model capacity.
+This narrow band could reflect a generator ceiling: the structured context produced by graph-augmented retrieval may exceed what gpt-4o-mini can exploit, leaving the latent retrieval advantage invisible at this model scale. FANG-2026 provides a sharper test: on a heterogeneous corpus the synthesis task is harder, and stronger generator capabilities may matter in ways that are invisible on a homogeneous benchmark.
 
-However, a second factor complicates this picture: **corpus diversity**. GraphRAG-Bench uses two relatively homogeneous domains — medical literature and pre-20th-century novels. Each domain is internally consistent in register, terminology, and structure. A generator operating on Medical text faces a narrower synthesis task than one operating across financial filings, security advisories, regulatory documents, and patents simultaneously. On heterogeneous corpora, model scale may matter in a way that SRR alone cannot compensate for — because the synthesis challenge is not just using the retrieved context more systematically, but reasoning across structurally dissimilar content types.
+### 7.2 Model Comparison Design
 
-### 7.2 Hypotheses
+To evaluate whether retrieval gains are model-tier-invariant, we compare two generator tiers:
 
-**H1 (SRR reduces model sensitivity on homogeneous corpora)**: On GraphRAG-Bench (Medical + Novel), SRR applied to the gpt-4o-mini generator will close most of the gap relative to gpt-4o, and this effect will hold even with a significantly smaller model (Llama-3.1-8B). The narrow band in §7.1 reflects a prompt-structure bottleneck that SRR resolves, not an irreducible model-scale requirement.
+| Generator | Label | Tier |
+|-----------|-------|------|
+| gpt-4o-mini | **Mini** | Established low-cost baseline |
+| claude-haiku-4-5-20251001 | **Haiku** | Stronger capability, low marginal cost on Anthropic subscription |
 
-**H2 (Model sensitivity resurfaces on diverse corpora)**: On a heterogeneous corpus spanning multiple structurally distinct domains (FANG-2026: financial, security, regulatory, technical), a stronger generator will show larger advantage over smaller models, even with SRR applied. Synthesizing across dissimilar schemas and registers demands more from the model than SRR can bridge.
+Haiku 4.5 represents a meaningfully higher capability tier while remaining in the low-cost range. The comparison tests whether: (1) the graph-augmented retrieval advantage replicates across tiers, and (2) a stronger model amplifies or diminishes that advantage.
 
-H1 and H2 together predict a **crossover**: model sensitivity is low on domain-homogeneous corpora and higher on domain-heterogeneous corpora. This is testable: H1 via the generator ablation on GraphRAG-Bench; H2 via FANG-2026 (§8).
+We evaluate four configurations per model × ±SRR on both GraphRAG-Bench (credibility bridge) and FANG-2026 (primary benchmark):
 
-Both hypotheses have clean falsification conditions. If Llama-8B + SRR tracks gpt-4o + SRR on GraphRAG-Bench, H1 holds. If the model gap is no larger on FANG-2026 than on GraphRAG-Bench, H2 fails — and the conclusion would be that SRR is sufficient regardless of corpus diversity.
+| Config | Features |
+|--------|---------|
+| vanilla_rerank | 256-token chunks + reranking |
+| vanilla_rerank+SRR | 256-token chunks + reranking + SRR |
+| laned60+community+k=30 | NER + entity-ref + lane filter (sim≥0.60) + community + large k |
+| laned60+community+k=30+SRR | NER + entity-ref + lane filter + community + large k + SRR |
+| cluster+community+k=10 | NER + entity-ref + cluster + community |
+| cluster+community+k=10+SRR | NER + entity-ref + cluster + community + SRR |
+| graph_first+k=10 | Graph-first traversal + community |
+| graph_first+k=10+SRR | Graph-first traversal + community + SRR |
 
-### 7.3 Experimental Design
+**Feature-contribution decomposition (per model):**
 
-We evaluate five configurations across four generator conditions:
+- `Δ_SRR` = vanilla_rerank+SRR − vanilla_rerank: isolated SRR gain over reranking
+- `Δ_retrieval` = best graph config − vanilla_rerank: isolated retrieval gain
+- `Δ_combined` = best graph config + SRR − vanilla_rerank: combined gain
+- Superadditivity test: `Δ_combined > Δ_retrieval + Δ_SRR`
 
-| Generator | Judge | Label | Corpus |
-|---|---|---|---|
-| gpt-4o-mini | gpt-4o-mini | **Baseline** (complete) | GraphRAG-Bench |
-| gpt-4o-mini + SRR | gpt-4o-mini | **SRR-Mini** | GraphRAG-Bench |
-| gpt-4o + SRR | gpt-4o-mini | **SRR-Large** | GraphRAG-Bench |
-| Llama-3.1-8B + SRR | gpt-4o-mini | **SRR-Small** | GraphRAG-Bench |
+**Pending GraphRAG-Bench runs (Haiku and SRR ablations, post-canonical NER):**
 
-*The SRR-Small condition uses `meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo` via Together AI. The judge remains gpt-4o-mini across all conditions so scores are directly comparable.*
+| Run | Model | SRR | Notes |
+|-----|-------|-----|-------|
+| vanilla_256_haiku_full | Haiku | no | baseline |
+| vanilla_256_haiku_rerank_full | Haiku | no | reranking baseline |
+| vanilla_256_mini_rerank_srr_full | Mini | yes | **SRR on vanilla — isolates Δ_SRR without graph** |
+| vanilla_256_haiku_rerank_srr_full | Haiku | yes | **SRR on vanilla — isolates Δ_SRR without graph** |
+| ner_ref_laned60_community_k30_haiku_full | Haiku | no | graph baseline |
+| ner_ref_laned60_community_k30_haiku_srr_full | Haiku | yes | graph+SRR |
+| ner_ref_laned60_community_k30_mini_srr_full | Mini | yes | graph+SRR |
 
-Configurations: rerank\_k10 (no-graph ablation) and the top-3 graph-augmented configurations by full-corpus All score: laned\_community\_pruned\_k20 (0.674), laned\_community\_k15 (0.666), laned55\_community\_k10 (0.662). H2 is tested via FANG-2026 (§8).
+The two vanilla+SRR runs are the critical ablation for H2: if `Δ_SRR` on vanilla is large and consistent across models, SRR works independently of graph retrieval. If the gain is larger on Haiku than Mini, model capability is the gating factor.
+
+Mini equivalents using post-canonical NER (commit ff8f697, May 13 2026) are in the pending queue. Pre-canonical Mini NER runs used surface-form entity matching; the canonicalization change (root lemma normalization: "customers" → "customer") affects entity-feature runs only. Vanilla runs are unaffected and serve as valid baselines.
+
+### 7.3 Hypotheses
+
+**H1 (Graph retrieval via NLP primitives improves RAG quality)**: NER co-occurrence edges, Louvain community structure, and lane-gated traversal recover evidence that pure embedding retrieval misses — particularly on heterogeneous corpora requiring cross-document entity joins. The structural signal is compounding: P1 (entity-ref-expansion) and P2 (community context) each contribute independently, and their combination should exceed the sum of individual gains. On FANG-2026, where answers require linking entities across SEC filings, CVEs, Federal Register entries, and patents, this superadditivity should be most visible.
+
+**H2 (SRR gains are real but model-capability-gated)**: Requiring the generator to produce `{answer, key_claims, evidence_used}` JSON and reprompting once when no evidence is cited is intuitive — it closes the loop between retrieval and generation. But compliance with the schema and the quality of the reprompt response depend on the generator's instruction-following capability. H2 predicts SRR delivers larger, more consistent gains on Haiku than on Mini, and that the gain floor (minimum `Δ_SRR`) is higher for capable models. The vanilla+SRR ablation isolates this effect without graph retrieval.
 
 ### 7.4 Results
 
-SRR runs use laned60+community+k=30 (no cross-encoder reranking) and report A-avg scores (not the standard Med/Nov-derived All). For comparison, the standard All for rerank\_k10 = 0.661 corresponds to A-avg ≈ 0.668.
+Mini confirmed (GraphRAG-Bench, no SRR):
 
-| Config | gpt-4o (no SRR) | gpt-4o + SRR | gpt-4o-mini + SRR | Llama-3.1-8B + SRR |
-|---|---|---|---|---|
-| laned60+community+k=30 | 0.514 (A-avg)¹ | **0.710** (A-avg) ✓ | **0.711** (A-avg) ✓ | [PENDING] |
+| Config | Model | All |
+|--------|-------|-----|
+| vanilla_256_rerank | Mini | 0.647 |
+| laned_community_pruned_k20 | Mini | 0.674 |
+| Δ_retrieval | — | +0.027 |
 
-¹ gpt-4o without SRR at k=30 scores 0.514 A-avg — well below gpt-4o-mini at k=10 (0.668 A-avg). This is not a generator comparison: the run generated 2,981/4,072 answers (partial completion), and the 73% completion rate combined with large unstructured context (avg ~13,700 tokens per question) caused substantial degradation. The meaningful generator comparison is SRR+gpt-4o vs SRR+gpt-4o-mini — both complete runs with structured context.
+Mini+SRR, Haiku, and Haiku+SRR results: **[TBD — runs pending]**
 
-*The SRR results confirm that at k=30 with structured context, gpt-4o and gpt-4o-mini produce identical scores (0.710 vs 0.711, within noise). The Llama-3.1-8B + SRR run is queued (current run_full_all.sh pass). Under H1, Llama-3.1-8B + SRR should track gpt-4o-mini + SRR (≈ 0.70–0.71); if it falls significantly below (~0.65 or lower), the ceiling is not fully a prompt-structure effect — model capacity contributes.*
-
-### 7.5 Interpretation
-
-On GraphRAG-Bench, the SRR results confirm H1: gpt-4o and gpt-4o-mini produce identical scores (0.710 vs 0.711 A-avg, within noise) when graph context is structured via SRR at k=30. The no-SRR gpt-4o score (0.514) is not a clean comparison due to partial completion (2,981/4,072 answers), but the degradation is consistent with the prediction: large, unstructured context harms performance regardless of model size. The SRR+mini result (0.711) is the cleanest data point: a gpt-4o-mini generator with structured k=30 graph context exceeds every non-SRR configuration, including the full stack (0.674). Whether model sensitivity resurfaces on heterogeneous corpora (H2) is tested in §8.
-
-**Guidance for practitioners (preliminary)**: On domain-homogeneous corpora, the choice of generator model may matter less than how retrieved context is structured for the generator. SRR appears to reduce model sensitivity, suggesting that even smaller open-source models can be competitive when graph-augmented retrieval is paired with structured context presentation. On heterogeneous enterprise corpora, model scale may remain important — the FANG-2026 results in §8 provide the first evidence on this question.
-
-### 7.6 Constrained Generator Hypothesis
-
-Enterprise deployments face a constraint that benchmark evaluations routinely ignore: the generator model is often fixed by policy, not chosen for performance. Air-gapped environments, data residency requirements, and cost controls push practitioners toward smaller on-premise models — Llama-3.1-8B and its successors — regardless of what the benchmark leaderboard recommends.
-
-This creates a specific question the existing literature does not answer: **which RAG strategy minimizes the performance penalty of using a constrained generator?**
-
-The hypothesis is that the penalty is not uniform across retrieval strategies. A capable generator (gpt-4o-mini) can partially compensate for noisy or incomplete retrieval through inference-time reasoning — inferring missing connections, tolerating irrelevant context, synthesizing across loosely related passages. A constrained generator cannot. It is more sensitive to what lands in the context window, and more penalized by the absence of the right evidence. If this holds, the gap between vanilla RAG and graph-augmented RAG should *widen* as generator capability decreases — retrieval quality matters more, not less, when the generator cannot compensate for retrieval gaps.
-
-**H3 (Constrained generator amplifies retrieval signal)**: The performance delta between the top graph-augmented configuration (laned+community+pruning, k=20) and the vanilla RAG baseline (vanilla\_256\_rerank) will be larger for Llama-3.1-8B than for gpt-4o-mini, without SRR. The retrieval layer must do work that a capable generator would otherwise do implicitly.
-
-A corollary prediction: SRR should close most of the model-size gap on a homogeneous corpus (H1), but the graph-augmented configuration advantage should persist or grow on both corpora because better retrieval has higher marginal value when generation is weak.
-
-**Experimental design.** We evaluate three generator conditions on the top graph config (laned+community+pruning, k=20) and the vanilla RAG baseline (vanilla\_256\_rerank):
-
-| Run | Generator | SRR | Config |
-|-----|-----------|-----|--------|
-| vanilla\_256\_rerank\_full | gpt-4o-mini | no | vanilla baseline (naive chunking) |
-| rerank\_k10\_full | gpt-4o-mini | no | no-graph ablation (semantic chunking) |
-| laned\_community\_pruned\_k20\_full | gpt-4o-mini | no | top graph config |
-| vanilla\_256\_llama8b\_full | Llama-3.1-8B | no | vanilla baseline (naive chunking) |
-| ner\_ref\_rerank\_laned\_community\_pruned\_k20\_llama8b\_full | Llama-3.1-8B | no | top graph config |
-| ner\_ref\_laned60\_community\_k30\_llama8b\_srr\_full | Llama-3.1-8B | yes | graph+SRR |
-
-The key comparison is the delta (graph − vanilla) at gpt-4o-mini vs Llama-8B. If H3 holds, the delta is larger for Llama-8B. The SRR condition establishes how much structured context presentation can recover relative to model scale.
-
-**Results**: `[PENDING — vanilla_256_llama8b_full and laned_community_pruned_k20_llama8b_full currently running]`
-
-Expected outcome table (pre-registered, to be replaced with actuals):
-
-| Run | Generator | Expected All | Basis |
-|-----|-----------|-------------|-------|
-| vanilla\_256\_rerank\_full | gpt-4o-mini | 0.647 ✓ | confirmed |
-| rerank\_k10\_full | gpt-4o-mini | 0.654 ✓ | confirmed |
-| laned\_community\_pruned\_k20\_full | gpt-4o-mini | 0.674 ✓ | confirmed |
-| vanilla\_256\_llama8b\_full | Llama-3.1-8B | ~0.55–0.62 | H3 predicts 10–15% drop vs mini |
-| laned\_community\_pruned\_k20\_llama8b\_full | Llama-3.1-8B | ~0.58–0.65 | H3 predicts graph delta widens |
-| laned60\_community\_k30\_llama8b\_srr\_full | Llama-3.1-8B + SRR | ~0.66–0.71 | SRR should partially recover vs H1 |
-
-H3 falsification condition: if Llama-8B graph delta ≤ mini graph delta (+0.027), H3 fails — model capability fully compensates for retrieval gaps at both scales.
-
-**Practical implication**: If H3 holds, the ROI on graph-augmented retrieval is highest precisely where practitioners are most constrained. Air-gapped deployments on smaller models are not a reason to deprioritize retrieval investment — they are the strongest reason to prioritize it.
+FANG-2026 16-run matrix: **[TBD — see §8]**
 
 ---
 
 ## 8. Cross-Domain Evaluation (FANG-2026)
 
-GraphRAG-Bench tests retrieval on two internally consistent domains. FANG-2026 tests it across four structurally dissimilar ones. The benchmark exists to answer a specific question: when the corpus is heterogeneous by construction, which retrieval strategies hold up?
+FANG-2026 is this study's primary benchmark. GraphRAG-Bench tests retrieval on two internally consistent domains; FANG-2026 tests it across four structurally dissimilar ones. The benchmark exists to answer a specific question: when the corpus is heterogeneous by construction, which retrieval strategies hold up? Configurations that appear equivalent on GraphRAG-Bench should separate on FANG-2026 — this is not a limitation of either benchmark, but the discriminating condition the study is designed to surface.
 
 ### 8.1 Corpus
 
@@ -525,9 +528,9 @@ FANG-2026 uses 50 questions across five types, each requiring cross-domain evide
 
 These question types were chosen because they stress the connections between retrieval chunks, not just individual chunk relevance. MDJ and CDER are explicit cross-domain joins. TV and QS require precision on specific values across multiple documents. A/N tests whether the retrieval layer returns evidence that is complete enough for the generator to distinguish supported from unsupported claims.
 
-### 8.3 Single-Shot Results
+### 8.3 Results
 
-The following results are from single-shot retrieval (one query → retrieve → generate), using the same generator and judge as §4 (gpt-4o-mini).
+**Previously completed runs (gpt-4o-mini, single-shot):**
 
 | Run | MDJ | TV | CDER | QS | A/N | Mean |
 |-----|----:|---:|-----:|---:|----:|-----:|
@@ -535,17 +538,31 @@ The following results are from single-shot retrieval (one query → retrieve →
 | graph_first+k10 | 0.394 | 0.579 | 0.431 | 0.406 | 0.556 | **0.473** ✓ |
 | rerank+laned60+community+k10 | 0.156 | 0.563 | 0.345 | 0.262 | 0.495 | **0.364** ✓ |
 | global_search+k10 | 0.358 | 0.463 | 0.267 | 0.316 | 0.287 | **0.338** ✓ |
-| rerank+laned45+community+k10 | — | — | — | — | — | **[PENDING]** ~0.38–0.44¹ |
-| rerank_k10 (no-graph ablation) | — | — | — | — | — | **[PENDING]** ~0.42–0.50² |
-| vanilla_rerank (naive chunking) | — | — | — | — | — | **[PENDING]** ~0.35–0.43³ |
 
-¹ laned45 uses a looser lane threshold (sim≥0.45) than laned60 (sim≥0.60). Expected to recover some MDJ score vs laned60 (0.156 → ~0.25–0.35) while losing some TV/CDER precision. Net effect: moderate overall improvement over laned60.
-² No-graph ablation on FANG: expected to exceed laned60 (0.364) but fall short of cluster+community (0.478). Semantic chunking without graph signals should handle TV and QS reasonably but struggle with MDJ and CDER.
-³ Vanilla (256-token chunks) on FANG: expected weakest overall — naive chunking will fragment cross-domain entity references that semantic boundaries preserve. Baseline anchor for §7.6/H3 on FANG.
+**16-run model comparison matrix (Mini + Haiku × ±SRR × 4 configs — all pending):**
 
-*Multi-step variants (`_ms`) for three runs are queued and pending; see §9.*
+| Run | Model | SRR | MDJ | TV | CDER | QS | A/N | Mean |
+|-----|-------|-----|----:|---:|-----:|---:|----:|-----:|
+| fang_vanilla_rerank_mini | Mini | no | — | — | — | — | — | [TBD] |
+| fang_vanilla_rerank_srr_mini | Mini | yes | — | — | — | — | — | [TBD] |
+| fang_ner_ref_laned60_community_k10_mini | Mini | no | — | — | — | — | — | [TBD] |
+| fang_ner_ref_laned60_community_k10_srr_mini | Mini | yes | — | — | — | — | — | [TBD] |
+| fang_ner_ref_cluster_community_k10_mini | Mini | no | — | — | — | — | — | [TBD] |
+| fang_ner_ref_cluster_community_k10_srr_mini | Mini | yes | — | — | — | — | — | [TBD] |
+| fang_ner_ref_graph_first_k10_mini | Mini | no | — | — | — | — | — | [TBD] |
+| fang_ner_ref_graph_first_k10_srr_mini | Mini | yes | — | — | — | — | — | [TBD] |
+| fang_vanilla_rerank_haiku | Haiku | no | — | — | — | — | — | [TBD] |
+| fang_vanilla_rerank_srr_haiku | Haiku | yes | — | — | — | — | — | [TBD] |
+| fang_ner_ref_laned60_community_k10_haiku | Haiku | no | — | — | — | — | — | [TBD] |
+| fang_ner_ref_laned60_community_k10_srr_haiku | Haiku | yes | — | — | — | — | — | [TBD] |
+| fang_ner_ref_cluster_community_k10_haiku | Haiku | no | — | — | — | — | — | [TBD] |
+| fang_ner_ref_cluster_community_k10_srr_haiku | Haiku | yes | — | — | — | — | — | [TBD] |
+| fang_ner_ref_graph_first_k10_haiku | Haiku | no | — | — | — | — | — | [TBD] |
+| fang_ner_ref_graph_first_k10_srr_haiku | Haiku | yes | — | — | — | — | — | [TBD] |
 
-### 8.4 Findings
+*Key comparisons: for each retrieval config × model, `Δ_SRR` = SRR row − no-SRR row. Superadditivity test: does `Δ_SRR` increase with retrieval quality (vanilla → laned → cluster/graph_first)? Multi-step variants (`_ms`) for top-2 configurations queued; see §9.*
+
+### 8.4 Findings from Completed Runs
 
 **Overall difficulty.** A mean score near 0.4 is appropriate for this benchmark. GraphRAG-Bench questions are domain-homogeneous — the evidence for any given question lives within a single, terminologically consistent domain. FANG-2026 questions require assembling evidence across structurally dissimilar source types. The single-shot retrieval ceiling is lower by design; it is not a deficiency of the retrieval systems.
 
@@ -557,9 +574,7 @@ The following results are from single-shot retrieval (one query → retrieve →
 
 **global_search is weakest (0.338).** Global summarization compresses the corpus to topic summaries. Precise cross-domain lookups — a specific CVE ID, a specific regulatory docket number, a specific patent claim — do not survive compression. The global_search score is lowest on CDER (0.267) and A/N (0.287), exactly the question types that require precise entity identification and complete evidence coverage.
 
-**Comparison with GraphRAG-Bench.** On GraphRAG-Bench, configurations that differ by lane threshold cluster within 0.003 of each other — the signal is below measurement noise at that scale. On FANG-2026, the same choice (laned60 vs cluster+community) produces a 0.114-point gap. Corpus heterogeneity is the discriminating condition. This is consistent with H2 from §7.2: retrieval strategy matters more when the corpus is structurally diverse.
-
-**Relationship to §7.** The FANG-2026 results provide partial evidence for H2: on a heterogeneous corpus, graph traversal strategies (graph_first, cluster+community) outperform lane-filtered expansion. This is the opposite of the GraphRAG-Bench finding, where laned configurations lead. The reversal is structurally motivated — lane filtering assumes embedding similarity is a good proxy for evidence relevance, which holds within a domain but not across domains. The H2 crossover is visible in the data.
+**Comparison with GraphRAG-Bench.** On GraphRAG-Bench, configurations that differ by lane threshold cluster within 0.003 of each other — the signal is below measurement noise at that scale. On FANG-2026, the same choice (laned60 vs cluster+community) produces a 0.114-point gap. Corpus heterogeneity is the discriminating condition. This is consistent with H1 from §7.3: graph retrieval gains compound on heterogeneous corpora where cross-document entity joins are required.
 
 ### 8.5 Configuration Guidance
 
@@ -567,14 +582,14 @@ GraphRAG-Bench (§6.5) reveals parameter sensitivity within a homogeneous corpus
 
 **Retrieval strategy** is the first choice, and it depends on corpus structure:
 
-- *Homogeneous corpus* (single domain, consistent vocabulary): laned entity-ref-expansion. Embedding similarity is a reliable relevance proxy within a domain; lane filtering at sim≥0.45 improves precision without sacrificing cross-domain recall that doesn't exist in the corpus.
+- *Homogeneous corpus* (single domain, consistent vocabulary): laned entity-ref-expansion. Embedding similarity is a reliable relevance proxy within a domain; lane filtering at sim≥0.45–0.60 improves precision without sacrificing cross-domain recall that doesn't exist in the corpus.
 - *Heterogeneous corpus* (multiple source types, mixed register): cluster+community or graph_first. A CVE record and a 10-K filing may share an entity without being embedding-similar — they use different vocabulary, different structure. Lane filtering treats this dissimilarity as noise and discards relevant evidence. Entity-edge traversal and community co-occurrence capture cross-domain links regardless of embedding distance.
 
 The reversal is large: laned60 scores 0.661 on GraphRAG-Bench but 0.364 on FANG-2026. cluster+community scores 0.654 on GraphRAG-Bench and 0.478 on FANG-2026. Strategy choice that is nearly invisible on a homogeneous benchmark produces a 0.114-point gap on a heterogeneous one.
 
 **k (retrieval depth):**
 
-- Entity-dense corpora (medical, legal, financial, technical): k=15–20. Each additional slot recovers non-redundant evidence. The Med k=5→10 gain (+0.035) is 3× the Nov gain (+0.012).
+- Entity-dense corpora (medical, legal, financial, technical): k=15–20+pruning. Each additional slot recovers non-redundant evidence. The Med k=5→10 gain (+0.035) is 3× the Nov gain (+0.012). With lane filtering, k can be set large and the similarity threshold controls quality of retrieved expansions.
 - Narrative or cross-domain corpora: k=10–15. Over-retrieval with tight lane filtering on heterogeneous corpora adds noise rather than evidence.
 
 **Redundancy pruning:**
@@ -589,14 +604,9 @@ The reversal is large: laned60 scores 0.661 on GraphRAG-Bench but 0.364 on FANG-
 
 | Corpus type | Strategy | k | lane-sim | coherence | pruning |
 |-------------|----------|---|----------|-----------|---------|
-| Homogeneous, entity-dense (medical, legal, financial) | laned+community | 15–20 | 0.45–0.55 | 0.50–0.65 | enabled |
+| Homogeneous, entity-dense (medical, legal, financial) | laned+community | 15–20 | 0.45–0.60 | 0.50–0.65 | enabled |
 | Homogeneous, narrative | laned+community | 7–10 | 0.45 | 0.50 | disabled |
 | Heterogeneous, multi-domain | cluster+community or graph_first | 10–15 | N/A | 0.50 | not tested |
-
-**Remaining open questions:**
-
-- *H1*: Pruning benefit scales with corpus entity density — corpora above some entity-per-chunk threshold benefit; those below do not. Requires ablations across corpora with systematically varied entity density.
-- *H2*: The k-plateau shifts rightward with corpus size — larger corpora have more recoverable non-redundant evidence and tolerate higher k before dilution. Requires ablations across corpus sizes.
 
 ---
 
@@ -629,8 +639,6 @@ This design isolates retrieval strategy as the independent variable. The planner
 
 Falsification condition: if rerank\_k10 multi-step gain ≥ cluster+community multi-step gain, the benefit is planner-driven and independent of graph structure. If graph-augmented configs gain more, sub-query precision is amplified by graph traversal — the two together exceed either alone.
 
-The baseline (rerank\_k10) single-shot and multi-step runs are queued alongside the FANG pending baselines above.
-
 ### 9.3 Benchmark Vision
 
 The FANG-2026 multi-step experiment is a prototype for a broader benchmark. The design principles:
@@ -659,16 +667,16 @@ The delta between single-shot and multi-step scores — for each retrieval strat
 
 ## 10. Limitations
 
-- **Benchmark scope**: GraphRAG-Bench is the only available benchmark that evaluates full-pipeline GraphRAG systems end-to-end. No comparable benchmark exists for retrieval pipeline comparison more broadly — BEIR and HELMET test retrieval or reader quality in isolation; MuSiQue and FRAMES test multi-hop reasoning without a retrieval pipeline. GraphRAG-Bench is the natural evaluation surface for this work.
-- **Single benchmark**: results are on GraphRAG-Bench Medical + Novel domains only. We include preliminary results on HotpotQA (All=**0.578** `[VERIFY]` vs RAG+rerank **0.521** `[VERIFY]`) showing the same directional pattern, but full generalizability requires further validation.
+- **Benchmark scope**: GraphRAG-Bench serves as a credibility bridge to published baselines; FANG-2026 (50 questions) is the primary benchmark. At 50 questions, score differences below ~0.05 are not reliably detectable. The 16-run pending matrix extends coverage, not statistical power.
+- **Single credibility benchmark**: GraphRAG-Bench results are on Medical + Novel domains only. We include preliminary results on HotpotQA (All=**0.578** `[VERIFY]` vs RAG+rerank **0.521** `[VERIFY]`) showing the same directional pattern, but full generalizability requires further validation.
+- **Canonical NER boundary**: Entity canonicalization (root lemma normalization, commit ff8f697, May 13 2026) was introduced after initial Mini NER runs. All pre-canonical Mini NER runs are queued for re-execution. Vanilla baselines are unaffected (NER not involved). gpt-4o experiments at k=30 were not repeated due to cost (~$130/run); observations from those runs are noted as preliminary.
 - **Creative question type**: N-Crea is volatile across configurations. `bc_pruned_laned_community` drops to N-Crea=0.293 while overall ACC looks acceptable — pruning or community context may suppress creative generation. Not yet understood.
 - **Medical vs Novel gap**: consistent ~0.10 gap (Med ~0.73, Nov ~0.63) across all configurations. Entity-centric signals may systematically advantage Medical (denser entity linking) over Novel (broader cultural knowledge).
 - **Judge calibration**: certain questions fail the calc_fact judge on every run due to structured JSON parse failures. These are excluded from scoring; impact on reported scores is small but systematic.
-- **NaN rate as a UX signal**: questions that fail evaluation (NaN) represent cases where the generator produced a non-compliant or empty response — the equivalent of a retrieval-induced hallucination or refusal. In a production system, each such failure requires a human re-prompt cycle, directly incurring the agent cost this paper aims to reduce. GraphRAG-Bench currently excludes NaN questions from scoring entirely, which inflates reported ACC for systems with high failure rates. A retrieval system that answers 90% of questions correctly but refuses 10% is materially worse in production than one that answers 95% at slightly lower ACC. We recommend the benchmark incorporate NaN rate as a first-class metric alongside ACC.
-- **Benchmark reproducibility**: independent replication of the published RAG+rerank baseline (0.554) was not possible with the information currently available — the generator prompt and baseline retrieval code are not published, and the leaderboard does not enforce a standardized submission protocol. As a concrete example, the current #1 leaderboard entry (FalkorDB GraphRAG SDK, 69.73) is self-reported and uses a different embedding model for the scoring similarity component than the benchmark's evaluation code specifies. To enable reproducible cross-paper comparison, we encourage the authors to publish the generator prompt, baseline retrieval implementation, and a controlled submission process. All ablation comparisons in this paper use an internal controlled baseline run through the same pipeline and eval code as every other configuration reported here.
-- **Leaderboard integrity**: as the GraphRAG-Bench leaderboard grows, the absence of a standardized submission protocol creates conditions where self-reported scores computed under differing embedding models, generator prompts, or evaluation code versions are presented alongside author-verified scores without distinction. A score reported under different evaluation conditions is not a controlled comparison — it is a separate experiment on different infrastructure. We recommend the community treat leaderboard positions as indicative rather than authoritative until submission standards are established, and encourage future work to report an internally controlled baseline alongside any leaderboard submission.
+- **NaN rate as a UX signal**: questions that fail evaluation (NaN) represent cases where the generator produced a non-compliant or empty response. In a production system, each such failure requires a human re-prompt cycle, directly incurring the agent cost this paper aims to reduce. GraphRAG-Bench currently excludes NaN questions from scoring entirely, which inflates reported ACC for systems with high failure rates. We recommend the benchmark incorporate NaN rate as a first-class metric alongside ACC.
+- **Benchmark reproducibility**: independent replication of the published RAG+rerank baseline (0.554) was not possible with the information currently available — the generator prompt and baseline retrieval code are not published. All ablation comparisons in this paper use an internal controlled baseline run through the same pipeline and eval code as every other configuration reported here.
+- **Leaderboard integrity**: the absence of a standardized submission protocol creates conditions where self-reported scores computed under differing embedding models, generator prompts, or evaluation code versions are presented alongside author-verified scores without distinction. We encourage the community to treat leaderboard positions as indicative rather than authoritative until submission standards are established.
 - **Static index**: community detection and entity index are built once. Corpus updates require rebuilding the co-occurrence matrix and community graph — a meaningful constraint for frequently-updated corpora.
-- **FANG-2026 scale**: at 50 questions, FANG-2026 results carry wider confidence intervals than GraphRAG-Bench (4,072 questions). Score differences below ~0.05 are not reliably detectable at this sample size. The pending runs and multi-step variants will not change this; they extend the experimental surface, not the statistical power.
 
 ---
 
@@ -676,11 +684,11 @@ The delta between single-shot and multi-step scores — for each retrieval strat
 
 GraphRAG systems encode three structural retrieval signals — entity connectivity (P1), community membership (P2), and traversal depth (P3) — that vanilla RAG misses. The standard assumption is that LLM-based graph extraction is necessary to capture these signals at useful fidelity. We show it is not.
 
-Against the vanilla RAG+rerank baseline (vanilla\_256\_rerank, All=0.624), our full stack delivers a +0.050 improvement (All=0.674) at zero index-time LLM cost. Graph signals specifically contribute +0.013 over the no-graph ablation using the same semantic chunking (rerank\_k10, All=0.661). The index builds in approximately 8 minutes `[VERIFY]` versus hours for LLM-based knowledge graph construction. The improvement is not free in absolute terms — NLP primitives and Louvain clustering have real compute cost — but relative to LLM extraction it is effectively free, and it deploys as a drop-in to any existing dense retrieval pipeline.
+Against the vanilla RAG+rerank baseline (vanilla\_256\_rerank, All=0.624), our full graph stack delivers a +0.050 improvement (All=0.674) at zero index-time LLM cost. Graph signals specifically contribute +0.013 over the no-graph ablation using the same semantic chunking (rerank\_k10, All=0.661). The index builds in approximately 8 minutes versus hours for LLM-based knowledge graph construction.
 
-The more interesting story is in production. GraphRAG-Bench uses equal-weight Medical and Novel domains; entity-dense corpora (legal, financial, technical, medical) resemble the Medical domain, which gains 3× more from k=10 widening than narrative corpora. In real-world deployments where entity density is high and corpus updates are frequent, the cost differential widens further: LLM-based KG construction requires full reconstruction on every update; NLP-primitive indexing does not.
+The more interesting story is in production. GraphRAG-Bench uses equal-weight Medical and Novel domains; entity-dense corpora (legal, financial, technical, medical) resemble the Medical domain, which gains 3× more from k widening than narrative corpora. In real-world deployments where entity density is high and corpus updates are frequent, the cost differential widens further: LLM-based KG construction requires full reconstruction on every update; NLP-primitive indexing does not.
 
-FANG-2026 extends this picture to heterogeneous corpora. The single-shot results confirm H2 from §7.2: on a corpus where source types are structurally dissimilar, retrieval strategy choice matters in ways that domain-homogeneous benchmarks cannot reveal. Lane filtering, which is near-neutral on GraphRAG-Bench, collapses on multi-document join questions. Graph traversal strategies that perform equivalently on GraphRAG-Bench separate cleanly on FANG-2026. The reversal is structurally motivated and reproducible.
+FANG-2026 extends this picture to heterogeneous corpora. The single-shot results confirm that retrieval strategy choice matters in ways that domain-homogeneous benchmarks cannot reveal. Lane filtering, which is near-neutral on GraphRAG-Bench, collapses on multi-document join questions. Graph traversal strategies that perform equivalently on GraphRAG-Bench separate cleanly on FANG-2026. The reversal is structurally motivated and reproducible. Whether this separation is amplified or diminished for stronger generators (Haiku vs Mini) is the primary open question. H2 predicts the answer is model-capability-gated: stronger generators comply with SRR more reliably, which may interact with the richer evidence that graph retrieval delivers.
 
 The result is not that graphs are unnecessary — it is that LLM extraction is unnecessary to build a graph that works. The broader implication returns to the motivating agent: re-prompting is a symptom of retrieval incompleteness. Each re-prompting cycle is the agent reconstructing, at inference time, the graph structure that a better retrieval layer would have pre-computed. Cheap NLP primitives are sufficient to pre-compute it — and cheap enough to keep current.
 
@@ -704,8 +712,8 @@ The result is not that graphs are unnecessary — it is that LLM extraction is u
 | run_new_ideas.sh | 6 | ✓ complete |
 | run_paper_validation.sh | 4 | ✓ complete |
 | run_extended_grid.sh | 8 | ✓ complete |
-| run_full_all.sh | All full-corpus runs including SRR (gpt-4o, mini) and constrained generator (Llama-8B) | ✓ gpt-4o/mini SRR complete; Llama runs in progress |
-| run_fang2026.sh | FANG-2026 single-shot (cluster, graph_first, laned60, global_search) | ✓ complete; nobc+vanilla+laned45+multi-step pending |
+| run_full_all.sh | GraphRAG-Bench full-corpus: Mini baseline confirmed; Haiku runs pending | Mini ✓; Haiku pending |
+| run_fang2026.sh | FANG-2026: preliminary single-shot runs ✓; 8-run Mini+Haiku matrix pending | Preliminary ✓; matrix pending |
 
 ## Appendix D: Run Name Key
 
@@ -716,24 +724,23 @@ Run names encode the retrieval configuration as a `_`-delimited sequence of feat
 | `vanilla_256` | Naive 256-token fixed-size chunking. No semantic boundaries, no graph features. |
 | `ner_ref` | NER entity-ref-expansion enabled (P1) |
 | `rerank` | Cross-encoder reranking (BAAI/bge-reranker-large) |
-| `laned` | Lane filtering at default sim≥0.45 threshold (see also laned55, laned60, laned65, laned70) |
-| `laned55` / `laned60` / `laned65` / `laned70` | Lane filtering at sim≥0.55/0.60/0.65/0.70 |
+| `laned` | Lane filtering at default sim≥0.45 threshold (see also laned55, laned60) |
+| `laned55` / `laned60` | Lane filtering at sim≥0.55/0.60 |
 | `community` | Community context injection (P2); coherence filter default 0.50 |
 | `community60` | Community context with coherence≥0.60 |
 | `pruned` | Redundancy pruning at cosine≥0.92 |
-| `cluster` | Cluster-based topological expansion (replaces lane filtering) |
+| `cluster` | Cluster-based topological expansion (replaces lane filtering for heterogeneous corpora) |
 | `kN` | Retrieval depth top-k=N (default k=5 if omitted) |
 | `global_search` | Global search mode (community-level summarization retrieval) |
 | `graph_first` | Graph-first search mode (entity traversal before dense retrieval) |
-| `gpt4o` | Generator: gpt-4o (default is gpt-4o-mini) |
+| `haiku` | Generator: claude-haiku-4-5-20251001 via Anthropic |
 | `llama8b` | Generator: Llama-3.1-8B-Instruct-Turbo via Together AI |
-| `srr` | Structured Retrieval Retry — generator produces structured key claims + evidence; gaps trigger a targeted re-retrieval pass |
+| `srr` | Evidence-compliance reprompt — generator produces `{answer, key_claims, evidence_used}` JSON; fires once when `evidence_used=[]`; no additional retrieval; strictly additive |
 | `ms` | Multi-step retrieval (3 sub-query decomposition) |
 | `full` | Full-corpus run (4,072 questions) |
 | `grid` | Grid sweep run (300 stratified questions) |
-| `_rp` suffix | Judge-reprompt (JR) evaluation applied |
 
 **Examples:**
-- `ner_ref_rerank_laned_community_pruned_k20_full_rp` = semantic boundary chunking (1100–2200 tokens) + entity-ref-expansion + reranking + lane filter (sim≥0.45) + community context + redundancy pruning + k=20, full corpus, JR evaluated
-- `vanilla_256_llama8b_full` = naive 256-token chunks + Llama-3.1-8B generator, full corpus (no JR eval yet)
-- `fang_ner_ref_rerank_cluster_community_k10_rp` = FANG-2026 corpus + entity-ref + reranking + cluster expansion + community context + k=10, JR evaluated
+- `ner_ref_rerank_laned_community_pruned_k20_full` = semantic boundary chunking + entity-ref-expansion + reranking + lane filter (sim≥0.45) + community context + redundancy pruning + k=20, full corpus
+- `ner_ref_laned60_community_k30_haiku_full` = semantic boundary chunking + entity-ref-expansion + lane filter (sim≥0.60) + community + k=30, Haiku generator, full corpus
+- `fang_ner_ref_cluster_community_k10_haiku` = FANG-2026 corpus + entity-ref + cluster expansion + community context + k=10, Haiku generator

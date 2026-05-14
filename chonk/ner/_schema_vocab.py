@@ -74,9 +74,8 @@ def _execute(conn, sql: str) -> list[str]:
     """
     try:
         import sqlalchemy as sa
-
         result = conn.execute(sa.text(sql))
-    except Exception:
+    except ImportError:
         result = conn.execute(sql)
 
     rows = list(result)

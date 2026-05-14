@@ -1,8 +1,7 @@
 extends = "../base.toml"
-run_name = "ner_ref_laned60_community_k30_mini_srr_cg_full"
+run_name = "ner_ref_laned60_community_k30_haiku_sr_full"
 
 [retrieval]
-context_graph = true
 enhanced = true
 entity_ref_expansion = true
 lane_entity_min_sim = 0.60
@@ -12,5 +11,9 @@ top_k = 30
 enabled = true
 min_coherence = 0.5
 
-[srr]
+[gen]
+provider = "anthropic"
+model    = "claude-haiku-4-5-20251001"
+
+[sr]
 enabled = true

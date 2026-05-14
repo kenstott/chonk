@@ -77,6 +77,7 @@ class RetrievalTrace:
     ref_expansion_missing: list[str] = field(default_factory=list)
     ref_expansion_found: list[str] = field(default_factory=list)
     ref_expansion_chunks_added: int = 0
+    context_graph_expansion_chunks_added: int = 0
 
     # final result summary
     pool_size: int = 0
@@ -108,6 +109,7 @@ class EnhancedSearch:
         "structural": 0.9,
         "entity_adjacent": 0.7,
         "cluster_adjacent": 0.5,
+        "context_graph_expansion": 0.6,
     }
 
     def __init__(
@@ -141,6 +143,9 @@ class EnhancedSearch:
         lane_entity_min_sim: float | None = None,
         session_fingerprint: str | None = None,
         community_index: CommunityIndex | None = None,
+        context_graph_expansion: bool = False,
+        context_graph_min_weight: float = 0.1,
+        context_graph_top_k: int = 5,
     ):
         self._store = store
         self._entity_index = entity_index
@@ -173,6 +178,9 @@ class EnhancedSearch:
         self._query_entity_id_fn = query_entity_id_fn
         self._lane_entity_min_sim = lane_entity_min_sim
         self._session_fingerprint = session_fingerprint
+        self._context_graph_expansion = context_graph_expansion
+        self._context_graph_min_weight = context_graph_min_weight
+        self._context_graph_top_k = context_graph_top_k
         self.last_expansion_stats: dict | None = None
 
     # ------------------------------------------------------------------
@@ -880,6 +888,31 @@ class EnhancedSearch:
         new_pool = dict(existing_pool)
         found_entities: list[str] = []
 
+        if self._context_graph_expansion and self._entity_index is not None:
+            namespace = namespaces[0] if namespaces else "global"
+            for entity in missing:
+                edges = self._store.get_context_graph(
+                    entity,
+                    namespace=namespace,
+                    min_weight=self._context_graph_min_weight,
+                )
+                for edge in edges[: self._context_graph_top_k]:
+                    for linked_chunk_id, _ in self._entity_index.get_chunks_for_entity(
+                        edge.target_entity_id, top_n=self._entity_top_n
+                    ):
+                        if linked_chunk_id not in new_pool:
+                            chunk = self._fetch_chunk(linked_chunk_id)
+                            if chunk is not None:
+                                new_pool[linked_chunk_id] = ScoredChunk(
+                                    chunk_id=linked_chunk_id,
+                                    chunk=chunk,
+                                    score=edge.weight,
+                                    provenance="context_graph_expansion",
+                                    linked_by=edge.target_entity_id,
+                                )
+                if entity not in found_entities:
+                    found_entities.append(entity)
+
         if self._embed_fn is not None or precomputed_entity_vecs is not None:
             # Semantic: per-entity vector search
             if self._entity_ref_expansion_per_k is not None:
@@ -926,17 +959,22 @@ class EnhancedSearch:
                             found_entities.append(e)
 
         chunks_added = len(new_pool) - len(existing_pool)
+        cg_chunks = sum(
+            1 for sc in new_pool.values() if sc.provenance == "context_graph_expansion"
+        )
         self.last_expansion_stats = {
             "invoked": True,
             "missing_entities": missing,
             "found_entities": found_entities,
             "unresolved_entities": [e for e in missing if e not in found_entities],
             "new_chunks_added": chunks_added,
+            "context_graph_chunks_added": cg_chunks,
         }
         if _trace is not None:
             _trace.ref_expansion_missing = list(missing)
             _trace.ref_expansion_found = list(found_entities)
             _trace.ref_expansion_chunks_added = chunks_added
+            _trace.context_graph_expansion_chunks_added = cg_chunks
 
         if not found_entities:
             return results

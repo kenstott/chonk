@@ -153,6 +153,38 @@ CREATE TABLE IF NOT EXISTS ner_cache (
 )
 """.strip()
 
+CHUNK_CLUSTERS_DDL = """
+CREATE TABLE IF NOT EXISTS chunk_clusters (
+    chunk_id    TEXT NOT NULL,
+    cluster_id  INTEGER NOT NULL,
+    namespace   TEXT NOT NULL DEFAULT 'global',
+    PRIMARY KEY (chunk_id, namespace, cluster_id)
+)
+""".strip()
+
+CONTEXT_GRAPH_EDGES_DDL = """
+CREATE TABLE IF NOT EXISTS context_graph_edges (
+    source_entity_id  TEXT NOT NULL,
+    target_entity_id  TEXT NOT NULL,
+    namespace         TEXT NOT NULL DEFAULT 'global',
+    weight            REAL NOT NULL,
+    svo_signal        REAL NOT NULL DEFAULT 0.0,
+    cooccur_signal    REAL NOT NULL DEFAULT 0.0,
+    cluster_signal    REAL NOT NULL DEFAULT 0.0,
+    PRIMARY KEY (source_entity_id, target_entity_id, namespace)
+)
+""".strip()
+
+CONTEXT_GRAPH_CACHE_DDL = """
+CREATE TABLE IF NOT EXISTS context_graph_cache (
+    namespace         TEXT PRIMARY KEY,
+    chunk_fingerprint TEXT NOT NULL,
+    entity_count      INTEGER NOT NULL,
+    edge_count        INTEGER NOT NULL,
+    created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+""".strip()
+
 VSS_INDEX_DDL = "CREATE INDEX IF NOT EXISTS embeddings_vss ON embeddings USING HNSW (embedding) WITH (metric = 'cosine')"
 VSS_DROP_INDEX_DDL = "DROP INDEX IF EXISTS embeddings_vss"
 
@@ -180,4 +212,7 @@ def get_ddl(embedding_dim: int = 1024) -> list[str]:
         ENTITY_ALIASES_DDL,
         DOCUMENTS_DDL,
         NER_CACHE_DDL,
+        CHUNK_CLUSTERS_DDL,
+        CONTEXT_GRAPH_EDGES_DDL,
+        CONTEXT_GRAPH_CACHE_DDL,
     ]

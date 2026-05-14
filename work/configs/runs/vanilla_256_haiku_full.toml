@@ -1,0 +1,12 @@
+extends = "../base.toml"
+run_name = "vanilla_256_haiku_full"
+
+[index]
+db_name = "vanilla_rag.duckdb"
+
+[retrieval]
+vanilla = true
+
+[gen]
+provider = "anthropic"
+model    = "claude-haiku-4-5-20251001"

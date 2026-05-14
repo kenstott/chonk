@@ -96,6 +96,7 @@ class EntityGraphPipeline:
         *,
         progress: ProgressFn | None = None,
         force: bool = False,
+        build_context_graph: bool = False,
     ) -> EntityGraphStats:
         """Run the full entity graph build pipeline against *store*.
 
@@ -214,6 +215,11 @@ class EntityGraphPipeline:
         # ── Phase 6: embed entities ───────────────────────────────────
         if self._embed_model is not None:
             stats.entity_embeddings_written = self._embed_entities(store, _prog)
+
+        # ── Phase 7: context graph (optional) ────────────────────────
+        if build_context_graph:
+            from ._context_graph import build_context_graph_edges
+            build_context_graph_edges(conn, namespace=self._namespace, force=True)
 
         return stats
 

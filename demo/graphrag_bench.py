@@ -792,6 +792,11 @@ _SRR_RETRY_HINT = (
     'Respond ONLY with a JSON object containing keys "answer", "key_claims", and "evidence_used". '
     'Example: {"answer": "...", "key_claims": ["..."], "evidence_used": ["..."]}'
 )
+_SRR_EVIDENCE_HINT = (
+    "Your response included no evidence_used. Every key claim must be supported by at least one "
+    "verbatim quote or close paraphrase from the context. Your claims were:\n{claims}\n"
+    "Respond again with the same JSON format, adding evidence_used entries that support each claim."
+)
 _SRR_COVERAGE_THRESHOLD = 0.35  # min cosine sim for entity→evidence coverage
 _UNSTRUCTURED_GEN_SYSTEM = (
     "Answer the question based only on the provided context. "
@@ -2296,12 +2301,10 @@ def cmd_run(args: argparse.Namespace) -> None:
         )
 
     use_sr  = getattr(args, "sr", False)
-    # use_srr must NOT be forced True by use_sr — the gap-fill retry is gated on
-    # `use_srr and not use_sr`, so merging them here silently disables the retry.
     use_srr = getattr(args, "srr", False)
     use_multi_step = getattr(args, "multi_step", False)
     embed_model = None
-    if use_entity_ref_retry or (use_srr and not use_sr):
+    if use_entity_ref_retry:
         _embed_device = os.environ.get("EMBED_DEVICE") or None
         if not _embed_device:
             try:
@@ -2451,16 +2454,6 @@ def cmd_run(args: argparse.Namespace) -> None:
             print("  Chunk cache preloaded.", flush=True)
         if _conc_search is not None:
             _conc_search.preload_chunk_cache()
-
-        # SRR: preload full chunk pool (id, text, embedding) for gap-fill retrieval
-        _srr_chunk_pool: list[tuple] = []
-        if use_srr and not use_sr:
-            _np_rows = store.vector._np_chunk_rows or []
-            _np_embs = getattr(store.vector, "_np_embeddings", None)
-            if _np_rows and _np_embs is not None:
-                for _i, _row in enumerate(_np_rows):
-                    _srr_chunk_pool.append((_row[0], _row[4], _np_embs[_i]))
-            print(f"  SRR chunk pool: {len(_srr_chunk_pool)} chunks preloaded.", flush=True)
 
         # Load pre-computed NER entity embeddings from cache (built by prime-cache)
         _precomputed_entity_vecs: dict[str, np.ndarray] | None = None
@@ -2846,20 +2839,8 @@ def cmd_run(args: argparse.Namespace) -> None:
     else:
         srr_client = None  # use per-slot gen client
 
-    # Reranking deletes embed_model to free VRAM; reload it if SRR needs it for entity coverage
-    if use_srr and not use_sr and embed_model is None:
-        _embed_device = os.environ.get("EMBED_DEVICE") or None
-        if not _embed_device:
-            try:
-                import torch
-                if hasattr(torch.backends, "mps") and torch.backends.mps.is_available() and not torch.cuda.is_available():
-                    _embed_device = "cpu"
-            except ImportError:
-                pass
-        embed_model = SentenceTransformer(EMBED_MODEL, device=_embed_device) if _embed_device else SentenceTransformer(EMBED_MODEL)
-
     retry_ner_fn = None
-    if use_entity_ref_retry or (use_srr and not use_sr):
+    if use_entity_ref_retry:
         from chonk.ner import SpacyMatcher
         _retry_matcher = SpacyMatcher(model=SPACY_MODEL, strip_numeric=True)
         retry_ner_fn = lambda text: [m.display_name for m in _retry_matcher.match(text)]
@@ -2899,56 +2880,46 @@ def cmd_run(args: argparse.Namespace) -> None:
                     else:
                         time.sleep(2 ** attempt)
 
-            # Response gate: check entity coverage against evidence_used (skipped for --sr)
-            q_entities = retry_ner_fn(item["question"]) if (retry_ner_fn and not use_sr) else []
-            uncovered_srr: list[str] = []
-            if q_entities and srr_out["evidence_used"]:
-                ent_vecs = embed_model.encode(q_entities, normalize_embeddings=True,
-                                             show_progress_bar=False)
-                ev_vecs  = embed_model.encode(srr_out["evidence_used"],
-                                              normalize_embeddings=True, show_progress_bar=False)
-                # max sim of each entity against any evidence
-                sims = ent_vecs @ ev_vecs.T
-                uncovered_srr = [e for e, row in zip(q_entities, sims)
-                                 if row.max() < _SRR_COVERAGE_THRESHOLD]
-            elif q_entities:
-                uncovered_srr = q_entities  # no evidence at all
-
-            # Gap-fill: retrieve chunks for uncovered entities, retry up to 2x
-            _gap_rounds_done = 0
-            for _gap_round in range(2):
-                if not uncovered_srr or not _srr_chunk_pool:
-                    break
-                context = _srr_gap_fill(item["question"], uncovered_srr, context,
-                                        _srr_chunk_pool, embed_model, top_k=3)
-                new_srr = srr_out
-                for attempt in range(2):
-                    try:
-                        new_srr = _generate_srr(item["question"], context, _sc, _sm,
-                                                temperature=gen_temperature)
-                        break
-                    except Exception:
-                        time.sleep(2 ** attempt)
-                # Re-check coverage
-                if q_entities and new_srr["evidence_used"]:
-                    ent_vecs = embed_model.encode(q_entities, normalize_embeddings=True,
-                                                 show_progress_bar=False)
-                    ev_vecs  = embed_model.encode(new_srr["evidence_used"],
-                                                  normalize_embeddings=True, show_progress_bar=False)
-                    sims = ent_vecs @ ev_vecs.T
-                    uncovered_srr = [e for e, row in zip(q_entities, sims)
-                                     if row.max() < _SRR_COVERAGE_THRESHOLD]
-                else:
-                    uncovered_srr = []
-                srr_out = new_srr
-                _gap_rounds_done += 1
+            # Evidence-compliance check (skipped for --sr): if no evidence cited, reprompt once
+            _evidence_reprompt_done = False
+            if use_srr and not use_sr and not srr_out["evidence_used"] and srr_out["key_claims"]:
+                claims_text = "\n".join(
+                    f"{i + 1}. {c}" for i, c in enumerate(srr_out["key_claims"])
+                )
+                hint = _SRR_EVIDENCE_HINT.format(claims=claims_text)
+                user_content = f"Context:\n{item['context']}\n\nQuestion: {item['question']}\n\n{hint}"
+                try:
+                    import json as _json2
+                    resp = _sc.chat.completions.create(
+                        model=_sm,
+                        messages=[
+                            {"role": "system", "content": _SRR_GEN_SYSTEM},
+                            {"role": "user",   "content": user_content},
+                        ],
+                        temperature=gen_temperature,
+                        max_tokens=700,
+                    )
+                    raw = resp.choices[0].message.content.strip()
+                    if raw.startswith("```"):
+                        raw = "\n".join(raw.splitlines()[1:])
+                        if raw.endswith("```"):
+                            raw = raw[:-3].strip()
+                    obj = _json2.loads(raw)
+                    if isinstance(obj.get("answer"), str):
+                        srr_out = {
+                            "answer":       obj["answer"],
+                            "key_claims":   [x for x in obj.get("key_claims", []) if isinstance(x, str)],
+                            "evidence_used": [x for x in obj.get("evidence_used", []) if isinstance(x, str)],
+                        }
+                        _evidence_reprompt_done = True
+                except Exception:
+                    pass
 
             answer = srr_out["answer"]
             srr_stats = {
-                "key_claims":    srr_out["key_claims"],
-                "evidence_used": srr_out["evidence_used"],
-                "gap_rounds":    _gap_rounds_done,
-                "uncovered":     uncovered_srr,
+                "key_claims":        srr_out["key_claims"],
+                "evidence_used":     srr_out["evidence_used"],
+                "evidence_reprompt": _evidence_reprompt_done,
             }
         else:
             for attempt in range(3):

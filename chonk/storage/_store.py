@@ -731,6 +731,44 @@ class Store:
                 result[child_name] = (parent_name, verb)
         return result
 
+    def build_context_graph(
+        self,
+        namespace: str | None = "global",
+        min_weight: float = 0.1,
+        force: bool = False,
+        algorithm: str = "agglomerative",
+        min_chunks: int = 10,
+    ) -> ContextGraphStats | dict[str, ContextGraphStats]:
+        """Build context graph edges for one or all namespaces.
+
+        If *namespace* is ``None``, builds for every namespace present in
+        ``chunk_entities`` and returns a ``{namespace: ContextGraphStats}`` dict.
+        Otherwise builds for the specified namespace and returns a single
+        :class:`ContextGraphStats`.
+        """
+        if namespace is None:
+            from ..graph._context_graph import build_context_graph_all_namespaces
+            return build_context_graph_all_namespaces(
+                self._db.conn, min_weight=min_weight,
+                force=force, algorithm=algorithm, min_chunks=min_chunks,
+            )
+        from ..graph._context_graph import build_context_graph_edges
+        return build_context_graph_edges(
+            self._db.conn, namespace=namespace, min_weight=min_weight,
+            force=force, algorithm=algorithm, min_chunks=min_chunks,
+        )
+
+    def get_context_graph(
+        self,
+        entity_id: str,
+        namespace: str = "global",
+        min_weight: float = 0.1,
+    ) -> list[ContextEdge]:
+        from ..graph._context_graph import get_context_graph_edges
+        return get_context_graph_edges(
+            self._db.conn, entity_id, namespace=namespace, min_weight=min_weight
+        )
+
     def count(self) -> int:
         """Return total number of stored chunks."""
         return self.vector.count()

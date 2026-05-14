@@ -4,9 +4,6 @@ run_name = "graph_first_k10_naive_full"
 [index]
 db_name = "vanilla_rag.duckdb"
 
-[index.features]
-svo = true
-
 [retrieval]
 enhanced = true
 entity_ref_expansion = true

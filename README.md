@@ -1960,6 +1960,117 @@ relational data model and the documents that reference it.
 | `SpacyLabel` | Enum of the 18 standard spaCy English entity labels |
 | `ALL_SPACY_LABELS` | Default label list used when `entity_types` is `None` |
 
+### Context graph
+
+The context graph encodes **weighted relationships between entities** based on three additive signals computed at index time:
+
+| Signal | Max contribution | Description |
+|--------|-----------------|-------------|
+| **SVO** | 1.0 | Entity pair appears together as subject + object in an SVO triple |
+| **Co-occurrence** | 0.8 | Entities appear in the same chunk (capped at 0.8 regardless of count) |
+| **Cluster** | 0.4 | Jaccard similarity of the Leiden cluster sets each entity belongs to |
+
+Weights are normalised to [0, 1] and edges below `min_weight` are dropped. Both directions are stored (`A→B` and `B→A`) with identical weights.
+
+The graph is built at index time and consumed lazily at query time: if the graph hasn't been built for a namespace, `get_context_graph()` returns `[]` and logs a DEBUG message — retrieval degrades gracefully rather than raising an error.
+
+#### Building the context graph
+
+**Via `build_ner`** (recommended when you're not using SVO triples):
+
+```python
+from chonk.ner import build_ner
+
+n = build_ner(store, build_context_graph=True)
+# SVO signal will be 0 if svo_triples is empty; co-occurrence and cluster signals still apply
+```
+
+**Via `EntityGraphPipeline`** (when you are using SVO triples):
+
+```python
+from chonk.graph import EntityGraphPipeline, SVOExtractor
+
+extractor = SVOExtractor(my_llm)
+pipeline = EntityGraphPipeline(extractor, embed_model=st_model)
+
+with Store("index.duckdb") as store:
+    stats = pipeline.build(store, build_context_graph=True)
+```
+
+**Via `Store.build_context_graph()`** (standalone, after NER/SVO are already built):
+
+```python
+with Store("index.duckdb") as store:
+    # Single namespace
+    stats = store.build_context_graph(namespace="global", min_weight=0.1)
+    print(f"{stats.entity_count} entities, {stats.edge_count} edges")
+
+    # All namespaces at once
+    all_stats = store.build_context_graph(namespace=None)
+    for ns, s in all_stats.items():
+        print(f"[{ns}] {s.entity_count} entities, {s.edge_count} edges")
+```
+
+Parameters:
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `namespace` | `"global"` | Namespace to build for, or `None` for all namespaces |
+| `min_weight` | `0.1` | Drop edges below this normalised weight |
+| `force` | `False` | Rebuild even if the cache fingerprint is current |
+| `algorithm` | `"agglomerative"` | Clustering algorithm: `"agglomerative"`, `"dbscan"`, or `"leiden"` |
+| `min_chunks` | `10` | Minimum chunks required before cluster computation runs |
+
+The build is **idempotent and cached**: the fingerprint is derived from the sorted chunk IDs and SVO triple count, so repeated calls with the same data are no-ops unless `force=True`.
+
+#### Consuming the context graph
+
+```python
+with Store("index.duckdb") as store:
+    edges = store.get_context_graph("customer_id", namespace="global", min_weight=0.2)
+
+for edge in edges:
+    print(f"{edge.target_entity_id}  weight={edge.weight:.3f} "
+          f"(svo={edge.svo_signal:.2f}, cooccur={edge.cooccur_signal:.2f}, cluster={edge.cluster_signal:.2f})")
+```
+
+`get_context_graph` returns a list of `ContextEdge` objects sorted by descending weight.
+
+#### Integration with `EnhancedSearch`
+
+Pass `context_graph_expansion=True` to `EnhancedSearch` to use context graph edges during entity ref-expansion. When an entity from the query cannot be found in the retrieved chunk pool, the search walks the context graph to find related entities and pulls their chunks:
+
+```python
+from chonk.search import EnhancedSearch
+
+search = EnhancedSearch(
+    store,
+    entity_ref_expansion=True,
+    context_graph_expansion=True,       # walk context graph for missing entities
+    context_graph_min_weight=0.2,       # minimum edge weight to follow
+    context_graph_top_k=5,              # max edges to follow per missing entity
+)
+
+results = search.search(query_embedding, query_text="...", top_k=10)
+```
+
+Context graph expansion runs at priority 0.6 (between entity-adjacent at 0.7 and cluster-adjacent at 0.5). Chunks added via graph expansion carry `provenance="context_graph_expansion"` in the retrieval trace.
+
+#### Namespace behaviour
+
+The context graph is **per-namespace**. Entities and co-occurrences are scoped to the namespace they were ingested under. When you query across multiple namespaces, each namespace's graph is used independently for its own entities — there is no cross-namespace edge storage. This is intentional: entities are the natural cross-domain connective tissue; the graph weights intra-namespace co-occurrence density.
+
+#### Primitives
+
+| Name | Description |
+|------|-------------|
+| `ContextEdge` | Single directed edge with `source_entity_id`, `target_entity_id`, `weight`, `svo_signal`, `cooccur_signal`, `cluster_signal` |
+| `ContextGraphStats` | Build summary: `entity_count`, `edge_count`, `chunk_count` |
+| `build_context_graph_edges` | Build edges for a single namespace |
+| `build_context_graph_all_namespaces` | Build edges for every namespace present in `chunk_entities` |
+| `build_chunk_clusters` | Build co-occurrence chunk clusters (used internally by `build_context_graph_edges`) |
+| `get_context_graph_edges` | Retrieve edges for a single entity (returns `[]` if graph not built) |
+
 ---
 
 ## MCP server

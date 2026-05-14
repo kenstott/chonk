@@ -63,6 +63,13 @@ class SpacyMatcher:
     # Public API (mirrors VocabularyMatcher)
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _clean_surface(text: str) -> str:
+        """Strip leading/trailing non-alphanumeric characters."""
+        import re
+
+        return re.sub(r"^[^a-zA-Z0-9]+|[^a-zA-Z0-9]+$", "", text).strip()
+
     def match(self, text: str) -> list[EntityMatch]:
         """Run spaCy NER on *text* and return entity matches.
 
@@ -77,17 +84,30 @@ class SpacyMatcher:
         for ent in doc.ents:
             if ent.label_ not in self._types:
                 continue
-            surface = ent.text
-            if self._strip_numeric and surface.strip().lstrip("-+").replace(".", "").isdigit():
+
+            # Skip stop-word-only spans
+            if all(t.is_stop for t in ent):
                 continue
 
-            # Use root lemma as canonical name so plural/inflected forms
-            # ("customers", "running") resolve to the same entity as singular ("customer", "run")
-            lemma = ent.root.lemma_.lower()
-            eid = _auto_id(lemma)
+            surface = self._clean_surface(ent.text)
+            if not surface:
+                continue
+
+            if self._strip_numeric and surface.lstrip("-+").replace(".", "").isdigit():
+                continue
+
+            # Canonical form: join token lemmas, lowercase, strip symbols
+            # (handles plural/inflected forms and multi-word spans correctly)
+            canonical = self._clean_surface(
+                " ".join(t.lemma_.lower() for t in ent if not t.is_punct and not t.is_space)
+            )
+            if not canonical:
+                continue
+
+            eid = _auto_id(canonical)
             if eid not in found:
                 found[eid] = {
-                    "name": lemma,
+                    "name": canonical,
                     "display_name": surface,
                     "type": ent.label_.lower(),
                     "spans": [],
