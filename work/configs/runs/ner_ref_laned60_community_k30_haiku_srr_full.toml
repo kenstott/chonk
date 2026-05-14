@@ -1,17 +1,19 @@
 extends = "../base.toml"
-run_name = "ner_ref_rerank_laned60_pruned_community_k10_cg_full"
-
-[rerank]
-enabled = true
+run_name = "ner_ref_laned60_community_k30_haiku_srr_full"
 
 [retrieval]
-context_graph = true
 enhanced = true
 entity_ref_expansion = true
 lane_entity_min_sim = 0.60
-redundancy_threshold = 0.92
-top_k = 10
+top_k = 30
 
 [retrieval.community]
 enabled = true
 min_coherence = 0.5
+
+[gen]
+provider = "anthropic"
+model    = "claude-haiku-4-5-20251001"
+
+[srr]
+enabled = true
