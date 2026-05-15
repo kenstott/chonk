@@ -43,6 +43,7 @@ GRB_CONFIGS = REPO / "work/configs/runs"
 FANG_OUT = str(REPO / "work/fang2026")
 FANG_QIDs = str(REPO / "work/fang2026/data/fang2026_question_ids.json")
 FANG_DB = "chonk_nobc_1100_2200.duckdb"
+FANG_BC_DB = "chonk_bc_1100_2200.duckdb"
 FANG_VANILLA_DB = "vanilla_rag.duckdb"
 
 GRB_EVAL = [
@@ -198,6 +199,17 @@ LANED60 = [
     "--top-k",
     "10",
 ]
+LANED60_K30 = [
+    "--enhanced",
+    "--entity-ref-expansion",
+    "--lane-entity-min-sim",
+    "0.60",
+    "--community-context",
+    "--community-min-coherence",
+    "0.5",
+    "--top-k",
+    "30",
+]
 CLUSTER = [
     "--enhanced",
     "--entity-ref-expansion",
@@ -211,12 +223,15 @@ CLUSTER = [
 GF = ["--enhanced", "--entity-ref-expansion", "--search-mode", "graph_first", "--top-k", "10"]
 
 FANG_INDEX_JOB = "fang_index_vanilla"  # sentinel — not a real run, just prereq tracking
+FANG_BC_INDEX_JOB = "fang_index_bc"    # sentinel for BC index
 
 
 def build_fang_jobs() -> list[Job]:
     db = ["--db-name", FANG_DB]
+    bcdb = ["--db-name", FANG_BC_DB]
     vdb = ["--db-name", FANG_VANILLA_DB]
     gf_deps = [FANG_INDEX_JOB]
+    bc_deps = [FANG_BC_INDEX_JOB]
 
     return [
         # ── gpt-4o-mini ──────────────────────────────────────────────────────
@@ -336,6 +351,52 @@ def build_fang_jobs() -> list[Job]:
             provider="anthropic",
             db_name=FANG_VANILLA_DB,
             depends_on=gf_deps,
+        ),
+        # ── laned60 k30 (matches GRB top config) ─────────────────────────────
+        _fang(
+            "fang_ner_ref_laned60_community_k30_mini",
+            ["--rerank"] + LANED60_K30 + db + MINI,
+            rerank=True,
+            provider="openai",
+            db_name=FANG_DB,
+        ),
+        _fang(
+            "fang_ner_ref_laned60_community_k30_srr_mini",
+            ["--rerank", "--srr"] + LANED60_K30 + db + MINI,
+            rerank=True,
+            provider="openai",
+            db_name=FANG_DB,
+        ),
+        _fang(
+            "fang_ner_ref_laned60_community_k30_haiku",
+            ["--rerank"] + LANED60_K30 + db + HAIKU,
+            rerank=True,
+            provider="anthropic",
+            db_name=FANG_DB,
+        ),
+        _fang(
+            "fang_ner_ref_laned60_community_k30_srr_haiku",
+            ["--rerank", "--srr"] + LANED60_K30 + db + HAIKU,
+            rerank=True,
+            provider="anthropic",
+            db_name=FANG_DB,
+        ),
+        # ── BC laned60 k30 (BC index required) ───────────────────────────────
+        _fang(
+            "fang_ner_ref_bc_laned60_community_k30_mini",
+            ["--rerank"] + LANED60_K30 + bcdb + MINI,
+            rerank=True,
+            provider="openai",
+            db_name=FANG_BC_DB,
+            depends_on=bc_deps,
+        ),
+        _fang(
+            "fang_ner_ref_bc_laned60_community_k30_srr_mini",
+            ["--rerank", "--srr"] + LANED60_K30 + bcdb + MINI,
+            rerank=True,
+            provider="openai",
+            db_name=FANG_BC_DB,
+            depends_on=bc_deps,
         ),
     ]
 
@@ -458,6 +519,18 @@ async def run_job(
     return True
 
 
+async def run_fang_index_bc(dry_run: bool) -> bool:
+    bc_db = Path(FANG_OUT) / "data" / FANG_BC_DB
+    if bc_db.exists():
+        log("SKIP index-bc (exists)")
+        return True
+    cmd = [PY, "work/chonk_ingest.py", "work/fang2026_bc.yaml"]
+    if dry_run:
+        log(f"DRY-RUN: {' '.join(cmd)}")
+        return True
+    return await run_cmd(cmd, "FANG index-bc") == 0
+
+
 async def run_fang_index_vanilla(dry_run: bool) -> bool:
     fang_results = Path(FANG_OUT) / "results"
     fang_results.mkdir(parents=True, exist_ok=True)
@@ -521,13 +594,19 @@ async def main(grb_only: bool, fang_only: bool, dry_run: bool) -> None:
         out_dirs.append(FANG_OUT)
     await prime_caches(out_dirs, dry_run)
 
-    # FANG prerequisite: index-vanilla
+    # FANG prerequisites
     if not grb_only:
         ok = await run_fang_index_vanilla(dry_run)
         if ok:
             completed.add(FANG_INDEX_JOB)
         else:
             log("FATAL: FANG index-vanilla failed — graph_first jobs will stall")
+
+        ok = await run_fang_index_bc(dry_run)
+        if ok:
+            completed.add(FANG_BC_INDEX_JOB)
+        else:
+            log("FATAL: FANG index-bc failed — bc_laned60 jobs will stall")
 
     tasks = [
         asyncio.create_task(run_job(job, global_sem, rerank_sem, provider_sems, eval_sem, completed, dry_run))

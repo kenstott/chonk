@@ -55,7 +55,7 @@ from chonk.storage._store import Store
 
 EMBED_MODEL        = "BAAI/bge-large-en-v1.5"
 EMBED_DIM          = 1024
-GEN_MODEL           = "gpt-4o-mini"
+GEN_MODEL           = "gpt-4o-mini-2024-07-18"
 GEN_MODEL_TOGETHER  = "Qwen/Qwen2.5-72B-Instruct-Turbo"   # closest serverless Qwen2.5 (14B not available serverless on Together)
 GEN_MODEL_ANTHROPIC = "claude-sonnet-4-6"
 TOGETHER_BASE_URL   = "https://api.together.xyz/v1"
@@ -187,7 +187,7 @@ def _apply_config(cfg: dict, args: argparse.Namespace) -> None:
         args.community_min_coherence = comm["min_coherence"]
 
     g = cfg.get("gen", {})
-    if g.get("model") and getattr(args, "gen_model", None) in (None, "gpt-4o-mini"):
+    if g.get("model") and getattr(args, "gen_model", None) in (None, "gpt-4o-mini-2024-07-18"):
         args.gen_model = g["model"]
     if g.get("provider") and getattr(args, "gen_provider", "openai") == "openai":
         args.gen_provider = g["provider"]
@@ -785,7 +785,7 @@ _SRR_GEN_SYSTEM = (
     '  "key_claims": ["<discrete claim 1>", "<discrete claim 2>"],\n'
     '  "evidence_used": ["<verbatim quote or close paraphrase from context>"]\n'
     "}\n"
-    "If the context lacks information for a claim, omit that claim rather than fabricating."
+    "Do not fabricate evidence for a claim."
 )
 _SRR_RETRY_HINT = (
     "Your previous response was not valid JSON. "
@@ -4484,7 +4484,7 @@ def cmd_run_all(args: argparse.Namespace) -> None:
             "eval",
             "--out-dir", str(out_dir),
             "--run-name", f"{run_name}_rp",
-            "--judge", "gpt-4o-mini",
+            "--judge", "gpt-4o-mini-2024-07-18",
             "--eval-rpm", "8000",
             "--eval-batch-size", "20",
             "--concurrency", "50",

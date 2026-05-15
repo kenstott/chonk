@@ -258,12 +258,12 @@ class TestApplyConfig:
     # ── gen ──────────────────────────────────────────────────────────────────
 
     def test_gen_model_applied(self):
-        args = _ns(gen_model="gpt-4o-mini", gen_provider="openai")
+        args = _ns(gen_model="gpt-4o-mini-2024-07-18", gen_provider="openai")
         _bench._apply_config({"gen": {"model": "gpt-4o"}}, args)
         assert args.gen_model == "gpt-4o"
 
     def test_gen_provider_applied(self):
-        args = _ns(gen_provider="openai", gen_model="gpt-4o-mini")
+        args = _ns(gen_provider="openai", gen_model="gpt-4o-mini-2024-07-18")
         _bench._apply_config({"gen": {"provider": "together"}}, args)
         assert args.gen_provider == "together"
 
@@ -365,7 +365,7 @@ class TestApplyConfig:
         """)
         cfg  = _bench._load_config(str(p))
         args = _ns(top_k=None, enhanced=False, lane_entity_min_sim=None,
-                   gen_model="gpt-4o-mini", gen_provider="openai")
+                   gen_model="gpt-4o-mini-2024-07-18", gen_provider="openai")
         _bench._apply_config(cfg, args)
         assert args.top_k == 10
         assert args.enhanced is True
