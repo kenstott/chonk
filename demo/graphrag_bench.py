@@ -3197,7 +3197,7 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
         gt_cache_f = out_dir / "data" / "gt_embeddings.npy"
         gt_id_f    = out_dir / "data" / "gt_embedding_ids.json"
 
-        embed_model = SentenceTransformer(EMBED_MODEL)
+        embed_model = SentenceTransformer(EMBED_MODEL, device="cpu")
 
         # Ground truth embeddings — cached by sorted ID set so any run subset
         # or reordering reuses the same cache file via ID lookup.
@@ -3277,11 +3277,11 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
             "Contextual Summarize":             ["answer_correctness", "coverage_score"],
             "Creative Generation":              ["answer_correctness", "coverage_score", "faithfulness"],
             # FANG-2026 question types
-            "Multi-Document Join":              ["answer_correctness", "decomposed_score"],
-            "Temporal Versioning":              ["answer_correctness", "decomposed_score"],
-            "Cross-Domain Entity Resolution":   ["answer_correctness", "decomposed_score"],
-            "Quantitative Synthesis":           ["answer_correctness", "decomposed_score"],
-            "Absence/Negation":                 ["answer_correctness", "decomposed_score"],
+            "Multi-Document Join":              ["answer_correctness"],
+            "Temporal Versioning":              ["answer_correctness"],
+            "Cross-Domain Entity Resolution":   ["answer_correctness"],
+            "Quantitative Synthesis":           ["answer_correctness"],
+            "Absence/Negation":                 ["answer_correctness"],
         }
 
         semaphore = asyncio.Semaphore(args.concurrency)
@@ -3402,11 +3402,7 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
                         tasks["faithfulness"] = compute_faithfulness_score(
                             r["question"], r["generated_answer"], r["context"], llm
                         )
-                    if "decomposed_score" in metrics:
-                        tasks["decomposed_score"] = compute_decomposed_score(
-                            r["question"], r["generated_answer"], r["ground_truth"], qtype, llm
-                        )
-                    _rpm_weights = {"answer_correctness": 3, "coverage_score": 1, "faithfulness": 1, "decomposed_score": 1}
+                    _rpm_weights = {"answer_correctness": 3, "coverage_score": 1, "faithfulness": 1}
                     api_count = sum(_rpm_weights.get(k, 0) for k in tasks)
                     for _ in range(api_count):
                         await _acquire_rpm_token()
@@ -3414,17 +3410,7 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
                     for key, val in zip(tasks.keys(), vals):
                         if isinstance(val, BaseException):
                             print(f"[eval] {r['id']} {key} exception: {type(val).__name__}: {val}", flush=True)
-                        if key == "decomposed_score":
-                            # val is (mean_float, detail_dict)
-                            if isinstance(val, tuple):
-                                mean_val, detail = val
-                                result["decomposed_score"] = float(mean_val) if isinstance(mean_val, (int, float)) else float("nan")
-                                result["decomposed_detail"] = json.dumps(detail) if detail else None
-                            else:
-                                result["decomposed_score"] = float("nan")
-                                result["decomposed_detail"] = None
-                        else:
-                            result[key] = float(val) if isinstance(val, (int, float)) else float("nan")
+                        result[key] = float(val) if isinstance(val, (int, float)) else float("nan")
                     nan_metrics = [k for k in tasks if k != "rouge_score" and result.get(k) != result.get(k)]
                     if nan_metrics:
                         # Guided judge reprompt: judge already reasoned but returned malformed JSON.

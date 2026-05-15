@@ -755,7 +755,7 @@ sql         = "SELECT full_name FROM employees WHERE active = true"
 
 [index]
 out_dir            = "work"
-db_name            = "chunkymonkey_nobc_1100_2200.duckdb"
+db_name            = "chonk_nobc_1100_2200.duckdb"
 embed_model        = "BAAI/bge-large-en-v1.5"
 spacy_model        = "en_core_web_sm"
 min_chunk          = 1100

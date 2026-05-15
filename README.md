@@ -1,24 +1,33 @@
 # Chonk
 
-A pure-Python RAG/GraphRAG library for production-scale document corpora.
+Chonk is the retrieval layer of the modern enterprise AI stack.
 
-Designed for large, heterogenous, frequently updated enterprise collections — real-world
-scenarios, not synthetic benchmarks or demos — where documents share structure, sections
-share vocabulary, and naive chunking produces retrievals that are technically correct but
-semantically wrong.
+The stack works like this: an LLM planner decomposes a user query into atomic sub-queries,
+each scoped to a specific fact or relationship. Chonk answers those sub-queries — pulling
+cross-domain evidence from heterogeneous document corpora. Structured output constraints
+(SRR/DSL) gate generation quality at each step, ensuring the planner acts only on verified
+evidence.
 
-Chonk covers the full pipeline: transport and extraction, semantic chunking, contextual
-enrichment, vector storage, entity and relationship indexing, community detection,
-hybrid search, and answer generation. Every stage has tunable parameters and swappable
-implementations.
+The hard problem in this stack is vocabulary collision. A planner's sub-query names an
+entity — a company, a software package, a product — but the same entity appears across
+document types with incompatible terminology. "Apple Inc." in an SEC 10-K filing is "Apple"
+in a patent assignment, "AAPL" in a trading notice, and "Apple Computer" in a Federal
+Register ruling from 2003. Embedding-based retrieval without domain disambiguation returns
+the wrong document type, or the right type from the wrong era, or nothing.
 
-**For teams that want to expose an existing index to LLM tooling:** Chonk ships an
-[MCP server](#mcp-server) (`mcp_chonk_server.py`) that speaks the
-[Model Context Protocol](https://modelcontextprotocol.io/). Run it locally with
-`CHONK_TRANSPORT=stdio` for individual use, or deploy it centrally with
-`CHONK_TRANSPORT=http` so every user in your organisation can point Claude Desktop,
-Cursor, or any MCP-compatible host at a shared index by URL — no local Python
-environment, no file access needed on the client side.
+Chonk solves this through two mechanisms working together. Semantic boundary chunking
+ensures every retrieved passage is a complete unit of meaning — no partial paragraphs, no
+half-tables, no context bleed from adjacent sections. Graph-guided retrieval with entity
+vocabulary assembles the right evidence from the right domain by disambiguating entities
+before the completeness gate runs.
+
+**For planners connecting to Chonk:** Chonk ships an [MCP server](#mcp-server)
+(`mcp_chonk_server.py`) that speaks the
+[Model Context Protocol](https://modelcontextprotocol.io/). Any MCP-compatible planner
+— Claude, Cursor, VS Code Copilot — connects to Chonk as its retrieval tool. Run it
+locally with `CHONK_TRANSPORT=stdio` for individual use, or deploy it centrally with
+`CHONK_TRANSPORT=http` so every user in your organisation can point their planner at a
+shared index by URL — no local Python environment, no file access needed on the client side.
 
 Two capabilities distinguish it from simpler pipelines:
 
@@ -58,8 +67,16 @@ Most RAG pipelines embed raw chunk content and nothing else. This works when eve
 chunk contains enough distinctive vocabulary to describe itself. That is a narrow
 special case.
 
-In practice, almost every document type you want to retrieve from has repeating
-structure:
+When a planner issues a sub-query — "what is Apple's disclosed cybersecurity risk
+posture?" — the retrieval system faces vocabulary collision across document types
+simultaneously. The same company name appears in SEC filings (10-K Item 1C), CVE
+records (vendor string "Apple Inc."), Federal Register notices (formal legal name), and
+patent assignments (assignee field). The embedding space treats these as related but
+distinguishable. Naive retrieval returns whichever representation is most common in
+the corpus — which is rarely the right one for the sub-query's document-type intent.
+
+Within a single document type, the problem compounds. Almost every document type you
+want to retrieve from has repeating structure:
 
 - **Technical documentation** — every function reference has `Parameters`, `Returns`,
   `Raises` sections with the same words across every function in every library
@@ -76,9 +93,11 @@ structure:
   heading hierarchy is fixed by convention
 
 When sections share vocabulary, the embedding vectors are indistinguishable. Retrieval
-returns the wrong chunk, from the wrong document, for the wrong reason.
+returns the wrong chunk, from the wrong document, for the wrong reason. When document
+types share entity names with incompatible terminology, the cross-domain sub-query fails
+entirely.
 
-There are two places to inject this context. The document name and section path are
+There are two places to inject disambiguation context. The document name and section path are
 known at chunk time, so they can be prepended to the text that gets embedded:
 
 ```
@@ -110,7 +129,10 @@ choose: `enrich_chunks()` handles embedding-time injection, and `AnswerGenerator
 3. **Chunks** into semantically coherent pieces — never breaking mid-paragraph,
    keeping tables and lists atomic, tracking the full heading hierarchy
 4. **Enriches** each chunk: sets `embedding_content` to
-   `"[doc_name > section_path]\n\n<content>"` before it reaches your embedding model
+   `"[doc_name > section_path]\n\n<content>"` before it reaches your embedding model.
+   This is the disambiguation signal the planner depends on — entity vocabulary from
+   the NER layer tags each chunk's domain, and the breadcrumb carries the document type
+   context that makes cross-domain sub-queries land in the right namespace.
 
 The original `content` field is never modified. `embedding_content` is what you embed. Everything downstream — your embedding model, vector store, retrieval logic — is unchanged.
 
@@ -824,7 +846,7 @@ Requires: `pymongo>=4.0` (`pip install pymongo`).
 
 ### `ElasticsearchCrawler`
 
-`ElasticsearchCrawler` indexes documents from an Elasticsearch or OpenSearch index. Pagination uses the `search_after` API (no scroll contexts). Schema is retrieved via `GET /{index}/_mapping` and emitted as a single schema chunk. Works with ES ≥ 7.x and OpenSearch ≥ 1.x.
+`ElasticsearchCrawler` indexes documents from an Elasticsearch or OpenSearch index. Pagination uses the `search_after` API (no scroll contexts). Schema is retrieved via `GET /{index}/_mapping` and includes fields, dynamic fields, and copy fields. Works with ES ≥ 7.x and OpenSearch ≥ 1.x.
 
 ```python
 from chonk.transports import ElasticsearchCrawler
@@ -2075,9 +2097,12 @@ The context graph is **per-namespace**. Entities and co-occurrences are scoped t
 
 ## MCP server
 
-`mcp_chonk_server.py` exposes Chonk search over the
-[Model Context Protocol](https://modelcontextprotocol.io/) so any MCP-compatible
-host (Claude Desktop, Cursor, VS Code Copilot, etc.) can query your index directly.
+`mcp_chonk_server.py` is the integration point for MCP-compatible planners. Any
+planner that speaks the [Model Context Protocol](https://modelcontextprotocol.io/) —
+Claude, Cursor, VS Code Copilot — connects to Chonk as its retrieval tool through this
+server. The planner issues sub-queries; the server handles embedding, search, and
+evidence assembly; the planner receives ranked `DocumentChunk` results annotated with
+their source domain.
 
 ```bash
 pip install "chonk[storage]" mcp
@@ -2229,6 +2254,18 @@ Large files (`work/results/*.jsonl`, `work/data/runs/*.duckdb`, `work/data/*.npy
 rclone sync work/results r2:chonk/results
 rclone sync work/data    r2:chonk/data
 ```
+
+### ECDR-Bench
+
+`work/fang2026/` contains ECDR-Bench — an enterprise benchmark designed around
+planner sub-queries against a heterogeneous corpus. The corpus spans four public
+document types that share entity names but use incompatible terminology: SEC filings,
+CVE records, Federal Register notices, and patents. Queries are decomposed into
+atomic sub-queries matching the vocabulary of a specific document type, then evaluated
+across all four simultaneously to measure cross-domain retrieval accuracy.
+
+See [`work/fang2026/benchmark-design.md`](work/fang2026/benchmark-design.md) for the
+full benchmark design, corpus construction methodology, and evaluation protocol.
 
 ### Replication notes
 

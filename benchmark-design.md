@@ -1,213 +1,163 @@
-# Cohort Retrieval Quality Benchmark for Structure-Preserving Chunking
+# Enterprise Cross-Domain Retrieval Benchmark (ECDR-Bench)
 
-## Objective
+*Working title. The benchmark is implemented under the `fang2026` directory.*
 
-Measure how well a chunking strategy produces a top-k cohort that enables an LLM to generate a correct, scoped, and faithful answer using semantic similarity as the sole retrieval mechanism. The unit of evaluation is the cohort, not the individual chunk. The consumer is an LLM with no access to source documents beyond what the cohort provides. The benchmark evaluates performance across five corpus scale points to establish a scaling trajectory rather than a single-point comparison.
+## What This Benchmark Tests
 
-## Assumptions
+ECDR-Bench benchmarks the **modern enterprise AI stack**: an LLM planner issuing atomic sub-queries against a heterogeneous document corpus, with structured output constraints (SRR/DSL) governing generation quality at each step. It is not a retrieval benchmark in isolation — it is a benchmark of whether the stack as a whole produces correct answers in conditions that match how large enterprises actually deploy AI systems.
 
-The corpus represents an enterprise document environment: heterogeneous document types spanning multiple organizational domains with different vocabulary, structure, and meaning conventions. The same surface terminology appears across domains with different semantics. Documents range from structurally dense (regulatory filings, policy manuals, clinical protocols) to structurally flat (narrative reports, technical guides, correspondence). The corpus is not curated for retrieval quality. It reflects the overlapping, contradictory reality of institutional knowledge.
+The three components under evaluation:
 
-## Corpus Design
+| Component | Role | What ECDR-Bench varies |
+|-----------|------|------------------------|
+| Retrieval configuration | Assembles evidence from a heterogeneous corpus per planner sub-query | 4 configurations (vanilla rerank, laned community, cluster community, graph-first) |
+| Planner query design | Atomic sub-queries, one fact per call, consistent with planner decomposition | Fixed (enforced in question generation) |
+| Structured output (SRR) | Constrains generation to typed schema, preventing hallucination past weak evidence | ±SRR (2 variants per retrieval config) |
 
-Five document domains, balanced by chunk volume (not document count) at each scale point. Target equal chunk representation (plus or minus 15%) across domains. When document sizes differ substantially across domains (as with EDGAR filings versus clinical trial protocols), adjust document counts per domain to achieve chunk volume parity.
+The benchmark isolates the retrieval dimension while holding the planner and output-constraint design constant. This makes it a controlled measurement of retrieval contribution to stack performance, not an end-to-end planner evaluation.
 
-**Financial.** EDGAR 10-Ks, 10-Qs, proxy statements. Dense tables, nested footnotes, defined terms, cross-references to prior filings. Structural homogeneity within domain is high.
+## Why a Separate Enterprise Benchmark
 
-**Regulatory.** Federal Register proposed and final rules from financial, environmental, and health agencies. Deep conditional logic, internal cross-references, preamble discussion with rationale and comment responses.
+GraphRAG-Bench (GRB) uses medical and literary textbooks. Those corpora are homogeneous by design: each document comes from the same domain, uses consistent vocabulary, and covers the same subject matter. Retrieval on a homogeneous corpus rewards recall precision — finding the right passage among many similar ones. That is not the dominant failure mode in enterprise AI stacks.
 
-**Clinical.** ClinicalTrials.gov protocols and results, PubMed abstracts. Structured methodology sections, eligibility criteria, endpoint definitions, adverse event tables.
+Enterprise knowledge bases span organizational boundaries: SEC filings, regulatory guidance, security advisories, patent claims, clinical protocols, internal policy. The same entity — a company, a chemical compound, a software package — appears in multiple document types with different terminology, structure, and register. A planner issuing sub-queries against this corpus faces vocabulary collision at every step: the query terms that describe one domain also appear in adjacent domains for different reasons.
 
-**Product/Technical.** FDA drug labels, technical documentation. Prescriptive content, dosage tables, contraindication lists, usage specifications.
+GRB measures whether a retrieval system finds the right passage. ECDR-Bench measures whether the retrieval component of an enterprise AI stack assembles the right evidence across document types that do not naturally point at each other — under the query conditions that a real planner would produce.
 
-**Operational.** Government agency guidance documents, procedures, standards (NIST publications, agency handbooks). Numbered requirements, informative annexes, defined terms.
+## The Planner Scenario
 
-All sources are public, free, API-accessible, and government works with no copyright restrictions, enabling full reproducibility.
+ECDR-Bench is designed around the retrieval calls issued by a well-designed LLM planner executing multi-step reasoning against an enterprise knowledge base. In this architecture, a planner decomposes a user query into a sequence of atomic sub-queries, issues each as a separate retrieval call, receives the results, and synthesizes a final answer. The retrieval system is what each individual step depends on.
 
-## Scale Points
+**Atomic query constraint.** A well-designed planner never issues compound questions. It does not ask "which company has the most patents, and does that company also have the highest R&D spend?" — it asks "which company has the most patents?", receives an answer, then asks "what was [answer]'s R&D expenditure?" as a separate call. Each call seeks exactly one retrievable fact or yes/no determination. Benchmark questions that embed two questions in one test a retrieval behavior no planner would produce; they were excluded during question generation. All MDJ and QS questions in ECDR-Bench are single-fact atomic queries.
 
-Five runs producing a trajectory across three orders of magnitude.
+**The heterogeneous corpus problem.** When a planner issues an atomic query against a heterogeneous enterprise corpus, a failure mode emerges that has no analogue in single-domain benchmarks: the query vocabulary may match documents from the wrong domain.
 
-| Scale Point | Approximate Documents | Purpose |
-|---|---|---|
-| S1 | ~30 | Baseline, establishing small-corpus behavior |
-| S2 | ~2,500 | Moderate scale validation |
-| S3 | ~12,500 | 5x trajectory extension |
-| S4 | ~25,000 | 10x trajectory extension |
-| S5 | ~50,000 | Practical ceiling where embedding and evaluation costs remain manageable |
+A query like "how many Apple patents were granted in 2025?" is precise in intent. But the corpus also contains Apple CVE records, Apple's 10-K (which discusses patent strategy and R&D), and Federal Register notices that reference intellectual property. All of these documents mention "Apple" and "patents." The retrieval system must surface patent grant records specifically — not financial disclosures or security advisories that happen to contain the same terms.
 
-At each scale point, maintain chunk volume balance across domains. Report actual document counts, chunk counts, and chunk volume distribution per domain for each scale point.
+This cross-domain vocabulary collision is the central challenge ECDR-Bench measures. On a homogeneous corpus, retrieval precision means finding the right passage among many similar ones. In a heterogeneous corpus, it means finding the right passage in the right domain — and the planner's query may not carry enough signal to disambiguate, because the language of a natural sub-question is drawn from the user's intent, not from the document type's vocabulary.
 
-## Query Design
+The practical consequence: a retrieval configuration that performs well on GRB may fail on ECDR-Bench not because it cannot find relevant text, but because it surfaces plausible text from the wrong domain. The planner then synthesizes an answer from contaminated evidence. The error is silent — there is no retrieval failure signal, only a wrong final answer.
 
-160 queries, constant across all scale points. Four categories, each testing a different cohort failure mode.
+**Why the benchmark still uses single-shot evaluation.** The planner scenario motivates the question design (atomic sub-queries) but the benchmark measures retrieval quality per call in isolation. This is intentional: it isolates the retrieval variable. A planner that issues correctly formulated atomic sub-queries against a well-performing retrieval system produces good results; the same planner against a poorly-performing retrieval system compounds errors across steps. ECDR-Bench measures the retrieval layer so that configuration choices are made on evidence rather than assumption.
 
-### Scoped Lookup (48 queries, 30% weight)
+## Corpus
 
-The answer exists in a narrow set of passages, but structurally similar passages from other contexts exist as distractors. These test the chunking strategy's ability to provide enough context for the retrieval to find the right passage and enough differentiation for the LLM to scope its answer correctly.
+Four document domains, all publicly available, all US government or regulatory sources:
 
-Examples: drug dosage for a specific indication and patient population, reporting threshold for a specific transaction category and jurisdiction, compliance requirement under a specific regulatory subsection.
+| Domain | Source | Document Type | Key Characteristics |
+|--------|--------|---------------|---------------------|
+| Financial | SEC EDGAR | 10-K annual filings | Dense tables, defined terms, cross-references to prior filings, nested footnotes |
+| Security | NIST NVD / MITRE | CVE records | Structured vulnerability descriptions, affected product lists, CVSS scores, remediation references |
+| Regulatory | Federal Register | Proposed and final rules | Deep conditional logic, internal cross-references, preamble rationale, comment responses |
+| Intellectual Property | USPTO | Patent grants | Claims language, prior art references, technical specifications, entity assignments |
 
-### Cross-Domain Synthesis (40 queries, 25% weight)
+All sources are free, API-accessible, and US government works with no copyright restrictions. The benchmark is fully reproducible: any researcher can retrieve the same documents from the same public APIs.
 
-The answer requires chunks from at least two domains. These test whether the cohort assembles complementary information across organizational boundaries without requiring domain routing.
+Cross-domain entity overlap is structural: a CVE record references the vendor named in a 10-K; a Federal Register rule cites patent claims; a 10-K risk factor references specific CVE identifiers. The benchmark is designed so that some questions cannot be answered from a single domain.
 
-Examples: regulatory obligations that span clinical trial protocols and FDA labeling requirements, compliance controls that span financial reporting rules and operational procedures.
+## Question Types
 
-### Disambiguation (32 queries, 20% weight)
+Five question types, 100 questions each, 500 total. Each type targets a distinct retrieval failure mode that is common in enterprise deployments but absent from textbook benchmarks.
 
-The query uses terminology that carries different meanings across domains. These test whether the cohort provides sufficient context for the LLM to resolve semantic ambiguity without external help.
+| Code | Name | Definition | Why it matters |
+|------|------|------------|----------------|
+| MDJ | Multi-Document Join | Answer requires combining facts from documents in at least two distinct source types; each question seeks one fact or yes/no determination | Cross-system reporting, portfolio-level queries, entity tracking across organizational silos |
+| TV | Temporal Versioning | Answer requires identifying the correct version of a fact that changed between 2024 and 2026 | Regulatory change tracking, policy versioning, compliance date questions |
+| CDER | Cross-Domain Entity Resolution | The same real-world entity is referred to differently across source types; answer requires linking these references | Same company in SEC filings vs CVE vs patent assignments; same compound in FDA label vs clinical trial |
+| QS | Quantitative Synthesis | Answer requires aggregating or comparing numerical values drawn from one or more sources; each question seeks one number, count, ratio, or comparison result | Capital requirement calculations, exposure aggregation, patent count by assignee |
+| A/N | Absence/Negation | Correct answer is the absence of a fact, or that a stated claim is not supported by any source | Compliance scope exclusions, products not subject to a rule, claims not present in any filing |
 
-Examples: "exposure" (credit risk, chemical contact, cybersecurity vulnerability), "material" (legal threshold, physical substance, content), "control" (audit mechanism, engineering constraint, management authority), "adverse events" (clinical safety, financial loss events).
+### Atomic query constraint on MDJ and QS
 
-### Broad Topical (40 queries, 25% weight)
+MDJ and QS questions were regenerated to enforce the planner atomic query constraint. The original generated questions were 75% and 88% compound respectively — embedding two questions in one with ", and does…?" or ", and did…?" patterns. These were discarded and replaced with single-fact formulations:
 
-The query is open-ended and multiple passages are legitimately relevant. These test cohort diversity and complementarity when there is no single right answer.
+| Compound (excluded) | Atomic (included) |
+|---------------------|-------------------|
+| "Which company had the most patents in 2025, and did that company also disclose the largest R&D spend?" | "Is the FANG company with the most patent grants in 2025 also the one that disclosed the largest R&D expenditure in its 10-K?" |
+| "What CVEs affect Apple products, and does Apple's 10-K mention those products as core offerings?" | "Does Apple's 2025 10-K identify [product] as a core offering, given that it is the most frequently affected product in Apple CVEs in the corpus?" |
 
-Examples: overview of a regulatory framework, summary of risk factors across an industry, description of a therapeutic area's clinical development landscape.
+The cross-domain join still occurs — the answer requires evidence from two domains — but the question seeks one answer, consistent with what a planner sub-query would look like.
 
-### Reference Answer Construction
+### Why these five
 
-Each query has a human-authored reference answer decomposed into discrete factual claims (facets). Each facet is tagged with the source passage(s) that support it. The facet decomposition is performed once and held constant across all scale points and strategies.
+Standard RAG benchmarks test whether the system finds the right document. These five types test whether the system assembles the right evidence across documents that do not share vocabulary or structure. On GRB — a homogeneous corpus — retrieval configurations that differ in design produce nearly identical scores. On ECDR-Bench, the same configurations separate by up to 0.114 points, because corpus heterogeneity makes cross-document joins the deciding factor for a substantial fraction of questions.
 
-## Experimental Design
+## Evaluation
 
-The chunking strategy is the only variable. All other pipeline components are held constant across all runs.
+**Metric:** `answer_correctness` — the GraphRAG-Bench metric, which decomposes both the generated answer and the ground truth into statements and computes F1 over TP/FP/FN classifications. Scores are on a 0–1 scale.
 
-### Fixed Controls
+**Judge:** gpt-4o-mini (matches the GRB evaluation protocol; directly comparable).
 
-Embedding model, vector store, similarity function, k (primary evaluation at k=5, secondary at k=3 and k=10), query set, reference answers, evaluation methodology.
+**Embedding:** BGE-large-en-v1.5 (matches GRB default).
 
-### Strategies Under Test
+Scores are reported per question type and as an unweighted mean across the five types.
 
-**Contextual.** Structure-preserving chunking with breadcrumbs embedded in chunk text.
+## Preliminary Results
 
-**Contextual-no-breadcrumb.** Identical chunk boundaries to contextual, but breadcrumbs stored as metadata only, not embedded in chunk text. Breadcrumbs available to the LLM at generation time but not influencing retrieval. This isolates the breadcrumb contribution from the structural chunking contribution.
+*16-run matrix (±SRR × gpt-4o-mini/Haiku × 4 retrieval configs) pending. Grid-sweep results below are from an earlier pass and should be treated as directional.*
 
-**Naive-1600.** Fixed 1600-token chunks.
-
-**Naive-800.** Fixed 800-token chunks.
-
-**Naive-400.** Fixed 400-token chunks.
-
-### Breadcrumb Isolation
-
-The contextual-no-breadcrumb variant is the critical comparison. The gap between contextual and contextual-no-breadcrumb measures what breadcrumbs contribute to retrieval. The gap between contextual-no-breadcrumb and naive measures what structural preservation contributes independently. If the breadcrumb contribution is negative on some query categories at some scale points, that finding is reported and analyzed rather than suppressed.
-
-## Metrics
-
-Six components, each evaluated at the cohort level.
-
-### M1: Cohort Coverage (weight 0.25)
-
-What fraction of the reference answer's facets are recoverable from the cohort? For each query, the reference answer is decomposed into N independent factual claims. An evaluator (LLM-as-judge with human validation on a random 20% sample) determines whether the cohort contains sufficient information to support each claim.
-
-**Score** = (supported claims) / (total claims).
-
-This measures the cohort's breadth across the answer space. A cohort covering 8 of 10 facets scores 0.80 regardless of how many chunks contributed or how they ranked individually. This replaces nDCG as the primary retrieval quality measure because it evaluates the cohort as an information unit rather than scoring chunks independently.
-
-### M2: Cohort Coherence (weight 0.20)
-
-Two sub-dimensions, equally weighted within the component.
-
-**M2a: Structural Completeness (0.10).** Fraction of chunks in the cohort that are structurally whole: no mid-sentence truncation, no orphaned table rows, no split list items. Score = (complete chunks) / k. This is chunk-level but aggregated to the cohort. It measures the baseline readability of the material the LLM receives.
-
-**M2b: Cohort Complementarity (0.10).** Inverse of intra-cohort redundancy. Compute mean pairwise semantic similarity among all chunks in the cohort. Score = 1 minus mean pairwise cosine similarity, normalized to 0-1. This penalizes retrieval strategies that fill the cohort with near-duplicate chunks from adjacent passages. A cohort of five diverse, complementary chunks scores higher than a cohort of five chunks that say the same thing in slightly different words.
-
-### M3: Cohort Differentiation (weight 0.20)
-
-When two or more chunks in the cohort address similar concepts but from different scopes or contexts, does the cohort contain enough information for the LLM to distinguish which applies where?
-
-Identify all chunk pairs in the cohort where semantic similarity exceeds a threshold (cosine > 0.75) but the chunks originate from different source contexts (different documents, different sections, different domains). For each such pair, an LLM-as-judge evaluates whether the chunks as presented contain sufficient contextual signal to determine which chunk applies to which scope.
-
-**Score** = (distinguishable pairs) / (total similar pairs). If no similar pairs exist in the cohort, score defaults to 1.0.
-
-This is the component that directly tests the breadcrumb hypothesis. It only activates when the cohort contains potential confusion. On queries where all retrieved chunks are lexically distinct, it contributes nothing. On queries where the cohort contains relevant-looking chunks from different scopes, it measures whether the chunking strategy provided the differentiation signal the LLM needs.
-
-Report the activation rate (what percentage of queries triggered M3 evaluation) alongside the score. The activation rate itself is informative: it tells you how often the retrieval produced potentially confusable cohorts.
-
-### M4: Answer Fidelity (weight 0.25)
-
-The end-to-end measure. Give an LLM the cohort (and only the cohort) plus the query. Evaluate the generated answer on two sub-dimensions, equally weighted.
-
-**M4a: Correctness (0.125).** Does the answer contain accurate claims supported by the cohort? Score against the reference answer's facet list. Penalize both omission (missing facets the cohort could support) and fabrication (claims not supported by any chunk in the cohort).
-
-**M4b: Faithfulness (0.125).** Does the answer stay grounded in the retrieved cohort? Score = (claims in the generated answer attributable to a specific chunk) / (total claims in the generated answer). An answer that introduces information not present in any chunk indicates the LLM drew on parametric knowledge, which is a governance problem in enterprise contexts because the answer can't be traced to an authoritative source.
-
-M4 is the ground truth. Everything else in the metric is a proxy for whether the LLM produced a trustworthy answer from this cohort. M4 measures it directly.
-
-### M5: Failure Rate (weight 0.05)
-
-Percentage of queries where the cohort produces a materially wrong answer: not incomplete, but confidently incorrect because the cohort provided relevant-looking but wrong-scope chunks. An LLM-as-judge compares the generated answer against the reference answer and flags cases where specific factual claims are contradicted.
-
-**Score** = 1 minus failure rate. Weight is low because this should be infrequent for any reasonable strategy. It is included because in regulated contexts a single confident wrong answer is more damaging than a hundred incomplete responses.
-
-Report failure cases qualitatively with examples showing what went wrong. The failure mode taxonomy is as valuable as the aggregate score.
-
-### M6: Cohort Efficiency (weight 0.05)
-
-Total token count of the cohort relative to M4 answer fidelity. Score = M4 / (cohort tokens / normalization constant), where the normalization constant is the mean cohort token count across all strategies at that scale point. This rewards strategies that deliver equivalent answer quality with fewer tokens, which matters for context window utilization, latency, and cost in production.
-
-## Composite Score
-
-### Cohort Retrieval Quality Index (CRQI)
-
-```
-CRQI = (0.25 × M1) + (0.20 × M2) + (0.20 × M3) + (0.25 × M4) + (0.05 × M5) + (0.05 × M6)
+| Configuration | MDJ | TV | CDER | QS | A/N | Mean |
+|---------------|----:|---:|-----:|---:|----:|-----:|
+| Rerank + cluster community k=10 | 0.327 | 0.497 | 0.402 | 0.525 | 0.637 | **0.478** |
+| Graph-first k=10 | 0.394 | 0.579 | 0.431 | 0.406 | 0.556 | **0.473** |
+| Laned60 + community k=10 | 0.156 | 0.563 | 0.345 | 0.262 | 0.495 | **0.364** |
+| Global search k=10 | 0.358 | 0.463 | 0.267 | 0.316 | 0.287 | **0.338** |
+
+**Key finding:** The laned60 configuration — highest-scoring on GRB — collapses on MDJ (0.156). The 0.60 entity similarity threshold discards cross-domain links: a CVE record and a 10-K filing may reference the same vendor without being embedding-similar, because they use different vocabulary and structure. Lane filtering treats that dissimilarity as noise and discards it. MDJ questions require exactly those discarded chunks.
+
+**Contrast with GRB:** On GRB, configurations that differ in lane threshold cluster within 0.003 of each other — below measurement noise. On ECDR-Bench, the same choice produces a 0.114-point gap. Corpus heterogeneity is the discriminating condition.
+
+## Running the Benchmark
+
+The benchmark uses the same infrastructure as GRB:
+
+```bash
+# Index
+python demo/graphrag_bench.py index \
+  --out-dir work/fang2026 \
+  --corpus-dir work/fang2026/data
+
+# Generate
+python demo/graphrag_bench.py run \
+  --out-dir work/fang2026 \
+  --config work/configs/runs/<config>.toml \
+  --run-name <run_name>
+
+# Evaluate
+python demo/graphrag_bench.py eval \
+  --out-dir work/fang2026 \
+  --run-name <run_name>_rp \
+  --judge gpt-4o-mini
 ```
 
-Computed per query, aggregated as weighted average across query categories. Reported at each scale point for each strategy.
+The full 16-run matrix is driven by `work/run_parallel.py --fang-only`.
 
-## Trajectory Analysis
+**Cost per run:** ~$5–10 (gpt-4o-mini, 500 questions). The full 16-run matrix costs under $160.
 
-The primary deliverable is not a single CRQI number but a set of scaling curves. For each metric component and each query category, plot the score across the five scale points for all strategies. The trajectory reveals:
+## Comparison with GRB
 
-**Durability.** Whether each advantage is stable (flat line across scale points), eroding (downward slope), or amplifying (upward slope).
+| Property | GRB | ECDR-Bench |
+|----------|-----|------------|
+| Corpus | Medical + literary textbooks | SEC + CVE + FedReg + Patents |
+| Homogeneity | High | Low (by design) |
+| Questions | 4,072 | 500 |
+| Question types | Fact, Reason, Summarize, Creative | MDJ, TV, CDER, QS, A/N |
+| Published baseline | Yes (leaderboard) | No |
+| Executed | Yes | Partially (16-run matrix in progress) |
+| Discriminates retrieval configs | Weakly | Strongly |
 
-**Attribution.** Whether the contextual-no-breadcrumb variant tracks with contextual (meaning structural preservation drives the advantage) or with naive (meaning breadcrumbs drive the advantage). If it falls between the two, the contributions are additive and separable.
+ECDR-Bench does not replace GRB. GRB provides comparability to published systems. ECDR-Bench tests whether a configuration that wins on GRB also wins on the document type mix that large enterprises actually deploy. The two benchmarks together answer different questions.
 
-**Disambiguation behavior.** Whether the disambiguation performance at scale confirms or reverses the finding from the S2 run where naive outperformed contextual.
+## Scope and Known Limitations
 
-**Differentiation pressure.** Whether M3 activation rate increases with scale (more confusable cohorts in a denser embedding space) and whether contextual chunking's M3 score holds under that increasing pressure.
+**What it measures.** Whether a retrieval configuration assembles cross-domain evidence correctly on a corpus that structurally resembles enterprise knowledge management content, evaluated against the retrieval calls a well-designed planner would issue.
 
-The inflection points and plateaus in these curves are the findings. They tell adopters what to expect at their own corpus scale and they identify where additional retrieval mechanisms (NER, clustering, reranking) become necessary to maintain quality.
+**What it does not measure.** Scale (500 questions; significance requires bootstrap CIs at the 0.02-point level). Domain coverage (four public document types; internal enterprise documents differ in register and structure). Indexing freshness (all documents are 2024–2026 snapshots; document currency is not tested). End-to-end planner quality (the benchmark isolates the retrieval step; it does not measure whether a planner correctly decomposes queries or synthesizes multi-step results). Constrained-DSL retrieval (the benchmark assumes natural-language queries against the full corpus with no structured query layer).
 
-## Reporting
+**Expected score range.** Absolute scores on ECDR-Bench will be lower than on GRB. The benchmark targets the retrieval calls issued during multi-step reasoning over a heterogeneous corpus — tasks that require locating domain-specific evidence amid cross-domain vocabulary noise. No single-pass retrieval fully satisfies these questions. This is expected and not a defect.
 
-### Per Scale Point
+**Why retrieval choice still matters.** A multi-step reasoning architecture does not remove the need to choose a retrieval configuration — it makes the choice more consequential. Every step in the reasoning chain issues a retrieval call; retrieval quality determines what evidence the planner has available at each step, and errors compound across steps. ECDR-Bench is the mechanism for making that choice empirically rather than by assumption. Without a benchmark that exercises cross-domain joins under vocabulary collision conditions, there is no principled basis for selecting a retrieval configuration in enterprise deployments.
 
-For each scale point, report:
+**Relationship to constrained DSL planners.** A well-engineered planner can emit structured retrieval instructions — filter by document type, date range, entity, or score threshold — that bypass the vocabulary collision problem at the architectural level. When `retrieve(domain="patent", assignee="Apple", year=2025)` is possible, retrieval configuration matters less and planner query-formulation quality matters more. ECDR-Bench tests the harder case: natural-language sub-queries against the full heterogeneous corpus, with no structured query layer. This represents either the realistic state of many enterprise deployments, or a measurement of how much work the constrained DSL is doing — the gap between constrained and unconstrained retrieval scores quantifies the value of adding that layer.
 
-Corpus statistics: document count, chunk count, and chunk volume percentage per domain.
-
-CRQI composite per strategy.
-
-Per-component scores per strategy.
-
-Per-category scores per strategy.
-
-Gap between contextual and best naive configuration per component and per category.
-
-Gap between contextual and contextual-no-breadcrumb per component and per category.
-
-M3 activation rate.
-
-M5 failure cases with qualitative analysis.
-
-### Across Scale Points
-
-Trajectory curves for each component, each category, and the composite.
-
-Identification of stable, eroding, and amplifying advantages with proposed explanations.
-
-Explicit statement of the scale boundary beyond which results have not been empirically validated.
-
-## Reproducibility
-
-Publish the complete benchmark package: corpus document identifiers and retrieval instructions (not the documents themselves, since they are all publicly available via API), query set with facet-decomposed reference answers, evaluation prompts for LLM-as-judge, scoring code, and raw results at every scale point. Any researcher can pull the same documents from the same public APIs, run the same queries, and verify the results.
-
-## Scope and Limitations
-
-**What this benchmark measures.** Whether structure-preserving chunking with hierarchical breadcrumbs produces higher-quality retrieval cohorts for LLM consumption than naive fixed-size chunking, how that advantage decomposes into structural, contextual, and efficiency contributions, whether the breadcrumb contribution is net positive or net negative at enterprise-representative scale, and how all of these behave as corpus size increases across three orders of magnitude.
-
-**What this benchmark does not measure.** Performance at true enterprise scale (millions of documents, tens of millions of chunks). The contribution of NER vocabulary, cluster analysis, or schema metadata integration. The effect of domain-specific embedding models or hybrid retrieval strategies. These are explicitly out of scope and identified as directions for subsequent work.
+Structured output constraints are not limited to query formulation — they apply to every LLM invocation in the pipeline. Any call to an LLM (query formulation, retrieval reranking, answer generation, evaluation) can be constrained to a typed schema, reducing the output space and the corresponding failure modes. The SRR (structured response + reprompting) configuration tested in ECDR-Bench is one instance of this general pattern, applied at the answer generation step. SRR forces the model to decompose its answer into structured fields rather than free-form prose, which prevents fluent-sounding hallucination past weak retrieved evidence — the schema requires a specific field that the evidence must support. Applied instead at the query formulation step, the same pattern produces the retrieval DSL effect: a schema-constrained query that filters by document type, date, or entity before retrieval. The ±SRR dimension in the benchmark matrix measures the contribution of output-side constraints at the generation step, holding the retrieval configuration constant.
