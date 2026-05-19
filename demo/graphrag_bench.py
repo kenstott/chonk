@@ -860,10 +860,19 @@ def _decompose_question(
     return [question]
 
 
+_SRR_CLAUDE_SUFFIX = (
+    "\nBe maximally direct and concise. "
+    "The 'answer' field must be 1-2 declarative sentences with no hedging, "
+    "no attribution preamble ('Based on...', 'According to...'), and no qualifiers. "
+    "For absence or negation, state the fact plainly: e.g. 'Company X is not mentioned in the filings.'"
+)
+
+
 def _generate_srr(question: str, context: str, client, model: str,
                   temperature: float = 0.0) -> dict:
     """Generate a structured response for SRR. Returns dict with answer/key_claims/evidence_used."""
     import json as _json
+    system = _SRR_GEN_SYSTEM + (_SRR_CLAUDE_SUFFIX if "claude" in model.lower() else "")
     user_content = f"Context:\n{context}\n\nQuestion: {question}"
     raw = ""
     for attempt in range(2):
@@ -871,7 +880,7 @@ def _generate_srr(question: str, context: str, client, model: str,
         resp = client.chat.completions.create(
             model=model,
             messages=[
-                {"role": "system", "content": _SRR_GEN_SYSTEM},
+                {"role": "system", "content": system},
                 {"role": "user",   "content": prompt},
             ],
             temperature=temperature,
@@ -1180,6 +1189,44 @@ def cmd_build_community(args: argparse.Namespace) -> None:
     else:
         print("  No breadcrumbs found — using content vectors only.")
 
+    # ── Entity bridge edges from chunk_entities (NER) ─────────────────────
+    # For each entity appearing in chunks from multiple documents, inject a
+    # cross-document edge so community detection bridges domain boundaries.
+    extra_edges: list[tuple[int, int, float]] = []
+    try:
+        import duckdb as _duckdb
+        _con_er = _duckdb.connect(str(db_path), read_only=True)
+        _ce_rows = _con_er.execute(
+            "SELECT entity_id, chunk_id FROM chunk_entities WHERE frequency > 0"
+        ).fetchall()
+        _con_er.close()
+        if _ce_rows:
+            from collections import defaultdict as _dd
+            id_to_idx = {cid: i for i, cid in enumerate(chunk_ids)}
+            entity_to_chunks: dict[str, list[int]] = _dd(list)
+            for eid, cid in _ce_rows:
+                if cid in id_to_idx:
+                    entity_to_chunks[eid].append(id_to_idx[cid])
+            bridge_count = 0
+            seen: set[tuple[int, int]] = set()
+            for eid, idxs in entity_to_chunks.items():
+                if len(idxs) < 2:
+                    continue
+                for a in range(len(idxs)):
+                    for b in range(a + 1, len(idxs)):
+                        ia, ib = idxs[a], idxs[b]
+                        doc_a = chunk_ids[ia].rsplit("_", 2)[0]
+                        doc_b = chunk_ids[ib].rsplit("_", 2)[0]
+                        if doc_a != doc_b:
+                            key = (min(ia, ib), max(ia, ib))
+                            if key not in seen:
+                                seen.add(key)
+                                extra_edges.append((ia, ib, 1.0))
+                                bridge_count += 1
+            print(f"  Entity bridge: {bridge_count:,} cross-document edges from {len(entity_to_chunks)} entities (chunk_entities)")
+    except Exception as _e:
+        print(f"  Entity bridge skipped: {_e}")
+
     print(f"  Building community index (sim_threshold={sim_threshold}, label_strategy={label_strategy})...")
     idx = CommunityIndex.build(
         chunk_ids=chunk_ids,
@@ -1190,6 +1237,7 @@ def cmd_build_community(args: argparse.Namespace) -> None:
         sim_threshold=sim_threshold,
         label_strategy=label_strategy,
         db_path=db_path if label_strategy == "ner_embedding" else None,
+        extra_edges=extra_edges or None,
     )
     print(f"  {idx.community_count():,} communities across {idx.chunk_count():,} chunks")
 
@@ -2529,6 +2577,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         _all_traces: list = []
         for j, (i, q) in enumerate(pending):
             _q_entities = _precomputed_question_entities[j] if _precomputed_question_entities is not None else None
+            _bm25_query_text = q["question"] if getattr(args, "bm25", False) else None
             _trace = None
             if use_multi_step and j in _sub_vecs_by_idx:
                 # Retrieve for each sub-query, merge by best score per chunk_id
@@ -2536,7 +2585,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                 for sub_vec in _sub_vecs_by_idx[j]:
                     if use_enhanced and enhanced_search is not None:
                         _sub_scored = enhanced_search.search(
-                            sub_vec, k=fetch_k, query_text=q["question"],
+                            sub_vec, k=fetch_k, query_text=_bm25_query_text,
                             query_entities=_q_entities,
                             precomputed_entity_vecs=_precomputed_entity_vecs,
                             mode=_retrieval_mode,
@@ -2547,7 +2596,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                     else:
                         _sub_hits = store.vector.search(
                             sub_vec, limit=fetch_k,
-                            query_text=q["question"],
+                            query_text=_bm25_query_text,
                             include_breadcrumbs=False,
                             namespaces=namespaces,
                             domain_ids=domain_ids,
@@ -2560,7 +2609,7 @@ def cmd_run(args: argparse.Namespace) -> None:
             elif use_enhanced and enhanced_search is not None:
                 if _capture_trace:
                     scored, _trace = enhanced_search.search(
-                        q_vecs[j], k=fetch_k, query_text=q["question"],
+                        q_vecs[j], k=fetch_k, query_text=_bm25_query_text,
                         query_entities=_q_entities,
                         precomputed_entity_vecs=_precomputed_entity_vecs,
                         mode=_retrieval_mode,
@@ -2570,7 +2619,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                     )
                 else:
                     scored = enhanced_search.search(
-                        q_vecs[j], k=fetch_k, query_text=q["question"],
+                        q_vecs[j], k=fetch_k, query_text=_bm25_query_text,
                         query_entities=_q_entities,
                         precomputed_entity_vecs=_precomputed_entity_vecs,
                         mode=_retrieval_mode,
@@ -2583,7 +2632,7 @@ def cmd_run(args: argparse.Namespace) -> None:
             else:
                 hits = store.vector.search(
                     q_vecs[j], limit=fetch_k,
-                    query_text=q["question"],
+                    query_text=_bm25_query_text,
                     include_breadcrumbs=False,
                     namespaces=namespaces,
                     domain_ids=domain_ids,
@@ -2599,7 +2648,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                     _max_frac = max(src_counts.values()) / _k_hits
                     if _max_frac >= concentration_threshold:
                         scored_conc = _conc_search.search(
-                            q_vecs[j], k=fetch_k, query_text=q["question"],
+                            q_vecs[j], k=fetch_k, query_text=_bm25_query_text,
                             query_entities=_q_entities,
                             precomputed_entity_vecs=_precomputed_entity_vecs,
                             namespaces=namespaces,
@@ -2772,7 +2821,7 @@ def cmd_run(args: argparse.Namespace) -> None:
 
             if search_mode == "graph_first" and enhanced_search is not None:
                 _ctx = enhanced_search.assemble_graph_context(
-                    hits, query_text=q["question"]
+                    hits, query_text=_bm25_query_text
                 )
             elif search_mode == "map_reduce_global" and enhanced_search is not None and _map_reduce_llm_fn is not None:
                 _ctx = enhanced_search.map_reduce_global_context(
@@ -2912,7 +2961,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                     resp = _sc.chat.completions.create(
                         model=_sm,
                         messages=[
-                            {"role": "system", "content": _SRR_GEN_SYSTEM},
+                            {"role": "system", "content": _SRR_GEN_SYSTEM + (_SRR_CLAUDE_SUFFIX if "claude" in _sm.lower() else "")},
                             {"role": "user",   "content": user_content},
                         ],
                         temperature=gen_temperature,
@@ -3109,14 +3158,27 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
     if args.limit:
         records = records[:args.limit]
 
+    # Load gold schemas: authoritative ground truth + typed answer schemas
+    _gold_schemas: dict[str, str] = {}
+    _answer_schemas: dict[str, dict] = {}
+    for _schema_f in sorted(data_dir.glob("*_gold_schemas.jsonl")):
+        for _line in open(_schema_f):
+            _s = json.loads(_line)
+            if _s.get("gold_answer"):
+                _gold_schemas[_s["id"]] = _s["gold_answer"]
+            if _s.get("answer_schema"):
+                _answer_schemas[_s["id"]] = _s["answer_schema"]
+
     # Convert to benchmark format
     bench_records = [{
         "id":            r["id"],
         "question":      r["question"],
         "question_type": r["question_type"],
         "generated_answer": r["generated_answer"],
-        "ground_truth":  r.get("gold_answer") or r.get("ground_truth", ""),
+        "ground_truth":  (r.get("gold_answer") or _gold_schemas.get(r["id"])
+                          or r.get("ground_truth", "")),
         "context":       [r["context"]],
+        "answer_schema": _answer_schemas.get(r["id"]),
     } for r in records]
 
     # Load checkpoint
@@ -3249,6 +3311,10 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
             np.save(str(ans_cache_f), all_ans_vecs)
             ans_id_f.write_text(json.dumps(all_ans_ids), encoding="utf-8")
             print(f"  Cached → {ans_cache_f}")
+        # Sync embedder for typed scorer text questions — capture by value before del
+        def _typed_embedder(text: str, _model=embed_model):
+            return _model.encode(text, normalize_embeddings=True, show_progress_bar=False)
+
         del embed_model  # free memory
 
         # Build lookup: text → embedding vector
@@ -3276,13 +3342,25 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
             "Complex Reasoning":                ["rouge_score", "answer_correctness"],
             "Contextual Summarize":             ["answer_correctness", "coverage_score"],
             "Creative Generation":              ["answer_correctness", "coverage_score", "faithfulness"],
-            # FANG-2026 question types
-            "Multi-Document Join":              ["answer_correctness"],
-            "Temporal Versioning":              ["answer_correctness"],
-            "Cross-Domain Entity Resolution":   ["answer_correctness"],
-            "Quantitative Synthesis":           ["answer_correctness"],
-            "Absence/Negation":                 ["answer_correctness"],
+            # FANG-2026 question types — typed scorer used when answer_schema present
+            "Multi-Document Join":              ["typed_score"],
+            "Temporal Versioning":              ["typed_score"],
+            "Cross-Domain Entity Resolution":   ["typed_score"],
+            "Targeted Attribute Lookup":        ["typed_score"],
+            "Descriptive Attribute Lookup":     ["typed_score"],
+            "Quantitative Synthesis":           ["typed_score"],
+            "Absence/Negation":                 ["typed_score"],
         }
+
+        # Import typed scorer
+        import importlib.util as _ilu
+        _ts_path = data_dir / "score_typed.py"
+        _score_one = None
+        if _ts_path.exists():
+            _ts_spec = _ilu.spec_from_file_location("score_typed", _ts_path)
+            _ts_mod = _ilu.module_from_spec(_ts_spec)
+            _ts_spec.loader.exec_module(_ts_mod)
+            _score_one = _ts_mod.score_one
 
         semaphore = asyncio.Semaphore(args.concurrency)
         _judge_model = getattr(args, "judge", GEN_MODEL)
@@ -3388,6 +3466,16 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
                 _t0 = time.monotonic()
                 try:
                     tasks = {}
+                    if "typed_score" in metrics:
+                        schema = r.get("answer_schema")
+                        if schema and _score_one is not None:
+                            _ts = _score_one(r["generated_answer"] or "", schema, embedder=_typed_embedder)
+                            result["typed_score"] = _ts if _ts == _ts else float("nan")
+                        else:
+                            # no schema — fall back to LLM judge recorded as answer_correctness
+                            tasks["answer_correctness"] = compute_answer_correctness(
+                                r["question"], r["generated_answer"], r["ground_truth"], llm, embedding
+                            )
                     if "rouge_score" in metrics:
                         tasks["rouge_score"] = compute_rouge_score(r["generated_answer"], r["ground_truth"])
                     if "answer_correctness" in metrics:
@@ -3586,7 +3674,7 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
     aggregated: dict[str, dict] = {}
     for qtype, items in by_type.items():
         agg: dict[str, float] = {}
-        for key in ["rouge_score", "answer_correctness", "coverage_score", "faithfulness"]:
+        for key in ["rouge_score", "answer_correctness", "typed_score", "coverage_score", "faithfulness"]:
             vals = [i[key] for i in items if key in i and not (isinstance(i[key], float) and i[key] != i[key])]
             if vals:
                 agg[key] = float(np.nanmean(vals))
@@ -4480,6 +4568,7 @@ def cmd_run_all(args: argparse.Namespace) -> None:
         if rp_src.exists() and not rp_dst.exists():
             import shutil
             shutil.copy(str(rp_src), str(rp_dst))
+        nan_limit = str(cfg.get("eval", {}).get("nan_limit", 136))
         eval_args = ap.parse_args([
             "eval",
             "--out-dir", str(out_dir),
@@ -4488,7 +4577,7 @@ def cmd_run_all(args: argparse.Namespace) -> None:
             "--eval-rpm", "8000",
             "--eval-batch-size", "20",
             "--concurrency", "50",
-            "--nan-limit", "136",
+            "--nan-limit", nan_limit,
         ])
         cmd_bench_eval(eval_args)
 
@@ -4601,6 +4690,8 @@ def _make_parser() -> argparse.ArgumentParser:
                         help=f"Reranker: local={RERANK_MODEL}, together={RERANK_MODEL_TOGETHER} (default: local)")
     g_base.add_argument("--rerank-chunk", type=int, default=200, metavar="N",
                         help="Outer loop batch size for reranking + checkpoint interval (default: 200)")
+    g_base.add_argument("--bm25", action="store_true", dest="bm25",
+                        help="Enable BM25 hybrid retrieval fused with vector search via RRF")
 
     # ── Expansion ─────────────────────────────────────────────────────────────
     g_exp = p.add_argument_group(
