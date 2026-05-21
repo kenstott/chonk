@@ -1,0 +1,6 @@
+extends = "fang_ner_ref_laned60_community_k50_rerank_srr_mini.toml"
+run_name = "fang_ner_ref_laned60_community_k50_rerank_srr_sonnet"
+
+[gen]
+provider = "anthropic"
+model    = "claude-sonnet-4-6"

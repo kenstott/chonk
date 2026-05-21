@@ -1,0 +1,1609 @@
+{
+  "overall": 0.29591224394104887,
+  "by_type": {
+    "Targeted Attribute Lookup": 0.35182448788209775,
+    "Descriptive Attribute Lookup": 0.24
+  },
+  "per_question": [
+    {
+      "id": "FANG2026-TAL-001",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "Amazon's Operating Income for fiscal year 2025 was $79,975 million.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-002",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "Amazon's Total Net Sales for fiscal year 2025 was $716,924 million.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-003",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "Amazon's AWS revenue for fiscal year 2025 was $128.725 billion.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-004",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "Meta's Operating Cash Flow for fiscal year 2025 was $164.7 billion.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-005",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "Netflix's net income for the fiscal year 2025 was $10,981,201,000.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-006",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "Google's Total Revenue for fiscal year 2025 was $402.8 billion.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-007",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "Netflix's Total Revenue for the fiscal year 2025 was $45,183,036,000.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-008",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "Meta's Advertising Revenue for fiscal year 2025 was $196.175 billion.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-009",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "Meta's total revenue for fiscal year 2025 was $200.966 billion.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-010",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "Meta's capital expenditure for fiscal year 2025 was $91.4 billion.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-011",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "Netflix's Operating Income for fiscal year 2025 was $79,975 million.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-012",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "Amazon's Free Cash Flow for fiscal year 2025 was $43,585 million.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-013",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "Amazon's Net Income for fiscal year 2025 was $10,981,201,000.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-014",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "Meta's Free Cash Flow for fiscal year 2025 was $43,585 million.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-015",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "Amazon's research and development (R&D) expense for fiscal year 2025 was $61,087 million.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-016",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "Google's Operating Cash Flow for fiscal year 2025 was $164.7 billion.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-017",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "Google's Google Cloud Revenue for fiscal year 2025 was $58.7 billion.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-018",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "Netflix's capital expenditure for fiscal year 2025 was $91.4 billion.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-019",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "Apple's Services Revenue for fiscal year 2025 was $109,158 million.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-020",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "Meta's research and development expense for fiscal year 2025 was $61,087 million.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-021",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "Apple's Total Net Sales for fiscal year 2025 were $416,161 million.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-022",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "Netflix's Operating Cash Flow for the fiscal year 2025 was $139.5 billion.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-023",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "Google's R&D expense for fiscal year 2025 was $61,087 million.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-024",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "Google's Google Search revenue for fiscal year 2025 was $224,532 million.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-025",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "Apple's R&D expense for fiscal year 2025 was $61,087 million.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-026",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The product affected by CVE-2024-44219 is macOS, specifically versions earlier than 15.1.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-027",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "CVE-2026-20650 does not exist in the provided context.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-028",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The product affected by CVE-2026-7904 is Google Chrome versions prior to 148.0.7778.96.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-029",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "The CVSS score of CVE-2025-46306 is not provided in the context.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-030",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "date",
+      "score": 0.0,
+      "generated": "CVE-2025-46300 was not mentioned in the provided context.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-031",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "CVE-2026-7926 does not appear in the provided context, so no specific product is affected by it.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-032",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "The CVSS score of CVE-2026-5864 is 4.3.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-033",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "The CVSS score of CVE-2026-5889 is 4.3, which is categorized as Medium.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-034",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "CVE-2026-30790 affects the RustDesk Server Pro and the RustDesk Server (OSS) products.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-035",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "The CVSS score of CVE-2026-7930 is 8.8, which is classified as HIGH.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-036",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "date",
+      "score": 1.0,
+      "generated": "CVE-2026-0903 was published on January 20, 2026.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-037",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The product affected by CVE-2025-24090 is iOS and iPadOS versions below 18.3.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-038",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "The CVSS score of CVE-2026-7333 is 9.6, which is categorized as CRITICAL.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-039",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "date",
+      "score": 0.0,
+      "generated": "CVE-2026-5277 was not listed in the provided context, therefore its publication date is unknown.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-040",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The product affected by CVE-2025-48646 is Google Android versions 14.0, 15.0, and 16.0.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-041",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "date",
+      "score": 1.0,
+      "generated": "CVE-2026-4680 was published on March 24, 2026.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-042",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "CVE-2026-35559 is not present in the analyzed vulnerabilities listed in the provided context.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-043",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The affected product by CVE-2026-5915 is Google Chrome, specifically versions prior to 147.0.7727.55.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-044",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "The CVE-2025-61615 does not exist in the provided context, and therefore its CVSS score cannot be determined.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-045",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "CVE-2026-20692 is not mentioned in the provided context, and therefore its CVSS score cannot be determined.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-046",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "date",
+      "score": 1.0,
+      "generated": "CVE-2026-27275 was published on March 10, 2026.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-047",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "date",
+      "score": 1.0,
+      "generated": "CVE-2026-7940 was published on May 6, 2026.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-048",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "The CVE-2026-3062 is not present in the provided context, therefore its CVSS score cannot be determined.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-049",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "date",
+      "score": 0.0,
+      "generated": "CVE-2025-20801 was not mentioned in the provided context, so the publication date cannot be determined.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-050",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "The CVSS score of CVE-2026-0008 is 8.4.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-051",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "date",
+      "score": 0.0,
+      "generated": "The grant date of patent US12332430 is April 12, 2021.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-052",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The assignee of patent US12334118 is listed as 'Tech Innovations LLC'.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-053",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "text",
+      "score": 0.0,
+      "generated": "The title of patent US12333382 is not provided in the context.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-054",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The assignee of patent US12332442 is XYZ Corporation.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-055",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "date",
+      "score": 0.0,
+      "generated": "The grant date of patent US12353119 is June 11, 2019.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-056",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "text",
+      "score": 0.2995706578922758,
+      "generated": "The title of patent US12333681 is 'System and Method for Generating a Customized User Interface'.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-057",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The assignee of patent US12333858 is not explicitly mentioned in the provided context.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-058",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "text",
+      "score": 0.048253297786542436,
+      "generated": "The title of patent US12334069 is 'Method for Producing a Biodegradable Plastic.'",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-059",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The company that holds the patent on 'quantum circuit optimization using windowed quantum arithmetic' is IBM.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-060",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The patent number for Apple's invention on directional voice sensing using coherent optical detection is 20230114726.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-061",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The patent titled \"Techniques for identifying synchronization errors in media titles\" was assigned to Apple Inc.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-062",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "date",
+      "score": 0.0,
+      "generated": "Google's patent titled 'In-conversation search' was granted on March 14, 2023.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-063",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The patent number for Meta's invention on targeted generative visual editing of images is 11633943.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-064",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The patent titled 'Feedforward compensation of high-luminance banding Mura compensation' is held by Samsung Display Co.,",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-065",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The patent number for Google's patent on application hosting in a distributed application execution system is 7,610,134.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-066",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "date",
+      "score": 0.0,
+      "generated": "Apple's patent on 'low-dropout regulator circuit with dynamic transition between operation modes' was granted on July 12",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-067",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "text",
+      "score": 0.0,
+      "generated": "The provided context does not mention any patents held by Netflix, indicating that there is no stated patent in the text",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-068",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "The context does not provide any information regarding the number of patents assigned to Meta Platforms Technologies, LL",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-069",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The Apple patent granted on 2025-07-08 relates to advanced camera optics technology designed to enhance image quality an",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-070",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The assignee of the patent about selecting an input mode for a virtual assistant granted in June 2025 is not specified i",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-071",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The Apple patent granted on 2025-07-08 relates to electronic voltage regulation circuits.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-072",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The company that holds this patent is Google.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-073",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The patent number describing detecting and decoding visual markers with user-selectable appearance is US20170005649A1.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-074",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The patent abstract for the low-dropout (LDO) regulator circuit was assigned to Texas Instruments Incorporated.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-075",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The patent number is 11531612.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-076",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The agency that published the federal register document with docket number 2025-24146 is the Department of Health and Hu",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-077",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "text",
+      "score": 0.3854185368559687,
+      "generated": "The subject of federal register document with docket number 2025-24169 relates to a proposed rule regarding the implemen",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-078",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The agency that published the federal register document with docket number 2026-09204 is the Department of Energy.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-079",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "text",
+      "score": 0.361977024703668,
+      "generated": "The subject of federal register document with docket number 2026-04286 has not been specified in the provided context.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-080",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The agency that published the federal register document with docket number 2026-07817 is the Department of Justice.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-081",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "text",
+      "score": 0.354087350084314,
+      "generated": "The subject of federal register document with docket number 2026-07251 is not specified in the provided context.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-082",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The agency that published the federal register document with docket number 2026-04952 is the Department of Homeland Secu",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-083",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "text",
+      "score": 0.31023520657730996,
+      "generated": "The subject of federal register document with docket number 2026-05870 is the 2023-2024 annual list of covered crops as ",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-084",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The agency that published the federal register document with docket number 2026-03067 is the Department of Energy.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-085",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "text",
+      "score": 0.3061353667164481,
+      "generated": "The subject of federal register document with docket number 2026-04987 pertains to regulations and the management of spe",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-086",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The agency that published the federal register document with docket number 2026-00870 is the Department of Transportatio",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-087",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "text",
+      "score": 0.4056477980846601,
+      "generated": "The subject of federal register document with docket number 2026-01227 is not specified in the provided context.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-088",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The agency that published the federal register document with docket number 2026-01377 is the Department of Health and Hu",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-089",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "text",
+      "score": 0.3531564170647287,
+      "generated": "The subject of federal register document with docket number 2026-01376 is not specified in the provided context.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-090",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The agency that published the federal register document with docket number 2026-07804 is the National Oceanic and Atmosp",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-091",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "text",
+      "score": 0.25129408571416006,
+      "generated": "The subject of federal register document with docket number 2026-01118 is related to data collection and privacy matters",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-092",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The agency that published the federal register document with docket number 2026-07825 is the Department of Labor.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-093",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "text",
+      "score": 0.3537625941400845,
+      "generated": "The subject of federal register document with docket number 2026-08808 is related to a proposed rule by the Bureau of In",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-094",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The agency that published the federal register document with docket number 2026-00872 is the Department of Transportatio",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-095",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "text",
+      "score": 0.3737505350411771,
+      "generated": "The subject of federal register document with docket number 2026-07473 is related to the proposed rule regarding the imp",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-096",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The agency that published the federal register document with docket number 2026-07826 is the U.S. Department of Agricult",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-097",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "text",
+      "score": 0.37915991754844486,
+      "generated": "The subject of federal register document with docket number 2026-05932 is not specified in the provided context.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-098",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The agency that published the federal register document with docket number 2026-07827 is the Federal Aviation Administra",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-099",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "text",
+      "score": 0.0,
+      "generated": "The subject of federal register document with docket number 2026-00345 is not provided in the context.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-TAL-100",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The agency that published the federal register document with docket number 2026-07779 is the Department of Health and Hu",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-001",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The FANG company that reported a Net Income of approximately $59.2 billion in fiscal year 2025 is Meta Platforms, Inc.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-002",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "The Free Cash Flow for the social media company in fiscal year 2025 was $11.194 billion.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-003",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The FANG company that reported R&D Expense of approximately $19.2 billion in fiscal year 2025 is Meta Platforms, Inc.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-004",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "The operating income for the e-commerce and cloud computing company for fiscal year 2025 was $79.975 billion.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-005",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The FANG company that reported Net Sales of approximately $101.2 billion in fiscal year 2025 is Facebook.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-006",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "The total net sales for the e-commerce and cloud computing company in fiscal year 2025 was $716,924 million.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-007",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The company reporting AWS Revenue of approximately $28.4 billion in fiscal year 2025 is Amazon.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-008",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "The operating cash flow for the year ended December 31, 2025, was $139.5 billion.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-009",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The FANG company that reported Advertising Revenue of approximately $312.0 billion in fiscal year 2025 is Meta (formerly",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-010",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "The research and development (R&D) expenses for the fiscal year 2025 were $61,087 million.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-011",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The FANG company that reported Total Revenue of approximately $350.0 billion in fiscal year 2025 is Alphabet Inc.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-012",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "In fiscal year 2025, Google Cloud revenues were $58.7 billion.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-013",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The company that reported a net income of approximately $11.0 billion in fiscal year 2025 is not explicitly named in the",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-014",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "The operating income for the consumer electronics and software company known for iPhone in fiscal year 2025 was $83.28 b",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-015",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The FANG company that reported R&D Expense of approximately $7.1 billion in fiscal year 2025 is not identified in the pr",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-016",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "The capital expenditures for the social media company for the fiscal year 2025 were $91.4 billion.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-017",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The FANG company that reported Free Cash Flow of approximately $38.2 billion in fiscal year 2025 is Alphabet Inc.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-018",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "The Operating Income for the streaming entertainment company for the fiscal year 2025 was $13,326,603,000.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-019",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The company that reported a net income of approximately $0.9 billion in fiscal year 2025 is not explicitly mentioned in ",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-020",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "The advertising revenue for the fiscal year 2025 was $35.54 billion, which represents a 22% increase compared to 2024.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-021",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The company that reported Net Sales of approximately $416.2 billion in fiscal year 2025 is Apple Inc.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-022",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "The Operating Cash Flow for the fiscal year 2025 was $139.5 billion.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-023",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The company that reported Total Revenue of approximately $201.0 billion in fiscal year 2025 is Meta.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-024",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "The R&D expense for the fiscal year 2025 was $61,087 million.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-025",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The company that reported Total Revenue of approximately $45.2 billion in fiscal year 2025 is Netflix.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-026",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "The CVSS score of the vulnerability published on 2026-04-08 is 8.8 (HIGH).",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-027",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The provided context does not mention any CVE published on 2026-01-06 with a CVSS score of 7.0. Therefore, it is not pos",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-028",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The CVE identifier for the vulnerability affecting Substance3D with a CVSS score of 7.8 that was published on 2026-03-10",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-029",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "The CVSS score of the vulnerability in Chrome published on 2026-04-28 is 8.8.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-030",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The CVE published on 2026-02-11 with a CVSS score of 7.5 affects multiple Apple products, including iOS, iPadOS, macOS, ",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-031",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The CVE identifier for the vulnerability affecting Athena with a CVSS score of 7.1 published on 2026-04-03 is CVE-2026-3",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-032",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "There is no information about a vulnerability in Chrome from Google that was published on 2026-04-01 in the provided con",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-033",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "There is no CVE from Google published on 2026-03-02 with a CVSS score of 7.3. The CVE published on that date is CVE-2026",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-034",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "There is no vulnerability affecting Android with a CVSS score of 7.5 that was published on 2026-03-09. The CVE identifie",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-035",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "There is no vulnerability in macOS from Apple that was published on 2026-04-02. The last modified date for the vulnerabi",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-036",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The CVE published by Apple on 2026-02-11 with a CVSS score of 6.5 is CVE-2026-20665, which affects the following product",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-037",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The CVE identifier for the vulnerability affecting Chrome with a CVSS score of 8.3, published on 2026-05-06, is CVE-2026",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-038",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "There is no vulnerability in Google Chrome published on 2026-01-20 in the provided context.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-039",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The provided context does not mention any CVE from Google published on 2026-01-06 with a CVSS score of 6.7. Therefore, I",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-040",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The CVE identifier for the vulnerability affecting iPadOS with a CVSS score of 5.3, published on 2026-03-25, is CVE-2026",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-041",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "The CVSS score for the vulnerability published on 2026-05-06 is 4.2.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-042",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The CVE published on 2026-03-10 with a CVSS score of 7.8 affects the Adobe Substance 3D Stager product, specifically ver",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-043",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The CVE identifier for the vulnerability affecting Keynote with a CVSS score of 5.5 published on 2026-01-28 is CVE-2025-",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-044",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "The CVSS score of the vulnerability published on 2026-04-02 is not explicitly stated in the provided context, as all vul",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-045",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "There is no CVE from Google published on 2026-03-02 with a CVSS score of 6.2. The CVE published on that date (CVE-2026-0",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-046",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The CVE identifier for the vulnerability affecting iPadOS with a CVSS score of 3.3 published on 2026-01-16 is CVE-2025-2",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-047",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "No vulnerabilities published on 2026-04-06 exist in the provided context.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-048",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The CVE published by Apple on 2026-02-11 with a CVSS score of 5.5 affects several products including iPadOS, iPhone OS, ",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-049",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The CVE identifier for the vulnerability affecting ipados with a CVSS score of 6.2 published on 2026-03-25 is CVE-2026-2",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-050",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "The CVSS score for the vulnerability published on 2026-04-08 is 8.8 (HIGH).",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-051",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "date",
+      "score": 0.0,
+      "generated": "The patent titled 'Directional voice sensing using coherent optical detection' was granted to Apple Inc. on March 28, 20",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-052",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The company that holds the patent titled 'Artificial reality system with varifocal display of artificial reality content",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-053",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "date",
+      "score": 0.0,
+      "generated": "The patent titled 'Detecting unexpected user interface behavior using physiological data' was granted to Apple Inc. on S",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-054",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The company that holds the patent titled 'End-to-end streaming keyword spotting' granted on 2025-06-17 is not specified ",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-055",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "date",
+      "score": 0.0,
+      "generated": "The patent was granted on December 22, 2020.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-056",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The company that holds the patent titled 'User interfaces for managing user interface sharing' granted on 2025-06-17 is ",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-057",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "date",
+      "score": 0.0,
+      "generated": "The patent titled 'Linear pixel shifting for a non-rectilinear pixel arrangement' was granted to Google LLC on November ",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-058",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The company that holds the patent titled 'Affinity-based graphics scheduling' granted on 2025-06-17 is not specified in ",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-059",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "date",
+      "score": 0.0,
+      "generated": "The patent titled \"Music user interface\" was granted to Apple Inc. on July 6, 2010.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-060",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The company that holds the patent titled 'Preemption techniques for memory-backed registers' granted on 2025-07-08 is no",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-061",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "date",
+      "score": 0.0,
+      "generated": "The patent titled 'Efficient neural networks via ensembles and cascades' was granted to Google LLC on March 2, 2021.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-062",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The company that holds the patent titled 'Low-dropout regulator circuit with dynamic transition between operation modes'",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-063",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "date",
+      "score": 0.0,
+      "generated": "The patent titled 'Seals for optical components' was granted to Apple Inc. on September 28, 2021.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-064",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The company holding the patent titled 'Memory-guided video object detection' granted on 2025-06-17 is not specified in t",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-065",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "date",
+      "score": 0.0,
+      "generated": "The patent titled 'Virtual assistant in a communication session' was granted to Apple Inc. on January 31, 2023.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-066",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The company that holds the patent titled 'Large-scale accelerator system energy performance optimization' granted on 202",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-067",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "date",
+      "score": 0.0,
+      "generated": "The patent titled 'Systems for high-speed computing using an optical interchange' was granted to Google LLC on October 1",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-068",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The company that holds the patent titled 'Identifying a position of a controllable device using a wearable device' is no",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-069",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "date",
+      "score": 0.0,
+      "generated": "The patent titled 'Integrating trans-inductor voltage regulator (TLVR) in vertical power delivery' was granted to Google",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-070",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The patent titled 'Methods for manipulating objects in an environment' was granted on June 17, 2025.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-071",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "date",
+      "score": 0.0,
+      "generated": "The patent titled 'Universal serial bus time synchronization' was granted to Apple Inc. on July 7, 2020.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-072",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The company holding the patent titled 'Rendering suggestion for searching entity within application in response to dete'",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-073",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "date",
+      "score": 0.0,
+      "generated": "The patent titled 'Rotating data for neural network computations' was granted to Google LLC on February 12, 2020.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-074",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The company that holds the patent titled 'Method, device, and system for generating affordances linked to a representati",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-075",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "date",
+      "score": 0.0,
+      "generated": "The patent titled 'Indicating location status' was granted to Google LLC on December 10, 2019.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-076",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The docket number for the NOTICE published by the Department of Treasury is 2023-18270.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-077",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The regulatory action is related to international trade and is likely a notification or announcement from the Internatio",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-078",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The docket number is 332-583.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-079",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The regulatory action is related to a public notice regarding a complaint that is accessible through the International T",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-080",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The docket number for the NOTICE published by the Pipeline and Hazardous Materials Safety Administration is PHMSA-2023-0",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-081",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The document represents a proposed rule change by a self-regulatory organization, which is a regulatory action that allo",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-082",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The docket number for the modified system of records notice published by the Department of Education is 1845-AB52.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-083",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The regulatory action is likely a request for public comments concerning a proposed rule or regulation by the Federal Tr",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-084",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The docket number for the NOTICE published by the United States Patent and Trademark Office is 2023-15492.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-085",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The regulatory action described is a proposed rule change by a self-regulatory organization, as indicated by the documen",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-086",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The docket number is not mentioned in the provided context.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-087",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The document represents a notification regarding cooperative research and production as per the National Cooperative Res",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-088",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The docket number for the NOTICE published by the Pipeline and Hazardous Materials Safety Administration is PHMSA-2023-0",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-089",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The regulatory action is likely a public notice related to a complaint filed with the International Trade Commission, al",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-090",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The docket number is EPA-HQ-OPPT-2022-0001.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-091",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The regulatory action is related to the processing and application procedures for special permits from the Department of",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-092",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The docket number for the modified system of records notice published by the Department of Education is 1810-NEW.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-093",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The regulatory action is a request for public comments on a modified system of records notice.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-094",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The docket number for the complaint is not provided in the given context.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-095",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The document published by the Pipeline and Hazardous Materials Safety Administration regarding special permits is a regu",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-096",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The docket number for the final rule issued by the Consumer Financial Protection Bureau is CFPB-2023-0007.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-097",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The regulatory action described is a proposed rule change by a self-regulatory organization, as documented by the Securi",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-098",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The docket number for the modified system of records notice is 2023-21909.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-099",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The regulatory action is a request for public comments.",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-DAL-100",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The docket number is EPA-HQ-OA-2023-0665.",
+      "gold": ""
+    }
+  ]
+}

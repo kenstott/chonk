@@ -181,6 +181,8 @@ def _apply_config(cfg: dict, args: argparse.Namespace) -> None:
         args.multi_step = True
     if ret.get("bm25") and not getattr(args, "bm25", False):
         args.bm25 = True
+    if ret.get("rerank_device") and not getattr(args, "rerank_device", None):
+        args.rerank_device = ret["rerank_device"]
 
     comm = ret.get("community", {})
     if comm.get("enabled") and not getattr(args, "community_context", False):
@@ -2459,7 +2461,7 @@ def cmd_run(args: argparse.Namespace) -> None:
             import os as _os
 
             from sentence_transformers import CrossEncoder
-            _rerank_device = _os.environ.get("RERANKER_DEVICE") or None
+            _rerank_device = getattr(args, "rerank_device", None) or _os.environ.get("RERANKER_DEVICE") or None
             if not _rerank_device:
                 try:
                     import torch
@@ -4601,6 +4603,9 @@ def cmd_prime_cache(args: argparse.Namespace) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def cmd_run_all(args: argparse.Namespace) -> None:
+    import subprocess as _subprocess
+    import sys as _sys
+
     config_dir = Path(args.config_dir)
     toml_files = sorted(f for f in config_dir.glob("*.toml") if not f.name.startswith("."))
     if not toml_files:
@@ -4618,6 +4623,11 @@ def cmd_run_all(args: argparse.Namespace) -> None:
             print(f"SKIP {toml_path.name}: no run_name")
             continue
 
+        crash_marker = results_dir / f".failed_{run_name}"
+        if crash_marker.exists():
+            print(f"=== SKIP {run_name} (crashed — clear marker to retry) ===")
+            continue
+
         eval_file = results_dir / f"bench_eval_{run_name}_rp.json"
         if eval_file.exists():
             try:
@@ -4632,6 +4642,14 @@ def cmd_run_all(args: argparse.Namespace) -> None:
             print(f"=== STALE {run_name}_rp (n_evaluated=0, re-running) ===")
             eval_file.unlink()
 
+        try:
+            import torch as _torch
+            if _torch.cuda.is_available():
+                _torch.cuda.empty_cache()
+                _torch.cuda.synchronize()
+        except Exception:
+            pass
+
         gen_file = results_dir / f"{run_name}.jsonl"
         if not gen_file.exists() or gen_file.stat().st_size == 0:
             if gen_file.exists():
@@ -4639,13 +4657,25 @@ def cmd_run_all(args: argparse.Namespace) -> None:
                 print(f"=== RUN {run_name} (empty output, regenerating) ===")
             else:
                 print(f"=== RUN {run_name} ===")
-            run_args = ap.parse_args([
-                "run",
+            cmd = [
+                _sys.executable, __file__, "run",
                 "--out-dir", str(out_dir),
                 "--config", str(toml_path),
                 "--run-name", run_name,
-            ] + (["--question-ids", args.question_ids] if args.question_ids else []))
-            cmd_run(run_args)
+            ] + (["--question-ids", args.question_ids] if args.question_ids else [])
+            ret = _subprocess.run(cmd)
+            if ret.returncode != 0:
+                print(f"=== CRASH {run_name} (exit {ret.returncode}) — marking failed, skipping ===")
+                crash_marker.write_text(f"exit={ret.returncode}")
+                try:
+                    import torch as _torch
+                    if _torch.cuda.is_available():
+                        _torch.cuda.empty_cache()
+                        _torch.cuda.synchronize()
+                        print("  GPU cache cleared after crash.")
+                except Exception:
+                    pass
+                continue
         else:
             print(f"=== SKIP GEN {run_name} (output exists) ===")
 
@@ -4666,7 +4696,12 @@ def cmd_run_all(args: argparse.Namespace) -> None:
             "--concurrency", "50",
             "--nan-limit", nan_limit,
         ])
-        cmd_bench_eval(eval_args)
+        try:
+            cmd_bench_eval(eval_args)
+        except Exception as _exc:
+            print(f"=== CRASH EVAL {run_name}_rp: {_exc} — marking failed, skipping ===")
+            crash_marker.write_text(str(_exc))
+            continue
 
 
 def cmd_init_config(args: argparse.Namespace) -> None:
