@@ -4,8 +4,9 @@
 # machine learning models is strictly prohibited without explicit written
 # permission from the copyright holder.
 
+from ._build import build_community
+from ._builder import CommunityIndexBuilder
 from ._index import CommunityIndex
 from ._summarizer import CommunitySummarizer
-from ._builder import CommunityIndexBuilder
 
-__all__ = ["CommunityIndex", "CommunitySummarizer", "CommunityIndexBuilder"]
+__all__ = ["CommunityIndex", "CommunitySummarizer", "CommunityIndexBuilder", "build_community"]

@@ -1,0 +1,19 @@
+extends = "../fang_base.toml"
+run_name = "fang_ner_ref_laned60_community_k30_rerank_haiku"
+
+[retrieval]
+enhanced = true
+entity_ref_expansion = true
+lane_entity_min_sim = 0.60
+top_k = 30
+
+[retrieval.community]
+enabled = true
+min_coherence = 0.5
+
+[gen]
+provider = "anthropic"
+model    = "claude-haiku-4-5-20251001"
+
+[rerank]
+enabled = true

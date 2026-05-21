@@ -1,0 +1,18 @@
+extends = "../fang_base.toml"
+run_name = "fang_vanilla_rerank_srr_haiku"
+
+[index]
+db_name = "vanilla_rag.duckdb"
+
+[retrieval]
+vanilla = true
+
+[rerank]
+enabled = true
+
+[gen]
+provider = "anthropic"
+model    = "claude-haiku-4-5-20251001"
+
+[srr]
+enabled = true

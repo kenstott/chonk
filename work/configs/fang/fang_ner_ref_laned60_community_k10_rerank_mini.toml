@@ -1,0 +1,19 @@
+extends = "../fang_base.toml"
+run_name = "fang_ner_ref_laned60_community_k10_rerank_mini"
+
+[retrieval]
+enhanced = true
+entity_ref_expansion = true
+lane_entity_min_sim = 0.60
+top_k = 10
+
+[retrieval.community]
+enabled = true
+min_coherence = 0.5
+
+[gen]
+provider = "openai"
+model    = "gpt-4o-mini-2024-07-18"
+
+[rerank]
+enabled = true

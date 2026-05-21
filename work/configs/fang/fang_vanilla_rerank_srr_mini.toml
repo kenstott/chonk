@@ -1,0 +1,14 @@
+extends = "../fang_base.toml"
+run_name = "fang_vanilla_rerank_srr_mini"
+
+[index]
+db_name = "vanilla_rag.duckdb"
+
+[retrieval]
+vanilla = true
+
+[rerank]
+enabled = true
+
+[srr]
+enabled = true

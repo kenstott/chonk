@@ -1,0 +1,26 @@
+extends = "../fang_base.toml"
+run_name = "fang_ner_ref_bc_laned60_community_k30_srr_bm25_mini"
+
+[index]
+db_name = "chonk_bc_1100_2200.duckdb"
+
+[retrieval]
+enhanced = true
+entity_ref_expansion = true
+lane_entity_min_sim = 0.60
+top_k = 30
+bm25 = true
+
+[retrieval.community]
+enabled = true
+min_coherence = 0.5
+
+[gen]
+provider = "openai"
+model    = "gpt-4o-mini-2024-07-18"
+
+[rerank]
+enabled = true
+
+[srr]
+enabled = true

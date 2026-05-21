@@ -126,18 +126,17 @@ svo             = false   # LLM-based; set gen.* when enabling
 # ── Reranker ──────────────────────────────────────────────────────────────────
 [rerank]
 enabled   = false
-provider  = "local"       # local | together | cohere
-model     = "BAAI/bge-reranker-large"
 
 # ── Retrieval ─────────────────────────────────────────────────────────────────
 [retrieval]
 top_k                   = 5
-fetch_k                 = 50
 search_mode             = "vector_first"   # vector_first | graph_first | global
 enhanced                = false
 entity_ref_expansion    = false
 cluster                 = false
 vanilla                 = false
+
+auto_domain_filter      = false
 
 [retrieval.community]
 enabled         = false
@@ -146,8 +145,7 @@ min_coherence   = 0.5
 # ── Generation ────────────────────────────────────────────────────────────────
 [gen]
 provider     = "openai"    # openai | together | anthropic
-model        = "gpt-4o-mini"
-temperature  = 0.0
+model        = "gpt-4o-mini-2024-07-18"
 
 # ── Structured Response (SR) ──────────────────────────────────────────────────
 [sr]
@@ -159,8 +157,4 @@ enabled   = false          # JSON schema (key_claims + evidence_used) + one repr
 
 # ── Evaluation ────────────────────────────────────────────────────────────────
 [eval]
-judge       = "gpt-4o-mini"
-rpm         = 8000
-batch_size  = 20
-concurrency = 50
 nan_limit   = 136

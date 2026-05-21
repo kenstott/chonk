@@ -238,6 +238,7 @@ class DocumentLoader:
         self,
         connection,
         queries: dict[str, str] | list[tuple[str, str]],
+        doc_type: str = "csv",
     ) -> list[DocumentChunk]:
         """Execute SQL queries / views against a live DB connection and load results as chunks.
 
@@ -273,7 +274,6 @@ class DocumentLoader:
                 },
             )
         """
-        from .extractors._csv import CsvExtractor
         from .transports._sql_query import SqlQueryTransport, db_provenance
 
         if isinstance(queries, dict):
@@ -282,7 +282,7 @@ class DocumentLoader:
             pairs = list(queries)
 
         transport = SqlQueryTransport(connection)
-        extractor = CsvExtractor()
+        extractor = self._find_extractor(doc_type)
         provenance = db_provenance(connection)
         all_chunks: list[DocumentChunk] = []
 

@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import re
+
 from .models import DocumentChunk
 
 # ── Plain-text header promotion ───────────────────────────────────────────────
@@ -405,6 +406,19 @@ def _split_at_list_items(text: str, max_size: int) -> list[str]:
     return pieces or [text]
 
 
+_TABLE_SEP_RE = re.compile(r'^[-:|\ ]+$')
+
+
+def _table_cells_from_text(text: str) -> list[str]:
+    """Extract cell values from pipe-table text (horizontal or vertical HTML cell-per-line format)."""
+    cells = []
+    for seg in text.replace('\n', ' ').split('|'):
+        val = ' '.join(seg.split())
+        if val and not _TABLE_SEP_RE.match(val):
+            cells.append(val)
+    return cells
+
+
 def _split_at_table_rows(text: str, max_size: int) -> list[str]:
     """Split a table block at row boundaries so each piece ≤ max_size."""
     if len(text) <= max_size:
@@ -588,13 +602,23 @@ def chunk_document(
     def _heading_only(text: str) -> bool:
         return all(not l.strip() or l.strip().startswith("#") for l in text.splitlines())
 
-    def _flush(text: str, idx: int, offset: int | None, paragraph_continuation: bool = False) -> DocumentChunk:
+    def _flush(
+        text: str,
+        idx: int,
+        offset: int | None,
+        paragraph_continuation: bool = False,
+        embedding_text: str | None = None,
+    ) -> DocumentChunk:
         lca = _lca_path(current_section_paths)
         crumb: str | None = None
         embedding: str | None = None
-        if include_breadcrumb and text:
+        base = embedding_text if embedding_text is not None else text
+        if include_breadcrumb and base:
             crumb = _build_crumb(lca) or None
-            embedding = f"{crumb}\n\n{text}" if crumb else text
+            embedding = f"{crumb}\n\n{base}" if crumb else base
+        elif embedding_text is not None:
+            last_section = lca[-1] if lca else None
+            embedding = f"{last_section}\n\n{base}" if last_section else base
         src_len = len(text.encode("utf-8")) if text else 0
         return DocumentChunk(
             document_name=name,
@@ -625,6 +649,19 @@ def chunk_document(
     ) -> None:
         nonlocal chunk_index, current_chunk, chunk_start_offset
         n = len(pieces)
+
+        # For table splits: extract header row + cells from piece[0]
+        table_header: str | None = None
+        table_headers: list[str] = []
+        if n > 1 and marker_start == "[TABLE:start]":
+            _sep_re = re.compile(r'^[\s|:\-]+$')
+            for _row in pieces[0].split("\n"):
+                if _row.strip() and not _sep_re.match(_row.strip()):
+                    table_header = _row.strip()
+                    break
+            if table_header:
+                table_headers = _table_cells_from_text(table_header)
+
         for i, piece in enumerate(pieces):
             is_last = i == n - 1
             if is_para:
@@ -637,18 +674,45 @@ def chunk_document(
                     chunk_start_offset = base_offset
                     _snapshot()
                     return
+                embedding_marked: str | None = None
             elif n > 1:
                 if i == 0:
                     marked = f"{marker_start}\n{piece}\n{marker_cont}"
                 elif i < n - 1:
-                    marked = f"{marker_cont}\n{piece}\n{marker_cont}"
+                    header_prefix = f"{table_header}\n" if table_header else ""
+                    marked = f"{marker_cont}\n{header_prefix}{piece}\n{marker_cont}"
                 else:
-                    marked = f"{marker_cont}\n{piece}\n{marker_end}"
+                    header_prefix = f"{table_header}\n" if table_header else ""
+                    marked = f"{marker_cont}\n{header_prefix}{piece}\n{marker_end}"
                 continuation = False
+                # Build enriched embedding_content: col: val | col: val per row
+                embedding_marked = None
+                if table_headers:
+                    nh = len(table_headers)
+                    # piece[0] contains the header row; pieces 1+ contain only data rows
+                    raw_cells = _table_cells_from_text(piece)
+                    cells = raw_cells[nh:] if i == 0 else raw_cells
+                    rows_enriched = []
+                    for ri in range(0, len(cells), nh):
+                        row = cells[ri : ri + nh]
+                        if len(row) == nh:
+                            rows_enriched.append(
+                                ' | '.join(f"{h.lower()}: {v}" for h, v in zip(table_headers, row))
+                            )
+                    if rows_enriched:
+                        if i == 0:
+                            em_markers = f"{marker_start}\n{{body}}\n{marker_cont}"
+                        elif i < n - 1:
+                            em_markers = f"{marker_cont}\n{{body}}\n{marker_cont}"
+                        else:
+                            em_markers = f"{marker_cont}\n{{body}}\n{marker_end}"
+                        embedding_marked = em_markers.format(body='\n'.join(rows_enriched))
             else:
                 marked = piece
                 continuation = False
-            chunks.append(_flush(marked, chunk_index, base_offset, paragraph_continuation=continuation))
+                embedding_marked = None
+            chunks.append(_flush(marked, chunk_index, base_offset, paragraph_continuation=continuation,
+                                 embedding_text=embedding_marked))
             chunk_index += 1
             _reset()
 

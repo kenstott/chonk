@@ -7,18 +7,16 @@
 
 """Tests for chonk chunking primitives."""
 
-import pytest
 
 from chonk import (
-    DocumentChunk,
     NOVEL_STRUCTURAL_LEVELS,
+    DocumentChunk,
     chunk_document,
     is_list_line,
     is_table_line,
     merge_blocks,
     promote_plain_text_headers,
 )
-
 
 # =============================================================================
 # is_table_line
@@ -258,6 +256,34 @@ class TestChunkDocument:
         assert len(table_chunks) >= 2
         markers = {m for c in table_chunks for m in ["[TABLE:start]", "[TABLE:cont]", "[TABLE:end]"] if m in c.content}
         assert "[TABLE:start]" in markers
+
+    def test_table_cont_chunks_include_header_row(self):
+        header = "| Company | Q1 | Q2 | Total |"
+        sep    = "| --- | --- | --- | --- |"
+        rows   = "\n".join(f"| Co{i} | {i} | {i*2} | {i*3} |" for i in range(40))
+        content = f"{header}\n{sep}\n{rows}"
+        chunks = chunk_document("fin.md", content, min_chunk_size=50, max_chunk_size=200,
+                                include_breadcrumb=False)
+        cont_chunks = [c for c in chunks if "[TABLE:cont]" in c.content and not c.content.startswith("[TABLE:start]")]
+        assert len(cont_chunks) >= 1
+        for c in cont_chunks:
+            assert header in c.content, f"Header row missing from cont chunk: {c.content[:120]}"
+
+    def test_table_row_enrichment_in_embedding_content(self):
+        header = "| Company | Q1 | Q2 | Total |"
+        sep    = "| --- | --- | --- | --- |"
+        rows   = "\n".join(f"| Co{i} | {i} | {i*2} | {i*3} |" for i in range(40))
+        content = f"{header}\n{sep}\n{rows}"
+        chunks = chunk_document("fin.md", content, min_chunk_size=50, max_chunk_size=200,
+                                include_breadcrumb=False)
+        table_chunks = [c for c in chunks if "[TABLE:" in c.content]
+        assert len(table_chunks) >= 2
+        for c in table_chunks:
+            assert c.embedding_content is not None, "embedding_content should be set for table chunks"
+            assert "company:" in c.embedding_content.lower(), f"enriched rows missing from embedding_content: {c.embedding_content[:120]}"
+            assert "total:" in c.embedding_content.lower()
+            # content stays as original pipe format
+            assert "|" in c.content
 
     def test_list_continuation_markers(self):
         items = "\n".join(f"- Item {i}: some description text here" for i in range(50))

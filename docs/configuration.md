@@ -634,6 +634,236 @@ After adding or removing sources, secondary indexes for the affected namespace a
 
 ---
 
+## Recommended index configuration
+
+Derived from the ECDR-Bench leader (`fang_ner_ref_bc_laned60_community_k30_srr_bm25_mini`, score 0.516).
+
+### Step 1 — Build
+
+```python
+import chonk
+
+index = chonk.build("my_config.yaml")
+```
+
+That's it. One call runs: ingest → embed → FTS → NER → community. Each phase is skipped if already built (idempotent). SVO graph is opt-in via config.
+
+Config file (`my_config.yaml`):
+
+```yaml
+store:
+  path: my.duckdb
+  embedding_dim: 1024
+
+loader:
+  min_chunk_size: 1100
+  max_chunk_size: 2200
+  enrich_context: true          # breadcrumb heading prefix in each chunk embedding
+
+embed:
+  model: BAAI/bge-large-en-v1.5
+  batch_size: 256
+
+index:
+  ner: true                     # default true
+  community: true               # default true
+  svo: false                    # default false — set true to enable graph_first (calls LLM API)
+  svo_model: gpt-4o-mini        # used when svo: true
+
+search:
+  k: 30
+  entity_ref_expansion: true
+  lane_entity_min_sim: 0.60
+
+domain_dictionary:                   # optional — descriptions for domain names
+  sales-analytics: "Sales and customer analytics data"
+  sales-analytics/north-america: "North America regional sales"
+
+sources:
+  - name: my_docs
+    type: glob                       # glob | json_array | sql
+    path: ./docs
+    pattern: "*.md"
+    namespace: global                # optional
+    domain: my_docs                  # optional — defaults to source name
+```
+
+Each source is registered as a domain (name defaults to the source `name`). `domain_dictionary` supplies descriptions; without it, domains are still registered — just without descriptions.
+
+### Step 2 — Search
+
+```python
+results = index.search("What are the reporting obligations?")
+```
+
+Filter by namespace or domain name at call time:
+
+```python
+results = index.search("Q3 revenue?", domains=["sales-analytics"])
+results = index.search("policy update?", namespaces=["global"])
+results = index.search("north america trends?",
+                       namespaces=["global"], domains=["sales-analytics/north-america"])
+```
+
+**Automated routing** — chonk automatically routes each query to the relevant namespaces and domains via an extra LLM call. This is on by default when `openai` is installed and `OPENAI_API_KEY` is set; otherwise it degrades to unscoped search with no error.
+
+The routing model defaults to `gpt-4o-mini`. Override it with `index.routing_model` in the config, or set the instance attributes directly to swap in any LLM:
+
+```python
+index = chonk.build("config.yaml")
+
+# Replace the default routing fn (applies to both namespace and domain routing)
+def my_fn(prompt: str) -> str:
+    ...  # call any LLM; return a string containing a JSON array
+
+index.namespace_filter_llm_fn = my_fn
+index.domain_filter_llm_fn = my_fn
+
+# Disable routing entirely — search runs unscoped
+index.namespace_filter_llm_fn = None
+index.domain_filter_llm_fn = None
+
+# Disable one dimension only
+index.namespace_filter_llm_fn = None   # explicit namespaces only, domain routing still fires
+```
+
+The routing fn receives a fully-formed prompt and must return a string containing a JSON array. The default prompts look like this (shown as examples — replace the fn entirely if you want a different format or style):
+
+**Namespace routing — example prompt:**
+```
+You are a retrieval routing assistant. Below are the available knowledge namespaces
+and their descriptions. Select the namespaces most likely to contain evidence for
+the query. Return ONLY a JSON array of namespace IDs, e.g. ["cyber", "financial"].
+Include all namespaces that may be relevant; omit those that are clearly unrelated.
+
+Namespaces:
+- financial: SEC filings and earnings reports
+- cyber: CVE advisories and threat intelligence
+
+Query: What were Amazon's Q3 earnings?
+
+Return ONLY a JSON array of namespace IDs.
+```
+
+**Domain routing — example prompt:**
+```
+You are a retrieval routing assistant. Below are the available knowledge domains
+and their descriptions. Select the domains most likely to contain evidence for
+the query. Return ONLY a JSON array of domain names exactly as listed,
+e.g. ["sales/north-america", "finance/q1"].
+Include all domains that may be relevant; omit those that are clearly unrelated.
+
+Domains:
+- sales/north-america (global): North America regional sales data
+- sales/emea (global): EMEA regional sales data
+- finance/q3 (global): Q3 financial reports
+
+Query: What were north america sales in Q3?
+
+Return ONLY a JSON array of domain names exactly as listed.
+```
+
+Routing is skipped (search runs unscoped for that dimension) when fewer than two namespaces/domains have descriptions registered, or when the explicit `namespaces=` / `domains=` argument is passed to `search()`.
+
+Per-call overrides work the same way — pass `namespace_filter_llm_fn=` or `domain_filter_llm_fn=` directly to `search()` to override the instance default for a single call. Passing `namespaces=` or `domains=` explicitly bypasses the routing fn entirely for that dimension regardless of the instance attribute.
+
+Inspect registered domains:
+
+```python
+index.domains()           # {"global": ["sales-analytics", "legal", ...], ...}
+index.domains("global")   # {"global": ["sales-analytics", ...]}
+```
+
+### Step 3 — Live mutations
+
+`Index` supports real-time mutations without restarting or rebuilding the whole store. All methods update the in-memory domain map immediately; secondary indexes (NER, community, SVO) are rebuilt asynchronously when `rebuild=True`.
+
+#### Namespaces
+
+```python
+index.add_namespace("user:alice", description="Alice's workspace")
+# No-op if already registered.
+
+index.remove_namespace("user:alice")
+# Deletes the namespace and all its domains, chunks, chunk_entities, and svo_triples rows.
+```
+
+#### Domains
+
+```python
+domain_id = index.add_domain("user:alice", "engineering/backend",
+                              description="Backend services docs")
+# Returns the stable domain_id. No-op if already registered.
+
+n = index.remove_domain("user:alice", "engineering/backend")
+# Returns count of chunks deleted. Cascades to chunk_entities and svo_triples.
+```
+
+#### Sources
+
+```python
+# Ingest a new source and trigger async secondary-index rebuild.
+handle = index.add_source(
+    {
+        "type": "glob",
+        "path": "./new-docs",
+        "pattern": "*.md",
+        "namespace": "user:alice",   # optional — defaults to "global"
+        "domain": "engineering",     # optional — defaults to source name / type
+        "enrich_context": True,      # optional — overrides loader default
+    },
+    rebuild=True,          # default; set False to skip secondary-index rebuild
+    on_progress=None,      # (phase, done, total) -> None
+    on_complete=None,      # (total_chunks) -> None
+    on_error=None,         # (phase, exc) -> None
+)
+handle.join()   # block until NER + community rebuild finish
+
+# Remove a source (by namespace + domain name).
+handle = index.remove_source(
+    "user:alice", "engineering",
+    rebuild=True,
+)
+if handle:
+    handle.join()
+```
+
+`add_source` accepts the same source dict schema as a `sources:` entry in the YAML config (`type`, `path`/`connection`/`array_field`, `pattern`, `namespace`, `domain`, `enrich_context`). Namespace and domain are registered automatically if they do not exist.
+
+`add_source` returns `None` when the source produces no chunks or when `rebuild=False`.  
+`remove_source` returns `None` when `rebuild=False` or the namespace has no remaining domains after deletion.
+
+#### Explicit rebuild
+
+```python
+# Rebuild secondary indexes for one namespace (async by default).
+handles = index.rebuild("user:alice")
+for h in handles:
+    h.join()
+
+# Rebuild all namespaces, blocking.
+index.rebuild(async_=False)
+
+# Per-phase callbacks work the same as add_source / remove_source.
+index.rebuild("global", on_progress=lambda phase, done, total: print(phase, done, total))
+```
+
+`rebuild` returns a list of `IndexHandle` objects — one per namespace rebuilt. Call `.join()` on each to wait for completion. Rebuild phases: NER → community detection (SVO is skipped unless originally configured).
+
+Config `search:` keys set the defaults; call-site arguments override them:
+
+```python
+results = index.search("Who supplies components to Acme Corp?", k=10, mode="graph_first")
+```
+
+`mode="graph_first"` requires `index.svo: true` in the config. All other modes work with just the defaults.
+| `query_text` | pass the question | Required when `query_embedding` is omitted; activates BM25 hybrid scoring |
+| `mode` | `vector_first` | |
+
+Apply a local reranker over the results before passing to the generator.
+
+---
+
 ## Retrieval modes
 
 Pass `mode=` to `EnhancedSearch.search()`.
@@ -942,19 +1172,26 @@ with Store("my.duckdb", embedding_dim=1024, read_only=True) as store:
 
 All `EnhancedSearch` constructor parameters and their defaults are listed in the [key retrieval parameters](#key-retrieval-parameters) table above.
 
-`graph_first` mode additionally requires:
+`graph_first` requires `build-svo` to have been run. Everything else is auto-loaded.
+
+**Index-time prerequisite** (run once, after `build-ner`):
+
+```bash
+chonk build-svo --db my.duckdb --namespace global \
+    --model gpt-4o-mini \
+    --batch-size 32
+```
+
+**Query-time** — same `EnhancedSearch` constructor as all other modes:
 
 ```python
-from chonk.graph import RelationshipIndex
-
-# At index time, after build-svo:
-rel_index = RelationshipIndex.load_from_db(duckdb_connection)
-
-search = EnhancedSearch(
-    store,
-    entity_index=entity_index,
-    relationship_index=rel_index,
-    query_ner_fn=query_ner_fn,
-)
-results = search.search(query_vec, k=10, query_text="...", mode="graph_first")
+with Store("my.duckdb", read_only=True) as store:
+    search = EnhancedSearch(store, embed_fn=embed_fn)
+    results = search.search(
+        k=10,
+        query_text="Who supplies components to Acme Corp?",
+        mode="graph_first",
+    )
 ```
+
+`EnhancedSearch` auto-loads `EntityIndex`, `RelationshipIndex`, and `CommunityIndex` from the store's DuckDB on construction — no manual wiring needed. `graph_first` falls back to `vector_first` silently if `build-svo` has not been run.

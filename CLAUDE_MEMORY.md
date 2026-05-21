@@ -39,6 +39,12 @@ PY=/root/miniforge/envs/chonk/bin/python bash work/run_full_all.sh
 # detach: Ctrl-b d
 ```
 
+## HARE-Bench Run Rules
+- TOML config is the source of truth for every run — no CLI-only runs
+- Leader: `fang_ner_ref_bc_laned60_community_k30_srr_bm25_mini` (TOML at `work/configs/fang/`)
+- To compare ADF vs leader: read typed_scores JSON files in `work/fang2026/results/`
+- Before any comparison, verify the results came from a TOML-driven run (not CLI-only)
+
 ## Workflow Rules
 - All evals use JR (judge reprompt) — `_rp` suffix is the canonical score, plain evals are unreliable
 - After every GPU sync or manifest change: `python work/update_runs_csv.py` (rsyncs CSV to GPU automatically)
@@ -50,6 +56,22 @@ PY=/root/miniforge/envs/chonk/bin/python bash work/run_full_all.sh
 - **Phase 2** (in progress): gpt-4o on best config (laned60+community+k30) + vanilla — awaiting eval
 - **Phase 3** (conditional on Phase 2): gpt-4o full grid+funnel if model effect confirmed
 - **Phase 4** (conditional on Phase 3): judge isolation (gpt-4o judge vs gpt-4o-mini judge)
+
+## HARE-Bench (FANG 500Q) Leaderboard
+Source: `work/fang2026/results/*_typed_scores.json` (no CSV; read directly)
+Current best scores (full 500Q, as of 2026-05-19):
+
+| Score | Run |
+|-------|-----|
+| 0.5303 | `fang_ner_ref_bc_laned60_community_k30_srr_bm25_mini` |
+| 0.4178 | `fang_ner_ref_bc_laned60_community_k30_srr_mini` |
+| 0.4084 | `fang_ner_ref_laned60_community_k30_srr_mini` |
+| 0.4010 | `fang_ner_ref_cluster_community_k10_srr_mini` |
+| 0.3892 | `fang_ner_ref_laned60_community_k30_rerank_srr_mini` (leader config for ADF) |
+
+**ADF smoke (100Q):** 0.5022 — exceeds non-BC leader on same metric.
+
+To get the current leader before a comparison: sort `work/fang2026/results/*_typed_scores.json` by `overall`, filter n=500 runs.
 
 ## Key Findings to Date
 - Rerank is the dominant feature; full NER+community pipeline adds ~0.002 over rerank-alone on full corpus

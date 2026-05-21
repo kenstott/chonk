@@ -55,6 +55,16 @@ class _MarkdownConverter(HTMLParser):
         self._href: str | None = None
         self._link_text: list[str] = []
         self._in_link = False
+        self._in_cell = False
+        self._cell_buf: list[str] = []
+        self._current_row_cells: list[str] = []
+        self._last_row_col_count: int = 0
+
+    def _append(self, text: str) -> None:
+        if self._in_cell:
+            self._cell_buf.append(text)
+        else:
+            self._output.append(text)
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]):
         tag = tag.lower()
@@ -62,9 +72,13 @@ class _MarkdownConverter(HTMLParser):
         if tag in ("h1", "h2", "h3", "h4", "h5", "h6"):
             self._output.append("\n\n")
         elif tag == "p":
-            self._output.append("\n\n")
+            if not self._in_cell:
+                self._output.append("\n\n")
         elif tag == "br":
-            self._output.append("\n")
+            if self._in_cell:
+                self._cell_buf.append(" ")
+            else:
+                self._output.append("\n")
         elif tag == "pre":
             self._in_pre = True
             self._output.append("\n\n```\n")
@@ -81,18 +95,19 @@ class _MarkdownConverter(HTMLParser):
             else:
                 self._output.append(f"\n{indent}- ")
         elif tag in ("strong", "b"):
-            self._output.append("**")
+            self._append("**")
         elif tag in ("em", "i"):
-            self._output.append("*")
+            self._append("*")
         elif tag == "a":
             attr_dict = dict(attrs)
             self._href = attr_dict.get("href")
             self._in_link = True
             self._link_text = []
         elif tag == "tr":
-            self._output.append("\n|")
+            self._current_row_cells = []
         elif tag in ("td", "th"):
-            self._output.append(" ")
+            self._in_cell = True
+            self._cell_buf = []
 
     def handle_endtag(self, tag: str):
         tag = tag.lower()
@@ -107,7 +122,8 @@ class _MarkdownConverter(HTMLParser):
             text = "".join(reversed(text_parts)).strip()
             self._output.append(f"{prefix}{text}\n\n")
         elif tag == "p":
-            self._output.append("\n")
+            if not self._in_cell:
+                self._output.append("\n")
         elif tag == "pre":
             self._in_pre = False
             self._output.append("\n```\n\n")
@@ -122,28 +138,41 @@ class _MarkdownConverter(HTMLParser):
                 self._ol_counters.pop()
             self._output.append("\n")
         elif tag in ("strong", "b"):
-            self._output.append("**")
+            self._append("**")
         elif tag in ("em", "i"):
-            self._output.append("*")
+            self._append("*")
         elif tag == "a":
             link_text = "".join(self._link_text).strip()
             if self._href and link_text:
-                self._output.append(f"[{link_text}]({self._href})")
+                formatted = f"[{link_text}]({self._href})"
             else:
-                self._output.append(link_text)
+                formatted = link_text
+            self._append(formatted)
             self._in_link = False
             self._href = None
             self._link_text = []
         elif tag in ("td", "th"):
-            self._output.append(" |")
+            cell_text = " ".join("".join(self._cell_buf).split())
+            self._current_row_cells.append(cell_text)
+            self._cell_buf = []
+            self._in_cell = False
+        elif tag == "tr":
+            if self._current_row_cells:
+                row = "| " + " | ".join(self._current_row_cells) + " |"
+                self._output.append(f"\n{row}")
+                self._last_row_col_count = len(self._current_row_cells)
         elif tag == "thead":
-            self._output.append("\n|---|")
+            if self._last_row_col_count:
+                sep = "| " + " | ".join(["---"] * self._last_row_col_count) + " |"
+                self._output.append(f"\n{sep}")
 
     def handle_data(self, data: str):
         if self._in_link:
             self._link_text.append(data)
             return
-        self._output.append(data)
+        if not self._in_pre and "\n" in data and not data.strip():
+            return
+        self._append(data)
 
     def get_markdown(self) -> str:
         text = "".join(self._output)

@@ -17,7 +17,7 @@ from ._spacy_labels import SpacyLabel
 
 _SPACY_MODEL = "en_core_web_sm"
 _NUMERIC_TYPES = {
-    SpacyLabel.CARDINAL, SpacyLabel.ORDINAL, SpacyLabel.MONEY,
+    SpacyLabel.ORDINAL, SpacyLabel.MONEY,
     SpacyLabel.PERCENT, SpacyLabel.QUANTITY,
 }
 _ID_SUFFIXES = ("_identifier", "_reference", "_number", "_num", "_code", "_key", "_id", "_ref", "_no")

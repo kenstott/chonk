@@ -1,0 +1,5 @@
+extends = "fang_ner_ref_laned60_community_k50_rerank_srr_mini.toml"
+run_name = "fang_ner_ref_laned60_community_k50_rerank_srr_mini_adf"
+
+[retrieval]
+auto_domain_filter = true

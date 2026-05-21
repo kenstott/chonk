@@ -18,7 +18,7 @@ from .chunking import (
     promote_plain_text_headers,
 )
 from .cluster import ClusterMap, CooccurrenceMatrix, cluster_entities
-from .community import CommunityIndex, CommunityIndexBuilder, CommunitySummarizer
+from .community import CommunityIndex, CommunityIndexBuilder, CommunitySummarizer, build_community
 from .context import enrich_chunk, enrich_chunks
 from .generation import Answer, AnswerContext, AnswerGenerator, PromptBuilder
 from .graph import (
@@ -38,6 +38,8 @@ from .graph import (
     SVOTriple,
 )
 from .indexer import Indexer, IndexHandle, get_indexer, release_indexer
+from .ingest import Index, build
+from .lifecycle import NamespaceRefresher, build_namespace_async
 from .loader import DocumentLoader
 from .models import (
     ClusterRecord,
@@ -114,6 +116,10 @@ __all__ = [
     "IndexHandle",
     "get_indexer",
     "release_indexer",
+    "build",
+    "Index",
+    "build_namespace_async",
+    "NamespaceRefresher",
     # Transports & Crawlers
     "Transport",
     "FetchResult",
@@ -188,6 +194,7 @@ __all__ = [
     "CommunityIndex",
     "CommunitySummarizer",
     "CommunityIndexBuilder",
+    "build_community",
     # Versioning
     "VersionedRef",
     # Storage backends

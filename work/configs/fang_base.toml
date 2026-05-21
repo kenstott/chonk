@@ -1,0 +1,7 @@
+extends = "base.toml"
+
+[index]
+db_name = "chonk_nobc_1100_2200.duckdb"
+
+[eval]
+nan_limit = 5

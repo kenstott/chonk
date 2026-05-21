@@ -20,6 +20,7 @@ from ._fhir import FhirRenderer
 from ._html import HtmlExtractor
 from ._java import JavaExtractor
 from ._json import JsonExtractor
+from ._lookup_table import LookupTableExtractor
 from ._markdown import MarkdownExtractor
 from ._mime import detect_type_from_source, is_binary_type, normalize_type
 from ._nist import NistRenderer
@@ -62,6 +63,7 @@ def _build_registry() -> list[Extractor]:
         YamlExtractor(),
         MarkdownExtractor(),
         CsvExtractor(),
+        LookupTableExtractor(),
         ParquetExtractor(),
         OdfExtractor(),
         EmailExtractor(),
@@ -114,6 +116,7 @@ __all__ = [
     "YamlExtractor",
     "MarkdownExtractor",
     "CsvExtractor",
+    "LookupTableExtractor",
     "ParquetExtractor",
     "OdfExtractor",
     "EmailExtractor",

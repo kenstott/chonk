@@ -33,7 +33,7 @@ if os.path.exists(_env_path):
 from pathlib import Path
 
 # ── Constants ──────────────────────────────────────────────────────────────────
-PY = "/root/miniforge/envs/chonk/bin/python"
+PY = os.environ.get("CHONK_PYTHON", "/root/miniforge/envs/chonk/bin/python")
 REPO = Path(__file__).parent.parent  # repo root
 
 GRB_OUT = str(REPO / "work")
@@ -42,7 +42,7 @@ GRB_CONFIGS = REPO / "work/configs/runs"
 
 FANG_OUT = str(REPO / "work/fang2026")
 FANG_QIDs = str(REPO / "work/fang2026/data/fang2026_question_ids.json")
-FANG_DB = "chonk_nobc_1100_2200.duckdb"
+FANG_DB = "chonk_nobc_1100_2200_gleif.duckdb"
 FANG_BC_DB = "chonk_bc_1100_2200.duckdb"
 FANG_VANILLA_DB = "vanilla_rag.duckdb"
 
@@ -95,11 +95,11 @@ class Job:
         return Path(self.out_dir) / "results" / f"{self.name}.jsonl"
 
     @property
-    def eval_file(self) -> Path:
-        return Path(self.out_dir) / "results" / f"bench_eval_{self.name}_rp.json"
+    def scores_file(self) -> Path:
+        return Path(self.out_dir) / "results" / f"{self.name}_typed_scores.json"
 
     def is_done(self) -> bool:
-        return self.eval_file.exists()
+        return self.scores_file.exists()
 
     def gen_done(self) -> bool:
         return self.gen_file.exists()
@@ -210,6 +210,39 @@ LANED60_K30 = [
     "--top-k",
     "30",
 ]
+LANED60_K50 = [
+    "--enhanced",
+    "--entity-ref-expansion",
+    "--lane-entity-min-sim",
+    "0.60",
+    "--community-context",
+    "--community-min-coherence",
+    "0.5",
+    "--top-k",
+    "50",
+]
+LANED50_K50 = [
+    "--enhanced",
+    "--entity-ref-expansion",
+    "--lane-entity-min-sim",
+    "0.50",
+    "--community-context",
+    "--community-min-coherence",
+    "0.5",
+    "--top-k",
+    "50",
+]
+LANED45_K50 = [
+    "--enhanced",
+    "--entity-ref-expansion",
+    "--lane-entity-min-sim",
+    "0.45",
+    "--community-context",
+    "--community-min-coherence",
+    "0.5",
+    "--top-k",
+    "50",
+]
 CLUSTER = [
     "--enhanced",
     "--entity-ref-expansion",
@@ -250,20 +283,6 @@ def build_fang_jobs() -> list[Job]:
             db_name=FANG_VANILLA_DB,
         ),
         _fang(
-            "fang_ner_ref_laned60_community_k10_mini",
-            ["--rerank"] + LANED60 + db + MINI,
-            rerank=True,
-            provider="openai",
-            db_name=FANG_DB,
-        ),
-        _fang(
-            "fang_ner_ref_laned60_community_k10_srr_mini",
-            ["--rerank", "--srr"] + LANED60 + db + MINI,
-            rerank=True,
-            provider="openai",
-            db_name=FANG_DB,
-        ),
-        _fang(
             "fang_ner_ref_cluster_community_k10_mini",
             ["--rerank"] + CLUSTER + db + MINI,
             rerank=True,
@@ -285,14 +304,6 @@ def build_fang_jobs() -> list[Job]:
             db_name=FANG_VANILLA_DB,
             depends_on=gf_deps,
         ),
-        _fang(
-            "fang_ner_ref_graph_first_k10_srr_mini",
-            GF + ["--srr"] + vdb + MINI,
-            rerank=False,
-            provider="openai",
-            db_name=FANG_VANILLA_DB,
-            depends_on=gf_deps,
-        ),
         # ── claude-haiku-4-5 ─────────────────────────────────────────────────
         _fang(
             "fang_vanilla_rerank_haiku",
@@ -307,20 +318,6 @@ def build_fang_jobs() -> list[Job]:
             rerank=True,
             provider="anthropic",
             db_name=FANG_VANILLA_DB,
-        ),
-        _fang(
-            "fang_ner_ref_laned60_community_k10_haiku",
-            ["--rerank"] + LANED60 + db + HAIKU,
-            rerank=True,
-            provider="anthropic",
-            db_name=FANG_DB,
-        ),
-        _fang(
-            "fang_ner_ref_laned60_community_k10_srr_haiku",
-            ["--rerank", "--srr"] + LANED60 + db + HAIKU,
-            rerank=True,
-            provider="anthropic",
-            db_name=FANG_DB,
         ),
         _fang(
             "fang_ner_ref_cluster_community_k10_haiku",
@@ -344,41 +341,77 @@ def build_fang_jobs() -> list[Job]:
             db_name=FANG_VANILLA_DB,
             depends_on=gf_deps,
         ),
+        # ── laned60 k30 ──────────────────────────────────────────────────────
         _fang(
-            "fang_ner_ref_graph_first_k10_srr_haiku",
-            GF + ["--srr"] + vdb + HAIKU,
-            rerank=False,
-            provider="anthropic",
-            db_name=FANG_VANILLA_DB,
-            depends_on=gf_deps,
-        ),
-        # ── laned60 k30 (matches GRB top config) ─────────────────────────────
-        _fang(
-            "fang_ner_ref_laned60_community_k30_mini",
+            "fang_ner_ref_laned60_community_k30_rerank_mini",
             ["--rerank"] + LANED60_K30 + db + MINI,
             rerank=True,
             provider="openai",
             db_name=FANG_DB,
         ),
         _fang(
-            "fang_ner_ref_laned60_community_k30_srr_mini",
+            "fang_ner_ref_laned60_community_k30_rerank_srr_mini",
             ["--rerank", "--srr"] + LANED60_K30 + db + MINI,
             rerank=True,
             provider="openai",
             db_name=FANG_DB,
         ),
         _fang(
-            "fang_ner_ref_laned60_community_k30_haiku",
+            "fang_ner_ref_laned60_community_k30_srr_mini",
+            ["--srr"] + LANED60_K30 + db + MINI,
+            rerank=False,
+            provider="openai",
+            db_name=FANG_DB,
+        ),
+        _fang(
+            "fang_ner_ref_laned60_community_k30_rerank_haiku",
             ["--rerank"] + LANED60_K30 + db + HAIKU,
             rerank=True,
             provider="anthropic",
             db_name=FANG_DB,
         ),
         _fang(
-            "fang_ner_ref_laned60_community_k30_srr_haiku",
+            "fang_ner_ref_laned60_community_k30_rerank_srr_haiku",
             ["--rerank", "--srr"] + LANED60_K30 + db + HAIKU,
             rerank=True,
             provider="anthropic",
+            db_name=FANG_DB,
+        ),
+        # ── sonnet + OSS (top config, model comparison) ──────────────────────
+        _fang(
+            "fang_ner_ref_laned60_community_k30_rerank_srr_sonnet",
+            ["--rerank", "--srr"] + LANED60_K30 + db + ["--gen-provider", "anthropic", "--gen-model", "claude-sonnet-4-6"],
+            rerank=True,
+            provider="anthropic",
+            db_name=FANG_DB,
+        ),
+        _fang(
+            "fang_ner_ref_laned60_community_k30_rerank_srr_gptoss120b",
+            ["--rerank", "--srr"] + LANED60_K30 + db + ["--gen-provider", "together", "--gen-model", "openai/gpt-oss-120b"],
+            rerank=True,
+            provider="together",
+            db_name=FANG_DB,
+        ),
+        # ── laned k50 grid (cross-domain threshold sweep, mini only) ─────────
+        _fang(
+            "fang_ner_ref_laned60_community_k50_rerank_srr_mini",
+            ["--rerank", "--srr"] + LANED60_K50 + db + MINI,
+            rerank=True,
+            provider="openai",
+            db_name=FANG_DB,
+        ),
+        _fang(
+            "fang_ner_ref_laned50_community_k50_rerank_srr_mini",
+            ["--rerank", "--srr"] + LANED50_K50 + db + MINI,
+            rerank=True,
+            provider="openai",
+            db_name=FANG_DB,
+        ),
+        _fang(
+            "fang_ner_ref_laned45_community_k50_rerank_srr_mini",
+            ["--rerank", "--srr"] + LANED45_K50 + db + MINI,
+            rerank=True,
+            provider="openai",
             db_name=FANG_DB,
         ),
         # ── BC laned60 k30 (BC index required) ───────────────────────────────
@@ -393,6 +426,14 @@ def build_fang_jobs() -> list[Job]:
         _fang(
             "fang_ner_ref_bc_laned60_community_k30_srr_mini",
             ["--rerank", "--srr"] + LANED60_K30 + bcdb + MINI,
+            rerank=True,
+            provider="openai",
+            db_name=FANG_BC_DB,
+            depends_on=bc_deps,
+        ),
+        _fang(
+            "fang_ner_ref_bc_laned60_community_k30_srr_bm25_mini",
+            ["--rerank", "--srr", "--bm25"] + LANED60_K30 + bcdb + MINI,
             rerank=True,
             provider="openai",
             db_name=FANG_BC_DB,
@@ -496,23 +537,22 @@ async def run_job(
         log(f"SKIP EVAL {job.name} — no gen output")
         return False
 
-    # ── Eval phase: gen semaphores released; only hold eval_sem ──────────────
-    base_eval = [PY, "demo/graphrag_bench.py", "eval", "--out-dir", job.out_dir]
-    rp_src = job.gen_file
-    rp_dst = Path(job.out_dir) / "results" / f"{job.name}_rp.jsonl"
+    # ── Score phase: typed scorer replaces LLM judge ─────────────────────────
+    schemas = str(Path(job.out_dir) / "data" / "fang2026_gold_schemas.jsonl")
+    score_cmd = [
+        PY, "work/score_typed.py",
+        "--schemas", schemas,
+        "--results", str(job.gen_file),
+        "--out", str(job.scores_file),
+        "--embed-model", "text-embedding-3-small",
+    ]
     if dry_run:
-        log(f"DRY-RUN COPY {rp_src.name} → {rp_dst.name}")
-    elif rp_src.exists() and not rp_dst.exists():
-        shutil.copy(str(rp_src), str(rp_dst))
-
-    eval_cmd = base_eval + ["--run-name", f"{job.name}_rp"] + job.eval_flags
-    if dry_run:
-        log(f"DRY-RUN EVAL {job.name}_rp: {' '.join(eval_cmd)}")
+        log(f"DRY-RUN SCORE {job.name}: {' '.join(score_cmd)}")
     else:
         async with eval_sem:
-            rc = await run_cmd(eval_cmd, f"EVAL {job.name}_rp")
+            rc = await run_cmd(score_cmd, f"SCORE {job.name}")
         if rc != 0:
-            log(f"ERROR EVAL {job.name}_rp")
+            log(f"ERROR SCORE {job.name}")
             return False
 
     completed.add(job.name)

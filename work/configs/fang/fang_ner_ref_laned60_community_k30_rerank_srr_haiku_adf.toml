@@ -1,0 +1,5 @@
+extends = "fang_ner_ref_laned60_community_k30_rerank_srr_haiku.toml"
+run_name = "fang_ner_ref_laned60_community_k30_rerank_srr_haiku_adf"
+
+[retrieval]
+auto_domain_filter = true

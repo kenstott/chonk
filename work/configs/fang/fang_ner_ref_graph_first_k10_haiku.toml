@@ -1,0 +1,15 @@
+extends = "../fang_base.toml"
+run_name = "fang_ner_ref_graph_first_k10_haiku"
+
+[index]
+db_name = "vanilla_rag.duckdb"
+
+[retrieval]
+enhanced = true
+entity_ref_expansion = true
+search_mode = "graph_first"
+top_k = 10
+
+[gen]
+provider = "anthropic"
+model    = "claude-haiku-4-5-20251001"

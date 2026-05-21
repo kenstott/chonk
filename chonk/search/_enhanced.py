@@ -34,11 +34,56 @@ from ..models import DocumentChunk, ScoredChunk
 
 if TYPE_CHECKING:
     from ..cluster._map import ClusterMap
+    from ..community._index import CommunityIndex
+    from ..generation._answer import Answer
     from ..graph._index import RelationshipIndex
     from ..ner._index import EntityIndex
     from ..storage._store import Store
 
 _log = logging.getLogger(__name__)
+
+
+def _load_entity_index_from_store(conn) -> EntityIndex | None:
+    try:
+        count = conn.execute("SELECT COUNT(*) FROM chunk_entities").fetchone()[0]
+        if count == 0:
+            return None
+        from ..ner._index import EntityIndex as _EI
+        return _EI.load_from_db(conn)
+    except Exception:
+        return None
+
+
+def _load_relationship_index_from_store(conn) -> RelationshipIndex | None:
+    try:
+        count = conn.execute("SELECT COUNT(*) FROM svo_triples").fetchone()[0]
+        if count == 0:
+            return None
+        from ..graph._index import RelationshipIndex as _RI
+        return _RI.load_from_db(conn)
+    except Exception:
+        return None
+
+
+def _load_community_index_from_store(store) -> CommunityIndex | None:
+    """Auto-load CommunityIndex from the store's DuckDB if community tables exist."""
+    try:
+        db_path = store._db._db_path
+        if db_path == ":memory:":
+            return None
+        from ..community._index import CommunityIndex as _CI
+        conn = store.vector._conn
+        tables = {r[0] for r in conn.execute(
+            "SELECT table_name FROM information_schema.tables WHERE table_name IN ('chunk_communities', 'communities')"
+        ).fetchall()}
+        if "chunk_communities" not in tables or "communities" not in tables:
+            return None
+        count = conn.execute("SELECT COUNT(*) FROM chunk_communities").fetchone()[0]
+        if count == 0:
+            return None
+        return _CI.from_db(db_path)
+    except Exception:
+        return None
 
 
 def _tally_provenance(results: list[ScoredChunk]) -> dict[str, int]:
@@ -101,6 +146,20 @@ class EnhancedSearch:
         structural_expansion: Enable next/prev/parent expansion (default True).
         entity_expansion: Enable entity adjacency expansion (default True).
         cluster_expansion: Enable cluster adjacency expansion (default True).
+        redaction_filter: Optional ``(Answer) -> Answer`` applied after generation in
+            ``ask()``. Use to sanitize generated answer text before it leaves the
+            perimeter. Not applied when ``search()`` is called directly.
+        chunk_filter: Optional ``(list[ScoredChunk]) -> list[ScoredChunk]`` applied at
+            the end of every ``search()`` call. Use to redact or drop sensitive chunks
+            before they are returned to the caller. **Not applied** when ``search()``
+            is called internally by ``ask()`` — use ``redaction_filter`` for that path.
+
+            Example — drop chunks from a restricted source::
+
+                def drop_restricted(chunks):
+                    return [c for c in chunks if "restricted" not in c.chunk.source]
+
+                search = EnhancedSearch(store, chunk_filter=drop_restricted)
     """
 
     # Source priority constants (from spec)
@@ -146,11 +205,20 @@ class EnhancedSearch:
         context_graph_expansion: bool = False,
         context_graph_min_weight: float = 0.1,
         context_graph_top_k: int = 5,
+        redaction_filter: Callable[[Answer], Answer] | None = None,
+        chunk_filter: Callable[[list[ScoredChunk]], list[ScoredChunk]] | None = None,
     ):
         self._store = store
+        conn = store.vector._conn
+        if entity_index is None:
+            entity_index = _load_entity_index_from_store(conn)
         self._entity_index = entity_index
         self._cluster_map = cluster_map
+        if relationship_index is None:
+            relationship_index = _load_relationship_index_from_store(conn)
         self._relationship_index = relationship_index
+        if community_index is None:
+            community_index = _load_community_index_from_store(store)
         self._community_index = community_index
         self._chunk_cache: dict[str, DocumentChunk] | None = None
         self._embedding_cache: dict[str, list[float]] | None = None
@@ -181,7 +249,124 @@ class EnhancedSearch:
         self._context_graph_expansion = context_graph_expansion
         self._context_graph_min_weight = context_graph_min_weight
         self._context_graph_top_k = context_graph_top_k
+        self._redaction_filter = redaction_filter
+        self._chunk_filter = chunk_filter
         self.last_expansion_stats: dict | None = None
+
+    # ------------------------------------------------------------------
+    # Namespace / domain pre-filter
+    # ------------------------------------------------------------------
+
+    _NAMESPACE_FILTER_PROMPT = (
+        "You are a retrieval routing assistant. Below are the available knowledge namespaces "
+        "and their descriptions. Select the namespaces most likely to contain evidence for "
+        "the query. Return ONLY a JSON array of namespace IDs, e.g. [\"cyber\", \"financial\"]. "
+        "Include all namespaces that may be relevant; omit those that are clearly unrelated.\n\n"
+        "Namespaces:\n{namespace_list}\n\n"
+        "Query: {query}\n\n"
+        "Return ONLY a JSON array of namespace IDs."
+    )
+
+    _DOMAIN_FILTER_PROMPT = (
+        "You are a retrieval routing assistant. Below are the available knowledge domains "
+        "and their descriptions. Select the domains most likely to contain evidence for "
+        "the query. Return ONLY a JSON array of domain names exactly as listed, "
+        "e.g. [\"sales/north-america\", \"finance/q1\"]. "
+        "Include all domains that may be relevant; omit those that are clearly unrelated.\n\n"
+        "Domains:\n{domain_list}\n\n"
+        "Query: {query}\n\n"
+        "Return ONLY a JSON array of domain names exactly as listed."
+    )
+
+    def _select_namespaces(
+        self,
+        query: str,
+        llm_fn: Callable[[str], str],
+    ) -> list[str] | None:
+        """Call llm_fn to select relevant namespaces for query.
+
+        Fetches (namespace_id, description) rows from the store. If fewer than
+        two namespaces have descriptions, returns None (no filtering). Otherwise
+        calls llm_fn with a routing prompt and parses the JSON array response.
+        Falls back to None on any parse error so search degrades gracefully.
+        """
+        import json as _json
+
+        rows = self._store.vector._conn.execute(
+            "SELECT namespace_id, description FROM all_namespaces "
+            "WHERE description IS NOT NULL AND description != '' "
+            "ORDER BY namespace_id"
+        ).fetchall()
+
+        if len(rows) < 2:
+            return None
+
+        ns_lines = "\n".join(f"- {ns_id}: {desc}" for ns_id, desc in rows)
+        prompt = self._NAMESPACE_FILTER_PROMPT.format(
+            namespace_list=ns_lines,
+            query=query,
+        )
+        try:
+            raw = llm_fn(prompt)
+            # Extract JSON array — strip markdown fences if present
+            match = re.search(r"\[.*?\]", raw, re.DOTALL)
+            if not match:
+                return None
+            selected: list[str] = _json.loads(match.group())
+            known = {ns_id for ns_id, _ in rows}
+            return [ns for ns in selected if ns in known] or None
+        except Exception:
+            return None
+
+    def _select_domains(
+        self,
+        query: str,
+        llm_fn: Callable[[str], str],
+        namespaces: list[str] | None = None,
+    ) -> list[str] | None:
+        """Call llm_fn to select relevant domain_ids for query.
+
+        Fetches domains with descriptions from the store (restricted to
+        *namespaces* when supplied). Returns None when fewer than two domains
+        have descriptions, or on any parse/LLM error.
+        """
+        import json as _json
+
+        where = "WHERE d.description IS NOT NULL AND d.description != ''"
+        params: list = []
+        if namespaces:
+            placeholders = ", ".join("?" * len(namespaces))
+            where += f" AND d.namespace_id IN ({placeholders})"
+            params.extend(namespaces)
+
+        rows = self._store.vector._conn.execute(
+            f"SELECT d.domain_id, d.namespace_id, d.name, d.description "
+            f"FROM domains d {where} ORDER BY d.namespace_id, d.name",
+            params,
+        ).fetchall()
+
+        if len(rows) < 2:
+            return None
+
+        # name_to_id for resolving LLM output back to domain_ids
+        name_to_id = {name: domain_id for domain_id, _ns, name, _desc in rows}
+        domain_lines = "\n".join(
+            f"- {name} ({ns}): {desc}" for _did, ns, name, desc in rows
+        )
+        prompt = self._DOMAIN_FILTER_PROMPT.format(
+            domain_list=domain_lines,
+            query=query,
+        )
+        try:
+            raw = llm_fn(prompt)
+            match = re.search(r"\[.*?\]", raw, re.DOTALL)
+            if not match:
+                return None
+            selected_names: list[str] = _json.loads(match.group())
+            ids = [name_to_id[n] for n in selected_names if n in name_to_id]
+            return ids or None
+        except Exception:
+            return None
 
     # ------------------------------------------------------------------
     # Public interface
@@ -190,7 +375,7 @@ class EnhancedSearch:
     @overload
     def search(
         self,
-        query_embedding,
+        query_embedding: np.ndarray | None = ...,
         k: int = ...,
         query_text: str | None = ...,
         query_entities: list[str] | None = ...,
@@ -198,13 +383,15 @@ class EnhancedSearch:
         mode: str = ...,
         namespaces: list[str] | None = ...,
         domain_ids: list[str] | None = ...,
+        namespace_filter_llm_fn: Callable[[str], str] | None = ...,
+        domain_filter_llm_fn: Callable[[str], str] | None = ...,
         return_trace: Literal[False] = ...,
     ) -> list[ScoredChunk]: ...
 
     @overload
     def search(
         self,
-        query_embedding,
+        query_embedding: np.ndarray | None = ...,
         k: int = ...,
         query_text: str | None = ...,
         query_entities: list[str] | None = ...,
@@ -212,35 +399,98 @@ class EnhancedSearch:
         mode: str = ...,
         namespaces: list[str] | None = ...,
         domain_ids: list[str] | None = ...,
+        namespace_filter_llm_fn: Callable[[str], str] | None = ...,
+        domain_filter_llm_fn: Callable[[str], str] | None = ...,
         return_trace: Literal[True] = ...,
     ) -> tuple[list[ScoredChunk], RetrievalTrace]: ...
 
     def search(
         self,
-        query_embedding,
-        k: int = 5,
+        query_embedding: np.ndarray | None = None,
+        k: int = 30,
         query_text: str | None = None,
         query_entities: list[str] | None = None,
         precomputed_entity_vecs: dict[str, np.ndarray] | None = None,
         mode: str = "vector_first",
         namespaces: list[str] | None = None,
         domain_ids: list[str] | None = None,
+        namespace_filter_llm_fn: Callable[[str], str] | None = None,
+        domain_filter_llm_fn: Callable[[str], str] | None = None,
         return_trace: bool = False,
+        _bypass_chunk_filter: bool = False,
     ) -> list[ScoredChunk] | tuple[list[ScoredChunk], RetrievalTrace]:
         """Assemble a top-k cohort using all enabled expansion dimensions.
 
         Args:
-            query_embedding: np.ndarray shape (dim,) or (1, dim).
+            query_embedding: np.ndarray shape (dim,) or (1, dim). If None,
+                auto-generated from *query_text* using the ``embed_fn`` passed
+                to the constructor (raises ValueError if neither is available).
             k: Target cohort size.
             query_text: Optional query text for BM25 hybrid seed search.
             mode: Retrieval mode — "vector_first" (default), "graph_first", or "global".
                   "graph_first": drives on RelationshipIndex traversal, vector reranks.
                   "global": searches community_summary chunks only.
+            namespace_filter_llm_fn: Optional ``(prompt: str) -> str`` callable. When
+                supplied and *namespaces* is None, fetches namespace descriptions from
+                the store, calls the LLM to select relevant namespaces for *query_text*,
+                and restricts the search to those namespaces.
             return_trace: If True, return ``(results, RetrievalTrace)`` instead of just results.
 
         Returns:
             Ranked list of up to k ScoredChunk objects.
+
+        ## Agent guidance — framing queries for best retrieval
+
+        **Issue one atomic sub-query per call.** Compound questions ("what is X and
+        how does it relate to Y?") split the embedding across two intents and dilute
+        both. Decompose before calling; recombine in reasoning.
+
+        **Name the entity explicitly.** "What was Amazon's Total Net Sales for FY2025?"
+        retrieves far better than "What were the e-commerce company's sales?" Named
+        entities anchor the BM25 lane and entity-graph expansion. If the entity name
+        is unknown, use search() to resolve it first, then re-query with the resolved
+        name.
+
+        **State the answer type in the query.** "What *date* did...", "What *dollar
+        amount*...", "Which *CVE ID*..." biases the embedding toward passages that
+        contain that answer type, not just passages that discuss the topic.
+
+        **Prefer declarative over interrogative form for lookup queries.** Embedding
+        "Amazon Total Net Sales FY2025 revenue" often outperforms "What was Amazon's
+        revenue?" for precise fact retrieval because it matches the register of the
+        source document.
+
+        **Scope the namespace when you know the source type.** Pass
+        ``namespaces=["financial"]`` for a 10-K question, ``namespaces=["cyber"]``
+        for a CVE question. This eliminates off-domain noise and is the single
+        highest-leverage accuracy lever for cross-domain corpora. Use
+        ``namespace_filter_llm_fn`` to automate scoping when the source type is
+        ambiguous.
+
+        **Use ``return_trace=True`` to diagnose poor results.** If top chunks are
+        off-topic, inspect ``RetrievalTrace.final_provenance`` to see which expansion
+        dimension produced them. A high "entity_adjacent" share with low scores
+        indicates the entity lane is over-expanding; tighten ``lane_entity_min_sim``
+        or narrow the namespace.
+
+        **Widen k before concluding evidence is absent.** A fact may rank outside
+        the default k=5 window. Retry with k=20 before deciding the corpus does not
+        contain the answer.
         """
+        if query_embedding is None:
+            if query_text is None:
+                raise ValueError("Either query_embedding or query_text must be supplied.")
+            if self._embed_fn is None:
+                raise ValueError(
+                    "query_embedding is None and no embed_fn was set on EnhancedSearch. "
+                    "Pass embed_fn to the constructor or supply query_embedding directly."
+                )
+            query_embedding = self._embed_fn([query_text])[0]
+        assert query_embedding is not None
+        if namespace_filter_llm_fn is not None and namespaces is None and query_text:
+            namespaces = self._select_namespaces(query_text, namespace_filter_llm_fn)
+        if domain_filter_llm_fn is not None and domain_ids is None and query_text:
+            domain_ids = self._select_domains(query_text, domain_filter_llm_fn, namespaces)
         trace = RetrievalTrace(mode=mode) if return_trace else None
 
         if mode == "global":
@@ -248,6 +498,8 @@ class EnhancedSearch:
             if trace is not None:
                 trace.pool_size = len(results)
                 trace.final_provenance = _tally_provenance(results)
+            if not _bypass_chunk_filter and self._chunk_filter is not None:
+                results = self._chunk_filter(results)
             return (results, trace) if return_trace else results
         if mode == "graph_first":
             results = self._graph_first_search(
@@ -256,6 +508,8 @@ class EnhancedSearch:
             if trace is not None:
                 trace.pool_size = len(results)
                 trace.final_provenance = _tally_provenance(results)
+            if not _bypass_chunk_filter and self._chunk_filter is not None:
+                results = self._chunk_filter(results)
             return (results, trace) if return_trace else results
         if mode != "vector_first":
             raise ValueError(f"Unknown search mode {mode!r}. Use 'vector_first', 'graph_first', or 'global'.")
@@ -454,7 +708,118 @@ class EnhancedSearch:
             trace.pool_size = len(pool)
             trace.final_provenance = _tally_provenance(results)
 
+        if not _bypass_chunk_filter and self._chunk_filter is not None:
+            results = self._chunk_filter(results)
+
         return (results, trace) if return_trace else results
+
+    def ask(
+        self,
+        query: str,
+        embed_fn: Callable[[list[str]], np.ndarray],
+        llm_fn: Callable[[str], str],
+        k: int = 30,
+        mode: str = "vector_first",
+        namespaces: list[str] | None = None,
+        domain_ids: list[str] | None = None,
+        namespace_filter_llm_fn: Callable[[str], str] | None = None,
+        domain_filter_llm_fn: Callable[[str], str] | None = None,
+        token_budget: int = 4096,
+        redaction_filter: Callable[[Answer], Answer] | None = None,
+    ) -> Answer:
+        """Embed query, search, generate and return an Answer.
+
+        Args:
+            query: Natural-language question.
+            embed_fn: ``(texts: list[str]) -> np.ndarray`` — produces query embedding.
+            llm_fn: ``(prompt: str) -> str`` — generates the answer.
+            k: Retrieval cohort size.
+            mode: Search mode passed to search().
+            namespaces: Explicit namespace filter; overrides namespace_filter_llm_fn.
+            domain_ids: Domain filter passed to search().
+            namespace_filter_llm_fn: LLM callable for automatic namespace pre-filtering.
+            token_budget: Max prompt tokens passed to AnswerGenerator.
+            redaction_filter: Optional ``(Answer) -> Answer`` callable applied to the
+                generated answer before it is returned. Overrides the instance-level
+                filter set at construction time. Use this to sanitize sensitive data
+                before the answer leaves a sovereign deployment perimeter.
+
+                **Sovereign RAG pattern** — frontier model as planner, sovereign model
+                as retriever/generator, redaction filter as the trust boundary:
+
+                .. code-block:: python
+
+                    import re
+                    from chonk.generation import Answer
+
+                    _SSN = re.compile(r"\\b\\d{3}-\\d{2}-\\d{4}\\b")
+                    _EIN = re.compile(r"\\b\\d{2}-\\d{7}\\b")
+
+                    def redact_pii(answer: Answer) -> Answer:
+                        clean = _SSN.sub("[SSN REDACTED]", answer.text)
+                        clean = _EIN.sub("[EIN REDACTED]", clean)
+                        return Answer(text=clean, citations=answer.citations)
+
+                    # Set once at construction — applies to every ask() call:
+                    search = EnhancedSearch(store, redaction_filter=redact_pii)
+
+                    # Or pass per-call to override:
+                    result = search.ask(query, embed_fn, llm_fn, redaction_filter=redact_pii)
+
+                The filter receives the fully-generated ``Answer`` (text + citations)
+                and must return an ``Answer``. It may modify, replace, or raise. The
+                frontier planner only ever sees the returned text — raw chunks and
+                the original generated text never leave the perimeter.
+
+        ## Agent guidance — when and how to use ask()
+
+        **Use ask() only when the sub-query is fully formed.** ask() is a one-shot
+        call: embed → retrieve → generate. There is no opportunity to inspect chunks,
+        adjust scope, or retry between steps. If the agent needs to evaluate evidence
+        quality or branch on what was found, use search() instead.
+
+        **Frame the query as a complete, self-contained question.** The query string
+        drives both the embedding (retrieval) and the prompt (generation). Ambiguous
+        or truncated queries produce off-topic retrievals and underspecified answers.
+        Include the entity name, the attribute sought, and any scoping constraint
+        (fiscal year, version number, jurisdiction) in a single sentence.
+
+        **Scope the namespace before calling.** Pass ``namespaces`` explicitly when
+        the source type is known, or pass ``namespace_filter_llm_fn`` to let the
+        LLM route automatically. An unscoped ask() on a heterogeneous corpus
+        retrieves cross-domain noise that the generator may hallucinate from.
+
+        **Treat Answer.citations as ground truth, not Answer.text.** The generator
+        can hallucinate even with good retrieval. When the answer will be used as
+        input to a subsequent reasoning step, verify the claim against
+        ``Answer.citations`` before propagating it.
+
+        **Use ask() for terminal steps, search() for intermediate steps.** A
+        well-structured multi-step plan ends each branch with ask(); intermediate
+        steps that feed into further reasoning use search() so the agent retains
+        control over how retrieved evidence is interpreted and combined.
+        """
+        from ..generation import AnswerContext, AnswerGenerator
+
+        query_embedding = embed_fn([query])[0]
+        # Bypass chunk_filter — ask() applies redaction_filter on the generated Answer instead.
+        chunks: list[ScoredChunk] = self.search(  # type: ignore[call-overload]
+            query_embedding,
+            k=k,
+            query_text=query,
+            mode=mode,
+            namespaces=namespaces,
+            domain_ids=domain_ids,
+            namespace_filter_llm_fn=namespace_filter_llm_fn,
+            domain_filter_llm_fn=domain_filter_llm_fn,
+            _bypass_chunk_filter=True,
+        )
+        context = AnswerContext(chunks=chunks, query=query)
+        answer = AnswerGenerator(llm_fn, token_budget=token_budget).generate(context)
+        _filter = redaction_filter if redaction_filter is not None else self._redaction_filter
+        if _filter is not None:
+            answer = _filter(answer)
+        return answer
 
     # ------------------------------------------------------------------
     # graph_first mode

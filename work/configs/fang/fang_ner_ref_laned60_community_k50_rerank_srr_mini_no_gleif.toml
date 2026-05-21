@@ -1,0 +1,5 @@
+extends = "fang_ner_ref_laned60_community_k50_rerank_srr_mini.toml"
+run_name = "fang_ner_ref_laned60_community_k50_rerank_srr_mini_no_gleif"
+
+[retrieval]
+domain_ids = ["patents", "sec_10k", "cve", "fed_reg"]

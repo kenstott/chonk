@@ -256,12 +256,16 @@ class DuckDBVectorBackend:
                 return
             self._conn.execute(
                 "PRAGMA create_fts_index('embeddings', 'chunk_id', 'content', "
-                "stemmer='porter', overwrite=1)"
+                "stemmer='none', stopwords='none', ignore='[^a-zA-Z0-9]', lower=1, overwrite=1)"
             ).fetchall()
             self._fts_dirty = False
         except Exception as e:
             logger.debug(f"FTS index rebuild failed (vector-only mode): {e}")
             self._fts_dirty = False
+            try:
+                self._conn.execute("ROLLBACK")
+            except Exception:
+                pass
 
     def _bm25_search(
         self,
@@ -276,7 +280,7 @@ class DuckDBVectorBackend:
                 SELECT e.chunk_id, e.document_name, e.section, e.chunk_index,
                        e.content, e.chunk_type, e.source_offset, e.source_length,
                        e.source_detail,
-                       fts_main_embeddings.match_bm25(e.chunk_id, ?) AS bm25_score
+                       fts_main_embeddings.match_bm25(e.chunk_id, ?, fields:='content') AS bm25_score
                 FROM embeddings e
                 WHERE bm25_score IS NOT NULL
                 ORDER BY bm25_score DESC

@@ -57,12 +57,26 @@ class JsonExtractor:
     Args:
         renderers: Optional list of :class:`Renderer` instances to try before
                    the generic walk.  First match wins.
+        chunk_by_row: When True, each JSONL line becomes its own ``## heading``
+            chunk (one chunk per row).  ``row_key`` names the field used as the
+            heading label (defaults to the first string field).  No effect on
+            single-object JSON files.
+        row_key: Field name to use as the ``## heading`` label when
+            ``chunk_by_row=True``.  If the field is absent, falls back to the
+            first string field, then the row index.
     """
 
     HANDLED = {"json", "jsonl"}
 
-    def __init__(self, renderers: list[Renderer] | None = None) -> None:
+    def __init__(
+        self,
+        renderers: list[Renderer] | None = None,
+        chunk_by_row: bool = False,
+        row_key: str | None = None,
+    ) -> None:
         self._renderers: list[Renderer] = renderers or []
+        self.chunk_by_row = chunk_by_row
+        self.row_key = row_key
 
     def can_handle(self, doc_type: str) -> bool:
         return doc_type in self.HANDLED
@@ -78,18 +92,42 @@ class JsonExtractor:
 
         # JSONL: one object per line — renderers not applied (no single root obj)
         if source_path and source_path.lower().endswith(".jsonl"):
-            lines: list[str] = []
-            for raw_line in text.splitlines():
+            sections: list[str] = []
+            for row_idx, raw_line in enumerate(text.splitlines()):
                 raw_line = raw_line.strip()
                 if not raw_line:
                     continue
                 try:
                     obj = json.loads(raw_line)
                 except json.JSONDecodeError:
-                    lines.append(raw_line)
+                    sections.append(raw_line)
                     continue
-                _walk(obj, lines, depth=1, path="")
-            return "\n\n".join(lines)
+                obj_lines: list[str] = []
+                if self.chunk_by_row and isinstance(obj, dict):
+                    label = None
+                    if self.row_key:
+                        label = str(obj.get(self.row_key, "")).strip() or None
+                    if label is None:
+                        for v in obj.values():
+                            if isinstance(v, str) and v.strip():
+                                label = v.strip()
+                                break
+                    if label is None:
+                        label = str(row_idx)
+                    obj_lines.append(f"## {label}")
+                    for k, v in obj.items():
+                        if k == self.row_key:
+                            continue
+                        if isinstance(v, list):
+                            flat = ", ".join(str(i) for i in v if str(i).strip())
+                            if flat:
+                                obj_lines.append(f"{k}: {flat}")
+                        elif v is not None and str(v).strip():
+                            obj_lines.append(f"{k}: {v}")
+                else:
+                    _walk(obj, obj_lines, depth=1, path="")
+                sections.append("\n".join(obj_lines))
+            return "\n\n".join(sections)
 
         try:
             obj = json.loads(text)

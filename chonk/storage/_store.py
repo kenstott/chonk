@@ -369,6 +369,154 @@ class Store:
         self.vector._fts_dirty = True
         return count_before
 
+    def list_domains(self, namespace_id: str) -> list[str]:
+        """Return sorted domain names for *namespace_id*."""
+        rows = self.vector._conn.execute(
+            "SELECT name FROM domains WHERE namespace_id = ? ORDER BY name",
+            [namespace_id],
+        ).fetchall()
+        return [r[0] for r in rows]
+
+    def namespace_cache_valid(self, namespace_id: str) -> bool:
+        """True if namespace exists, has crawled sources, and has chunks."""
+        import os
+
+        conn = self.vector._conn
+
+        ns_row = conn.execute(
+            "SELECT 1 FROM namespaces WHERE namespace_id = ?",
+            [namespace_id],
+        ).fetchone()
+        if ns_row is None:
+            return False
+
+        sources = conn.execute(
+            """
+            SELECT s.uri, s.last_crawled
+            FROM sources s
+            JOIN domains d ON s.domain_id = d.domain_id
+            WHERE d.namespace_id = ?
+            """,
+            [namespace_id],
+        ).fetchall()
+
+        if not sources:
+            return False
+
+        for uri, last_crawled in sources:
+            if last_crawled is None:
+                return False
+            if not any(uri.startswith(p) for p in ("http://", "https://", "github://", "s3://", "ftp://", "sftp://")):
+                try:
+                    mtime = os.path.getmtime(uri)
+                    if mtime > last_crawled.timestamp():
+                        return False
+                except OSError:
+                    pass
+
+        chunk_count = conn.execute(
+            "SELECT COUNT(*) FROM embeddings WHERE namespace = ?",
+            [namespace_id],
+        ).fetchone()[0]
+        return chunk_count > 0
+
+    def _mark_namespace_built(self, namespace_id: str, phase: str) -> None:
+        """Upsert namespace_build_log setting {phase}_built_at = now()."""
+        valid_phases = {"chunks", "ner", "svo", "community"}
+        if phase not in valid_phases:
+            raise ValueError(f"Unknown phase {phase!r}; must be one of {sorted(valid_phases)}")
+        col = f"{phase}_built_at"
+        self.vector._conn.execute(
+            f"""
+            INSERT INTO namespace_build_log (namespace_id, {col})
+            VALUES (?, now())
+            ON CONFLICT (namespace_id) DO UPDATE SET {col} = now()
+            """,
+            [namespace_id],
+        ).fetchall()
+
+    def promote_domain(
+        self,
+        domain_name: str,
+        from_namespace: str,
+        to_namespace: str,
+        target_db_path,
+    ) -> None:
+        """Copy domain data cross-DB, then delete from this store."""
+        from pathlib import Path as _Path
+        target_db_path = str(_Path(target_db_path))
+
+        conn = self.vector._conn
+
+        row = conn.execute(
+            "SELECT domain_id FROM domains WHERE namespace_id = ? AND name = ?",
+            [from_namespace, domain_name],
+        ).fetchone()
+        if row is None:
+            raise ValueError(
+                f"Domain {domain_name!r} not found in namespace {from_namespace!r}"
+            )
+        domain_id = row[0]
+
+        try:
+            conn.execute(f"ATTACH '{target_db_path}' AS _promote_target")
+
+            conn.execute(
+                """
+                INSERT INTO _promote_target.domains
+                    (domain_id, namespace_id, name, description, parent_id, created_at, updated_at)
+                SELECT domain_id, ?, name, description, parent_id, created_at, now()
+                FROM domains WHERE domain_id = ?
+                ON CONFLICT (domain_id) DO UPDATE SET namespace_id = excluded.namespace_id, updated_at = now()
+                """,
+                [to_namespace, domain_id],
+            ).fetchall()
+
+            conn.execute(
+                """
+                INSERT INTO _promote_target.embeddings
+                    (chunk_id, document_name, section, chunk_index, content, breadcrumb,
+                     chunk_type, source_offset, source_length, namespace, embedding,
+                     source_detail, source_id, domain_id, session_fingerprint)
+                SELECT chunk_id, document_name, section, chunk_index, content, breadcrumb,
+                       chunk_type, source_offset, source_length, ?, embedding,
+                       source_detail, source_id, domain_id, session_fingerprint
+                FROM embeddings WHERE domain_id = ?
+                ON CONFLICT (chunk_id) DO NOTHING
+                """,
+                [to_namespace, domain_id],
+            ).fetchall()
+
+            conn.execute(
+                """
+                INSERT INTO _promote_target.chunk_entities
+                    (chunk_id, entity_id, frequency, positions_json, score, namespace)
+                SELECT chunk_id, entity_id, frequency, positions_json, score, ?
+                FROM chunk_entities
+                WHERE chunk_id IN (SELECT chunk_id FROM embeddings WHERE domain_id = ?)
+                ON CONFLICT (chunk_id, entity_id) DO NOTHING
+                """,
+                [to_namespace, domain_id],
+            ).fetchall()
+
+            conn.execute(
+                """
+                INSERT INTO _promote_target.svo_triples
+                    (chunk_id, subject_id, verb, object_id, confidence, namespace)
+                SELECT chunk_id, subject_id, verb, object_id, confidence, ?
+                FROM svo_triples
+                WHERE chunk_id IN (SELECT chunk_id FROM embeddings WHERE domain_id = ?)
+                ON CONFLICT DO NOTHING
+                """,
+                [to_namespace, domain_id],
+            ).fetchall()
+
+            self.delete_domain(domain_id)
+            conn.execute("DELETE FROM domains WHERE domain_id = ?", [domain_id]).fetchall()
+
+        finally:
+            conn.execute("DETACH _promote_target")
+
     # ------------------------------------------------------------------
     # Global attach / detach
     # ------------------------------------------------------------------

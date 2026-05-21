@@ -1,0 +1,19 @@
+extends = "../fang_base.toml"
+run_name = "fang_ner_ref_cluster_community_k10_haiku"
+
+[retrieval]
+enhanced = true
+entity_ref_expansion = true
+cluster = true
+top_k = 10
+
+[retrieval.community]
+enabled = true
+min_coherence = 0.5
+
+[rerank]
+enabled = true
+
+[gen]
+provider = "anthropic"
+model    = "claude-haiku-4-5-20251001"

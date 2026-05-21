@@ -185,6 +185,16 @@ CREATE TABLE IF NOT EXISTS context_graph_cache (
 )
 """.strip()
 
+NAMESPACE_BUILD_LOG_DDL = """
+CREATE TABLE IF NOT EXISTS namespace_build_log (
+    namespace_id       VARCHAR PRIMARY KEY,
+    chunks_built_at    TIMESTAMP,
+    ner_built_at       TIMESTAMP,
+    svo_built_at       TIMESTAMP,
+    community_built_at TIMESTAMP
+)
+""".strip()
+
 VSS_INDEX_DDL = "CREATE INDEX IF NOT EXISTS embeddings_vss ON embeddings USING HNSW (embedding) WITH (metric = 'cosine')"
 VSS_DROP_INDEX_DDL = "DROP INDEX IF EXISTS embeddings_vss"
 
@@ -215,4 +225,5 @@ def get_ddl(embedding_dim: int = 1024) -> list[str]:
         CHUNK_CLUSTERS_DDL,
         CONTEXT_GRAPH_EDGES_DDL,
         CONTEXT_GRAPH_CACHE_DDL,
+        NAMESPACE_BUILD_LOG_DDL,
     ]

@@ -36,7 +36,6 @@ from collections import Counter, defaultdict
 
 import numpy as np
 
-
 _STOPWORDS = frozenset(
     "a an the and or but if in on at to for of with by from as is was are were "
     "be been being have has had do does did will would could should may might "
@@ -185,7 +184,8 @@ class CommunityIndex:
         resolution_max: float = 2.0,
         n_iterations: int = 10,
         seed: int | None = 42,
-    ) -> "CommunityIndex":
+        extra_edges: list[tuple[int, int, float]] | None = None,
+    ) -> CommunityIndex:
         """Build a CommunityIndex from chunk embeddings.
 
         Args:
@@ -242,6 +242,10 @@ class CommunityIndex:
                 js = np.where(sims[bi, gi + 1:] >= sim_threshold)[0] + gi + 1
                 for j in js:
                     edges.append((gi, int(j), float(sims[bi, int(j) - i])))
+
+        # ── 2b. Inject entity bridge edges ───────────────────────────
+        if extra_edges:
+            edges.extend(extra_edges)
 
         instance = cls()
 
@@ -463,7 +467,7 @@ class CommunityIndex:
         con.close()
 
     @classmethod
-    def from_db(cls, db_path) -> "CommunityIndex":
+    def from_db(cls, db_path) -> CommunityIndex:
         """Load CommunityIndex from DuckDB tables."""
         import duckdb
         con = duckdb.connect(str(db_path), read_only=True)

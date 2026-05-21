@@ -157,5 +157,27 @@ run_and_eval_rp fang_ner_ref_graph_first_k10_haiku \
     --top-k 10 --db-name "$VANILLA_DB" $HAIKU
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# claude-sonnet-4-6 — model capability ceiling
+# ══════════════════════════════════════════════════════════════════════════════
+SONNET="--gen-provider anthropic --gen-model claude-sonnet-4-6"
+
+run_and_eval_rp fang_ner_ref_laned60_community_k30_rerank_srr_sonnet \
+    --rerank --enhanced --entity-ref-expansion \
+    --lane-entity-min-sim 0.60 \
+    --community-context --community-min-coherence 0.5 \
+    --top-k 30 --db-name "$DB" --srr $SONNET
+
+# ══════════════════════════════════════════════════════════════════════════════
+# openai/gpt-oss-120b (Together AI) — sovereign/open-weight candidate
+# ══════════════════════════════════════════════════════════════════════════════
+GPTOSS="--gen-provider together --gen-model openai/gpt-oss-120b"
+
+run_and_eval_rp fang_ner_ref_laned60_community_k30_rerank_srr_gptoss120b \
+    --rerank --enhanced --entity-ref-expansion \
+    --lane-entity-min-sim 0.60 \
+    --community-context --community-min-coherence 0.5 \
+    --top-k 30 --db-name "$DB" --srr $GPTOSS
+
 echo "=== ALL FANG-2026 RUNS COMPLETE ==="
 $PY demo/graphrag_bench.py report --out-dir "$OUT" 2>/dev/null

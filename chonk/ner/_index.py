@@ -14,12 +14,11 @@ All operations are O(1) lookup after the index is built.
 
 from __future__ import annotations
 
-import json
 import math
 from collections import defaultdict
 
-from ._vocabulary import EntityMatch, VocabularyMatcher
 from ..models import EntityAssociation
+from ._vocabulary import EntityMatch, VocabularyMatcher
 
 
 class EntityIndex:
@@ -234,7 +233,49 @@ class EntityIndex:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "EntityIndex":
+    def load_from_db(cls, con, namespace: str | None = None) -> EntityIndex:
+        """Restore an EntityIndex from the chunk_entities table.
+
+        Args:
+            con: Live DuckDB connection (read-only is fine).
+            namespace: If set, loads only associations for this namespace.
+        """
+        import json as _json
+
+        where = "WHERE namespace = ?" if namespace else ""
+        params = [namespace] if namespace else []
+        rows = con.execute(
+            f"SELECT chunk_id, entity_id, frequency, positions_json, score FROM chunk_entities {where}",
+            params,
+        ).fetchall()
+
+        if not rows:
+            return cls()
+
+        total_chunks_row = con.execute(
+            "SELECT COUNT(DISTINCT chunk_id) FROM embeddings" + (" WHERE namespace = ?" if namespace else ""),
+            params,
+        ).fetchone()
+        total_chunks = total_chunks_row[0] if total_chunks_row else 0
+
+        idx = cls()
+        idx._total_chunks = total_chunks
+        for chunk_id, entity_id, frequency, positions_json, score in rows:
+            positions = _json.loads(positions_json) if positions_json else []
+            assoc = EntityAssociation(
+                entity_id=entity_id,
+                chunk_id=chunk_id,
+                frequency=frequency,
+                positions=positions,
+                score=score,
+                chunk_length=1,
+            )
+            idx._entity_to_chunks[entity_id][chunk_id] = assoc
+            idx._chunk_to_entities[chunk_id][entity_id] = assoc
+        return idx
+
+    @classmethod
+    def from_dict(cls, data: dict) -> EntityIndex:
         """Restore an index from a dict produced by ``to_dict()``."""
         weights = tuple(data.get("score_weights", [0.4, 0.3, 0.3]))
         idx = cls(score_weights=weights)  # type: ignore[arg-type]

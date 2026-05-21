@@ -179,6 +179,8 @@ def _apply_config(cfg: dict, args: argparse.Namespace) -> None:
         args.vanilla = True
     if ret.get("multi_step") and not getattr(args, "multi_step", False):
         args.multi_step = True
+    if ret.get("bm25") and not getattr(args, "bm25", False):
+        args.bm25 = True
 
     comm = ret.get("community", {})
     if comm.get("enabled") and not getattr(args, "community_context", False):
@@ -220,6 +222,9 @@ def _apply_config(cfg: dict, args: argparse.Namespace) -> None:
 
     if ret.get("domain_ids") is not None and getattr(args, "domain_ids", None) is None:
         args.domain_ids = ret["domain_ids"]
+
+    if ret.get("auto_domain_filter") and not getattr(args, "auto_domain_filter", False):
+        args.auto_domain_filter = True
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1987,6 +1992,48 @@ def _prune_redundant(hits, db_conn, threshold):
     return selected
 
 
+_FANG_DOMAINS = [
+    ("sec_10k",  "global", "SEC 10-K Filings",
+     "Annual financial reports and business disclosures filed by public companies with the SEC"),
+    ("cve",      "global", "CVE Security Records",
+     "Common Vulnerabilities and Exposures records describing software security vulnerabilities"),
+    ("fed_reg",  "global", "Federal Register",
+     "US government regulatory documents, proposed rules, final rules, and agency notices"),
+    ("patents",  "global", "US Patents",
+     "United States utility and design patents describing inventions and innovations"),
+]
+
+
+def _register_fang_domains(store) -> None:
+    """Register FANG corpus domains and tag embeddings with domain_id by document_name pattern."""
+    for domain_id, ns, name, desc in _FANG_DOMAINS:
+        store.register_domain(domain_id, ns, name, desc)
+    conn = store.vector._conn
+    conn.execute("UPDATE embeddings SET domain_id = 'sec_10k' WHERE document_name LIKE '%_10k_%'")
+    conn.execute("UPDATE embeddings SET domain_id = 'cve'     WHERE document_name LIKE 'CVE-%'")
+    conn.execute("UPDATE embeddings SET domain_id = 'fed_reg' WHERE document_name LIKE 'fr_%'")
+    conn.execute(
+        "UPDATE embeddings SET domain_id = 'patents' "
+        "WHERE regexp_matches(document_name, '^US[0-9]') AND domain_id IS NULL"
+    )
+    tagged = conn.execute(
+        "SELECT domain_id, COUNT(*) FROM embeddings WHERE domain_id IS NOT NULL GROUP BY domain_id"
+    ).fetchall()
+    print(f"[ADF] Domain registration: {dict(tagged)}")
+
+
+def _build_domain_filter_fn(openai_client, model: str):
+    """Return a callable suitable for EnhancedSearch.search(domain_filter_llm_fn=...)."""
+    def _fn(prompt: str) -> str:
+        resp = openai_client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+        )
+        return resp.choices[0].message.content or ""
+    return _fn
+
+
 def _build_enhanced_search(store, db_path: Path | None = None, use_ner_x: bool = False, embed_model=None, entity_ref_expansion: bool = False, entity_ref_expansion_k: int = 20, entity_ref_expansion_per_k: int | None = None, entity_ref_expansion_min_sim: float | None = None, use_cluster: bool = False, lane_entity_min_sim: float | None = None, namespaces: list[str] | None = None, domain_ids: list[str] | None = None, community_index=None, context_graph_expansion: bool = False, context_graph_min_weight: float = 0.1, context_graph_top_k: int = 5):
     """Load EnhancedSearch: from pre-built DB tables if available, else rebuild in memory."""
     import duckdb
@@ -2183,6 +2230,7 @@ def cmd_run(args: argparse.Namespace) -> None:
     query_complexity_threshold = getattr(args, "query_complexity_threshold", 2)
     namespaces = getattr(args, "namespaces", None)
     domain_ids = getattr(args, "domain_ids", None)
+    auto_domain_filter = getattr(args, "auto_domain_filter", False)
     db_name_override = getattr(args, 'db_name', None)
     question_ids_file = getattr(args, 'question_ids', None)
     if db_name_override:
@@ -2232,6 +2280,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         "search_mode": search_mode,
         "concentration_threshold": concentration_threshold,
         "query_complexity_threshold": query_complexity_threshold,
+        "auto_domain_filter": auto_domain_filter,
         "top_k": top_k,
         "question_ids": question_ids_file,
         "corpus": "full" if (question_ids_file and "full_corpus" in str(question_ids_file)) else "grid" if question_ids_file else "all",
@@ -2391,7 +2440,7 @@ def cmd_run(args: argparse.Namespace) -> None:
     q_vecs = all_vecs[pending_indices]
 
     # ── 2. Retrieve context for each question (sequential; DuckDB conn is serialized)
-    fetch_k = K_FETCH if use_rerank else top_k
+    fetch_k = max(K_FETCH, top_k) if use_rerank else top_k
     print(f"Retrieving context from index (fetch_k={fetch_k}, k={top_k}, rerank={use_rerank}, enhanced={use_enhanced}, vanilla={use_vanilla})...")
 
     reranker = None
@@ -2479,7 +2528,16 @@ def cmd_run(args: argparse.Namespace) -> None:
     # Run schema migrations in write mode before opening read-only.
     # ALTER TABLE is idempotent; this is a no-op when columns already exist.
     with Store(db_path, embedding_dim=EMBED_DIM) as _mig:
-        pass
+        if auto_domain_filter:
+            _register_fang_domains(_mig)
+
+    _adf_fn = None
+    if auto_domain_filter:
+        import openai as _adf_oai
+        _adf_client = _adf_oai.OpenAI(api_key=os.environ["OPENAI_API_KEY"], timeout=30.0)
+        _adf_model = getattr(args, "gen_model", GEN_MODEL)
+        _adf_fn = _build_domain_filter_fn(_adf_client, _adf_model)
+        print(f"[ADF] Automated domain filtering enabled (model={_adf_model})")
 
     work_items: list[dict] = []
     with Store(db_path, embedding_dim=EMBED_DIM, read_only=True) as store:
@@ -2578,6 +2636,10 @@ def cmd_run(args: argparse.Namespace) -> None:
         for j, (i, q) in enumerate(pending):
             _q_entities = _precomputed_question_entities[j] if _precomputed_question_entities is not None else None
             _bm25_query_text = q["question"] if getattr(args, "bm25", False) else None
+            # ADF needs query_text to trigger domain routing even when BM25 is off
+            _eff_query_text = q["question"] if _adf_fn else _bm25_query_text
+            # When ADF is active, domain_ids must be None so EnhancedSearch resolves per-query
+            _static_domain_ids = None if _adf_fn else domain_ids
             _trace = None
             if use_multi_step and j in _sub_vecs_by_idx:
                 # Retrieve for each sub-query, merge by best score per chunk_id
@@ -2585,21 +2647,26 @@ def cmd_run(args: argparse.Namespace) -> None:
                 for sub_vec in _sub_vecs_by_idx[j]:
                     if use_enhanced and enhanced_search is not None:
                         _sub_scored = enhanced_search.search(
-                            sub_vec, k=fetch_k, query_text=_bm25_query_text,
+                            sub_vec, k=fetch_k, query_text=_eff_query_text,
                             query_entities=_q_entities,
                             precomputed_entity_vecs=_precomputed_entity_vecs,
                             mode=_retrieval_mode,
                             namespaces=namespaces,
-                            domain_ids=domain_ids,
+                            domain_ids=_static_domain_ids,
+                            domain_filter_llm_fn=_adf_fn,
                         )
                         _sub_hits = [(sc.chunk_id, sc.score, sc.chunk) for sc in _sub_scored]
                     else:
+                        _q_domain_ids = (
+                            enhanced_search._select_domains(q["question"], _adf_fn)
+                            if _adf_fn and enhanced_search else _static_domain_ids
+                        )
                         _sub_hits = store.vector.search(
                             sub_vec, limit=fetch_k,
                             query_text=_bm25_query_text,
                             include_breadcrumbs=False,
                             namespaces=namespaces,
-                            domain_ids=domain_ids,
+                            domain_ids=_q_domain_ids,
                         )
                     for cid, sc, chunk in _sub_hits:
                         if cid not in _merged or sc > _merged[cid][1]:
@@ -2609,33 +2676,39 @@ def cmd_run(args: argparse.Namespace) -> None:
             elif use_enhanced and enhanced_search is not None:
                 if _capture_trace:
                     scored, _trace = enhanced_search.search(
-                        q_vecs[j], k=fetch_k, query_text=_bm25_query_text,
+                        q_vecs[j], k=fetch_k, query_text=_eff_query_text,
                         query_entities=_q_entities,
                         precomputed_entity_vecs=_precomputed_entity_vecs,
                         mode=_retrieval_mode,
                         namespaces=namespaces,
-                        domain_ids=domain_ids,
+                        domain_ids=_static_domain_ids,
+                        domain_filter_llm_fn=_adf_fn,
                         return_trace=True,
                     )
                 else:
                     scored = enhanced_search.search(
-                        q_vecs[j], k=fetch_k, query_text=_bm25_query_text,
+                        q_vecs[j], k=fetch_k, query_text=_eff_query_text,
                         query_entities=_q_entities,
                         precomputed_entity_vecs=_precomputed_entity_vecs,
                         mode=_retrieval_mode,
                         namespaces=namespaces,
-                        domain_ids=domain_ids,
+                        domain_ids=_static_domain_ids,
+                        domain_filter_llm_fn=_adf_fn,
                     )
                     _trace = None
                 hits   = [(sc.chunk_id, sc.score, sc.chunk) for sc in scored]
                 expansion_stats = enhanced_search.last_expansion_stats
             else:
+                _q_domain_ids = (
+                    enhanced_search._select_domains(q["question"], _adf_fn)
+                    if _adf_fn and enhanced_search else _static_domain_ids
+                )
                 hits = store.vector.search(
                     q_vecs[j], limit=fetch_k,
                     query_text=_bm25_query_text,
                     include_breadcrumbs=False,
                     namespaces=namespaces,
-                    domain_ids=domain_ids,
+                    domain_ids=_q_domain_ids,
                 )
                 expansion_stats = None
 
@@ -2648,11 +2721,12 @@ def cmd_run(args: argparse.Namespace) -> None:
                     _max_frac = max(src_counts.values()) / _k_hits
                     if _max_frac >= concentration_threshold:
                         scored_conc = _conc_search.search(
-                            q_vecs[j], k=fetch_k, query_text=_bm25_query_text,
+                            q_vecs[j], k=fetch_k, query_text=_eff_query_text,
                             query_entities=_q_entities,
                             precomputed_entity_vecs=_precomputed_entity_vecs,
                             namespaces=namespaces,
-                            domain_ids=domain_ids,
+                            domain_ids=_static_domain_ids,
+                            domain_filter_llm_fn=_adf_fn,
                         )
                         hits = [(sc.chunk_id, sc.score, sc.chunk) for sc in scored_conc]
                         expansion_stats = _conc_search.last_expansion_stats
@@ -3469,7 +3543,7 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
                     if "typed_score" in metrics:
                         schema = r.get("answer_schema")
                         if schema and _score_one is not None:
-                            _ts = _score_one(r["generated_answer"] or "", schema, embedder=_typed_embedder)
+                            _ts = _score_one(r["generated_answer"] or "", schema, embedder=_typed_embedder, srr_data=r.get("srr"))
                             result["typed_score"] = _ts if _ts == _ts else float("nan")
                         else:
                             # no schema — fall back to LLM judge recorded as answer_correctness
@@ -4546,12 +4620,25 @@ def cmd_run_all(args: argparse.Namespace) -> None:
 
         eval_file = results_dir / f"bench_eval_{run_name}_rp.json"
         if eval_file.exists():
-            print(f"=== SKIP {run_name}_rp (done) ===")
-            continue
+            try:
+                import json as _json
+                _ev = _json.loads(eval_file.read_text())
+                _n = _ev.get("_params", {}).get("n_evaluated", 0)
+            except Exception:
+                _n = 0
+            if _n > 0:
+                print(f"=== SKIP {run_name}_rp (done, n={_n}) ===")
+                continue
+            print(f"=== STALE {run_name}_rp (n_evaluated=0, re-running) ===")
+            eval_file.unlink()
 
         gen_file = results_dir / f"{run_name}.jsonl"
-        if not gen_file.exists():
-            print(f"=== RUN {run_name} ===")
+        if not gen_file.exists() or gen_file.stat().st_size == 0:
+            if gen_file.exists():
+                gen_file.unlink()
+                print(f"=== RUN {run_name} (empty output, regenerating) ===")
+            else:
+                print(f"=== RUN {run_name} ===")
             run_args = ap.parse_args([
                 "run",
                 "--out-dir", str(out_dir),
@@ -4771,6 +4858,8 @@ def _make_parser() -> argparse.ArgumentParser:
                         help="Restrict retrieval to these namespaces (default: all namespaces)")
     g_misc.add_argument("--domain-ids", nargs="*", default=None, dest="domain_ids",
                         help="Restrict retrieval to these domain_ids (default: all domains)")
+    g_misc.add_argument("--auto-domain-filter", action="store_true", default=False, dest="auto_domain_filter",
+                        help="Enable per-query LLM domain routing (ADF); tags FANG corpus on first use")
     g_misc.add_argument("--db-name", default=None, dest="db_name",
                         help="Override DB filename inside {out_dir}/data/ (default: auto from --breadcrumb-embed)")
     g_misc.add_argument("--question-ids", default=None, dest="question_ids", metavar="PATH",
