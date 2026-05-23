@@ -5,7 +5,7 @@ Member of Technical Staff and Senior Advisor, Logick
 
 Code: https://github.com/kenstott/chonk (MIT License)
 
-> **[V] markers**: cells tagged `[V]` contain confirmed mean scores but require per-type breakdown extraction from GPU result files (`bench_eval_fang_*_rp.json`) before final publication. All mean scores are confirmed post-canonical.
+> **Status**: All per-type breakdowns and mean scores are confirmed post-canonical. HARE-Bench full matrix complete (§8.4), calib_v6 2×2 BM25 ablation complete (§8.7), GRB full-corpus runs (gpt-4o-mini) confirmed.
 > **Status**: GraphRAG-Bench full-corpus runs (gpt-4o-mini) confirmed. HARE-Bench full matrix complete: 43 runs executed under corrected gold schemas (20 questions updated), revised typed scorer, and canonical NER (commit ff8f697, May 13 2026). All reported HARE-Bench scores are post-canonical.
 
 ---
@@ -400,7 +400,7 @@ The no-graph baseline (rerank_k10) ranks equally with several graph-augmented co
 
 | Signal | Med Δ | Nov Δ | Asymmetry |
 |--------|-------|-------|-----------|
-| + pruning (at k=10, community) | −0.009 `[VERIFY]` | **−0.039** | Nov penalized 4× more |
+| + pruning (at k=10, community) | −0.009 | **−0.039** | Nov penalized 4× more |
 | + k=10 (vs k=5) | **+0.035** | +0.012 | Med gains 3× more |
 | + community context (at k=5) | +0.007 | **+0.022** | Nov gains 3× more |
 
@@ -634,26 +634,24 @@ Gold number answers carry a `unit` (`billion USD`) and a `tolerance` equal to 1%
 
 **Full 500-question matrix — confirmed post-canonical scores (n=500, ±0.038 noise band):**
 
-> *Per-type breakdowns (TAL, DAL, MDJ, TVR, CE) are confirmed in GPU result files (`bench_eval_fang_*_rp.json`); extract with `score_typed.py` to populate the [V] cells before final publication.*
-
 | Run | Model | TAL | DAL | MDJ | TVR | CE | Mean | In top band |
 |-----|-------|-----|-----|-----|-----|-----|------|-------------|
-| laned60+community+k50+rerank+SRR+BC+BM25+ADF | Mini | [V] | [V] | [V] | [V] | [V] | **0.739** | ✓ |
-| laned60+community+k50+rerank+SRR | Mini | [V] | [V] | [V] | [V] | [V] | **0.732** | ✓ |
-| laned60+community+k50+rerank+SRR+BC+BM25 | Mini | [V] | [V] | [V] | [V] | [V] | **0.730** | ✓ |
-| laned60+community+k30+SRR+BC+BM25+ADF | Mini | [V] | [V] | [V] | [V] | [V] | **0.727** | ✓ |
-| laned60+community+k50+rerank+SRR (no GLEIF) | Mini | [V] | [V] | [V] | [V] | [V] | **0.721** | ✓ |
-| laned60+community+k50+rerank+SRR+ADF | Mini | [V] | [V] | [V] | [V] | [V] | **0.715** | ✓ |
-| laned60+community+k30+SRR+BC+BM25 | Mini | [V] | [V] | [V] | [V] | [V] | **0.708** | ✓ |
-| laned60+community+k30+rerank+SRR (no GLEIF) | Mini | [V] | [V] | [V] | [V] | [V] | **0.703** | ✓ |
-| laned60+community+k30+rerank+SRR+ADF | Mini | [V] | [V] | [V] | [V] | [V] | **0.703** | ✓ |
-| laned60+community+k30+SRR | Mini | [V] | [V] | [V] | [V] | [V] | **0.700** | ✓ |
-| laned60+community+k30+rerank+SRR | Mini | [V] | [V] | [V] | [V] | [V] | **0.679** | — |
-| vanilla+rerank | Mini | [V] | [V] | [V] | [V] | [V] | **0.674** | — |
-| laned60+community+k30+rerank+SRR | Sonnet | [V] | [V] | [V] | [V] | [V] | **0.643** | — |
-| laned60+community+k50+rerank+SRR | Haiku | [V] | [V] | [V] | [V] | [V] | **0.641** | — |
-| laned60+community+k30+rerank+SRR | Haiku | [V] | [V] | [V] | [V] | [V] | **0.621** | — |
-| laned60+community+k30+rerank+SRR | gpt-oss-120b | [V] | [V] | [V] | [V] | [V] | **0.600** | — |
+| laned60+community+k50+rerank+SRR+BC+BM25+ADF | Mini | 0.705 | 0.590 | 0.883 | 0.769 | 0.750 | **0.739** | ✓ |
+| laned60+community+k50+rerank+SRR | Mini | 0.712 | 0.580 | 0.853 | 0.768 | 0.745 | **0.732** | ✓ |
+| laned60+community+k50+rerank+SRR+BC+BM25 | Mini | 0.713 | 0.603 | 0.830 | 0.776 | 0.728 | **0.730** | ✓ |
+| laned60+community+k30+SRR+BC+BM25+ADF | Mini | 0.676 | 0.581 | 0.856 | 0.766 | 0.757 | **0.727** | ✓ |
+| laned60+community+k30+SRR+BC+BM25 | Mini | 0.670 | 0.588 | 0.828 | 0.772 | 0.754 | **0.722** | ✓ |
+| laned60+community+k50+rerank+SRR (no GLEIF) | Mini | 0.694 | 0.563 | 0.844 | 0.757 | 0.745 | **0.721** | ✓ |
+| laned60+community+k50+rerank+SRR+ADF | Mini | 0.687 | 0.530 | 0.849 | 0.770 | 0.739 | **0.715** | ✓ |
+| laned60+community+k30+rerank+SRR (no GLEIF) | Mini | 0.664 | 0.536 | 0.817 | 0.753 | 0.746 | **0.703** | ✓ |
+| laned60+community+k30+rerank+SRR+ADF | Mini | 0.674 | 0.518 | 0.848 | 0.753 | 0.721 | **0.703** | ✓ |
+| laned60+community+k30+SRR | Mini | 0.631 | 0.521 | 0.816 | 0.775 | 0.758 | **0.700** | ✓ |
+| laned60+community+k30+rerank+SRR | Mini | 0.628 | 0.490 | 0.773 | 0.761 | 0.745 | **0.679** | — |
+| vanilla+rerank | Mini | 0.552 | 0.595 | 0.771 | 0.692 | 0.758 | **0.674** | — |
+| laned60+community+k30+rerank+SRR | Sonnet | 0.711 | 0.612 | 0.657 | 0.687 | 0.549 | **0.643** | — |
+| laned60+community+k50+rerank+SRR | Haiku | 0.699 | 0.614 | 0.644 | 0.668 | 0.582 | **0.641** | — |
+| laned60+community+k30+rerank+SRR | Haiku | 0.667 | 0.596 | 0.613 | 0.689 | 0.542 | **0.621** | — |
+| laned60+community+k30+rerank+SRR | gpt-oss-120b | 0.626 | 0.505 | 0.678 | 0.588 | 0.601 | **0.600** | — |
 
 *Statistical top band (Mean ≥ 0.701, within ±0.038 of leader 0.739): 10 configurations. Δ_depth (k50 vs k30, rerank+SRR, Mini): +0.053 (0.732 vs 0.679). Δ_BM25+BC (adding BM25+BC+ADF at k50): +0.007. ADF contribution at k30: +0.003 (0.700→0.703); at k50: neutral-to-positive. Cross-model at k30+rerank+SRR: Mini=0.679, Sonnet=0.643, Haiku=0.621; see §10 prompt alignment limitation.*
 
@@ -665,7 +663,7 @@ Gold number answers carry a `unit` (`billion USD`) and a `tolerance` equal to 1%
 
 **k=50+rerank+SRR (graph-only) scores 0.732.** Without BM25 or BC, the laned60+k50 configuration already delivers +0.058 over vanilla+rerank. Retrieval depth is the single largest driver on HARE-Bench: k=50 (0.732) beats k=30 (0.679) by +0.053 on the same configuration. At k=30 the lane gate cannot draw from enough cross-domain candidates; at k=50 the pool is wide enough for the lane filter to select cross-domain evidence that genuinely links.
 
-**BM25+BC adds +0.008 at k30, +0.007 at k50 (with ADF).** The BM25 contribution is retrieval-depth-dependent. At k=30, adding BC+BM25 to the k30+SRR baseline (0.700) lifts to 0.708 — a modest +0.008 gain because the no-rerank k30 pool is already constrained by the lane gate. At k=50, BC+BM25+ADF over the k50+SRR base (0.732) reaches 0.739 (+0.007). In both cases, BM25 contributes most on identifier-dense question types (TAL patent/CVE lookups; MDJ cross-domain joins) where vector retrieval cannot distinguish opaque structured identifiers. Note: the k30+rerank+SRR+BC+BM25 configuration (tested in earlier runs at 0.719) uses reranking on top of BM25; the current figures are for no-rerank configurations, which are the directly comparable ablation pairs in the final matrix.
+**BM25+BC adds +0.022 at k30, +0.007 at k50 (with ADF).** The BM25 contribution is retrieval-depth-dependent. At k=30, adding BC+BM25 to the k30+SRR baseline (0.700) lifts to 0.722 (+0.022). At k=50, BC+BM25+ADF over the k50+SRR base (0.732) reaches 0.739 (+0.007). The larger k30 gain reflects BM25's higher marginal value when the semantic-only pool is smaller and identifier-heavy question types (TAL patent/CVE lookups; MDJ cross-domain joins) dominate the residual retrieval gap. Note: the k30+rerank+SRR+BC+BM25 configuration (tested in earlier runs at 0.719) uses reranking on top of BM25; the current figures are for no-rerank configurations, which are the directly comparable ablation pairs in the final matrix.
 
 **vanilla+rerank is the baseline at 0.674.** The vanilla+rerank run is the controlled baseline: 256-token fixed chunks, reranking, no graph features, no SRR. The k30+SRR configuration (0.700) beats it by +0.026, and the full top band (0.700–0.739) exceeds it across all ten in-band configurations. SRR is essential: graph expansion without structured output reprompting (k30 graph, no SRR) scores below vanilla on earlier pre-SRR ablations, confirming that the network-axis gains are only usable when the quality axis — specifically SRR — is also active.
 
@@ -738,7 +736,29 @@ However, BM25 is standard in production enterprise stacks. The question is wheth
 
 BM25 contribution = `vector_bm25_bare − vector_bare`. Lane contribution = `vector_only − vector_bare`. Interaction = `vector_bm25 − vector_bm25_bare − (vector_only − vector_bare)`.
 
-`[VERIFY: insert ablation table after calib_v6 runs complete]`
+**Results (HARE-Bench, n=500, gpt-4o-mini, k=10+rerank+SRR):**
+
+| Configuration | Entity lane | BM25 | CE | MDJ | TVR | TAL | DAL | **All** |
+|---|---|---|---|---|---|---|---|---|
+| `vector_only` | ✓ | — | 0.738 | 0.769 | 0.751 | 0.614 | 0.503 | **0.675** |
+| `vector_bm25` | ✓ | ✓ | 0.742 | 0.765 | 0.748 | 0.559 | 0.548 | **0.672** |
+| `vector_bare` | — | — | 0.731 | 0.756 | 0.737 | 0.545 | 0.506 | **0.655** |
+| `vector_bm25_bare` | — | ✓ | 0.722 | 0.749 | 0.724 | 0.553 | 0.509 | **0.651** |
+
+**Effect decomposition:**
+
+| Effect | Value |
+|---|---|
+| Lane contribution (BM25 off) | **+0.020** |
+| Lane contribution (BM25 on) | **+0.021** |
+| BM25 contribution (lane on) | −0.003 |
+| BM25 contribution (lane off) | −0.004 |
+| Interaction | +0.001 (negligible) |
+| Lane advantage over BM25-only baseline | **+0.024** |
+
+The entity lane contributes a consistent +0.020–+0.021 regardless of BM25 state. BM25 contributes approximately zero (slightly negative) at this operating point. The effects are additive with no meaningful interaction. The lane-over-BM25-only gap (+0.024) answers the practitioner's question directly: at k=10 with reranking and SRR, graph-structural signals add +0.024 over a naive hybrid retriever, and adding BM25 to the full graph stack does not help.
+
+The per-type BM25 pattern is mixed: BM25 slightly helps CE (+0.008) and DAL (+0.045) but hurts TAL (−0.055) and has minimal effect on MDJ and TVR. The TAL loss is unexpected given the identifier-heavy nature of TAL questions; at k=10, BM25 appears to introduce retrieval noise that reranking does not fully recover. The positive BM25 effects observed at k=30–50 in higher-recall configurations (§8.4) may reflect a different operating regime where the wider candidate pool benefits from lexical precision to supplement dense recall.
 
 The `vector_bm25_bare` cell (vector + BM25, no entity lane) is the DIY practitioner baseline: the result of adding BM25 to standard RAG without the graph layer. The gap `vector_only − vector_bm25_bare` quantifies what the entity lane and community structure contribute *over and above* a naive hybrid retriever — the question every enterprise team faces when deciding whether graph indexing is worth the additional infrastructure. A positive gap argues for the graph layer; a near-zero gap argues that BM25 alone closes the retrieval deficit and simpler tooling suffices.
 
@@ -769,7 +789,7 @@ The BM25 index is built via DuckDB FTS (`PRAGMA create_fts_index`, Porter stemme
 | laned60+community+k30+rerank+SRR | gpt-oss-120b | 0.600 | — (no-ADF baseline) |
 | laned60+community+k30+rerank+SRR+ADF | gpt-oss-120b | **0.590** | **−0.010** |
 
-*ADF is beneficial at k=30 where the wider-than-optimal candidate pool contains proportionally more off-domain noise. At k=50, the lane gate already filters cross-domain evidence effectively; ADF over-restricts the candidate space and costs accuracy. ADF also hurts the sovereign model (gpt-oss-120b), likely because domain classification accuracy is lower for the open-weight model. Per-type breakdown [V]: extract from GPU result files to identify which question types drive the k=30 gain.*
+*ADF is beneficial at k=30 where the wider-than-optimal candidate pool contains proportionally more off-domain noise. At k=50, the lane gate already filters cross-domain evidence effectively; ADF over-restricts the candidate space and costs accuracy. ADF also hurts the sovereign model (gpt-oss-120b), likely because domain classification accuracy is lower for the open-weight model. Per-type ADF contribution at k=30 (ADF vs no-ADF, rerank+SRR, Mini): TAL +0.046, DAL +0.028, MDJ +0.075, TVR −0.008, CE −0.024. ADF gains concentrate on MDJ and TAL — cross-domain join and identifier lookup questions where scoping retrieval to the correct source type eliminates the most off-domain noise. CE is slightly hurt, likely because CE questions frequently require evidence from multiple domains simultaneously and ADF narrows the candidate pool too aggressively for those queries.*
 
 ---
 
@@ -860,7 +880,7 @@ The HARE-Bench typed scorer was designed precisely to close this gap. The conver
 - **Prompt tuning confound**: every RAG benchmark faces an inescapable dilemma: fix one prompt across all generators, or allow per-model tuning. Neither option is clean. A fixed prompt is stylistically aligned to the model it was written for — a prompt written to elicit concise answers from gpt-4o-mini will depress Claude scores because Claude adds attribution preambles ("Based on...", "According to...") that the scorer treats as noise, and vice versa. Allow per-model tuning and scores become incomparable across systems because the engineering effort and judgment invested in each model's prompt is uncontrolled and unquantifiable. Our own study is not exempt: the SRR system prompt includes a Claude-specific suffix (`_SRR_CLAUDE_SUFFIX`) that suppresses exactly these preambles. Without it, Haiku and Sonnet scores reflect a stylistic mismatch, not retrieval quality. The deeper problem is that "optimal prompt" is not a well-defined artifact — it is the output of iterative human judgment that varies by annotator, question type, and model version. What practitioners actually want to know is: *with proper per-model engineering, what can this retrieval stack deliver in production?* That number cannot be read off any single fixed-prompt benchmark. Our cross-model comparisons (Mini vs Haiku vs Sonnet) should be interpreted as lower bounds on each model's potential, not ceilings.
 - **Static index**: community detection and entity index are built once. Corpus updates require rebuilding the co-occurrence matrix and re-running Louvain community detection. Wall-clock time on an arbitrary corpus is not estimated here, but the scaling class is fixed: O(edges) with zero LLM calls, versus O(docs × LLM-calls) for full KG reconstruction in LLM-based systems. The relative cost advantage holds regardless of corpus size.
 - **Entity naming fragmentation**: The HARE-Bench corpus spans four structurally dissimilar source types (SEC 10-K filings, CVE records, USPTO patents, Federal Register notices), each using distinct naming conventions for the same real-world entities — "Alphabet Inc." (10-K), "Google LLC" (patent assignee), "google" (CPE vendor string). The lane gate operates on entity surface forms extracted by spaCy NER; without a curated alias map, these variants are assigned separate entity IDs and are not linked at retrieval time. This is a known source of error on CE and MDJ question types. Chonk's `VocabularyMatcher` supports injection of curated entity vocabularies at index time, which would resolve cross-domain aliases — but was intentionally excluded here to keep the benchmark domain-agnostic.
-- **Structured identifier retrieval**: Opaque structured identifiers (US-prefixed patent numbers, CVE-YYYY-NNNNN codes) are semantically uninformative — embedding models cannot distinguish two patents by ID alone when the surrounding content is topically similar. This is a category failure of pure semantic retrieval, not a model deficiency. The primary evaluation results (§8.4) were produced before the BM25+CARDINAL NER fix described in §8.7; the calib_v6 ablation (`[VERIFY: pending]`) provides the corrected patent-section baseline.
+- **Structured identifier retrieval**: Opaque structured identifiers (US-prefixed patent numbers, CVE-YYYY-NNNNN codes) are semantically uninformative — embedding models cannot distinguish two patents by ID alone when the surrounding content is topically similar. This is a category failure of pure semantic retrieval, not a model deficiency. The primary evaluation results (§8.4) were produced before the BM25+CARDINAL NER fix described in §8.7; the calib_v6 ablation (§8.7, complete) provides the corrected patent-section baseline.
 
 ---
 
