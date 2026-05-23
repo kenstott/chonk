@@ -1,0 +1,5 @@
+extends = "fang_calib_v6_vector_bare.toml"
+run_name = "fang_calib_v6_vector_bm25_bare"
+
+[retrieval]
+bm25 = true

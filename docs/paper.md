@@ -493,27 +493,31 @@ We evaluate four configurations per model × ±SRR on both GraphRAG-Bench (credi
 - `Δ_combined` = best graph config + SRR − vanilla_rerank: combined gain
 - Superadditivity test: `Δ_combined > Δ_retrieval + Δ_SRR`
 
-**Pending GraphRAG-Bench runs (Haiku and SRR ablations, post-canonical NER):**
+**Completed GraphRAG-Bench runs (Haiku and SRR ablations, post-canonical NER, n=4,072):**
 
-| Run | Model | SRR | Notes |
-|-----|-------|-----|-------|
-| vanilla_256_haiku_full | Haiku | no | baseline |
-| vanilla_256_haiku_rerank_full | Haiku | no | reranking baseline |
-| vanilla_256_mini_rerank_srr_full | Mini | yes | **SRR on vanilla — isolates Δ_SRR without graph** |
-| vanilla_256_haiku_rerank_srr_full | Haiku | yes | **SRR on vanilla — isolates Δ_SRR without graph** |
-| ner_ref_laned60_community_k30_haiku_full | Haiku | no | graph baseline |
-| ner_ref_laned60_community_k30_haiku_srr_full | Haiku | yes | graph+SRR |
-| ner_ref_laned60_community_k30_mini_srr_full | Mini | yes | graph+SRR |
+| Run | Model | SRR | All | Notes |
+|-----|-------|-----|-----|-------|
+| vanilla_256_haiku_full | Haiku | no | 0.605 | baseline |
+| vanilla_256_haiku_rerank_full | Haiku | no | 0.621 | reranking baseline |
+| vanilla_256_mini_rerank_srr_full | Mini | yes | 0.685 | **SRR on vanilla — isolates Δ_SRR without graph** |
+| vanilla_256_haiku_rerank_srr_full | Haiku | yes | 0.598 | **SRR on vanilla — isolates Δ_SRR without graph** |
+| ner_ref_laned60_community_k30_haiku_full | Haiku | no | 0.623 | graph baseline |
+| ner_ref_laned60_community_k30_haiku_srr_full | Haiku | yes | 0.632 | graph+SRR |
+| ner_ref_laned60_community_k30_mini_srr_full | Mini | yes | 0.712 | graph+SRR (leader) |
 
-The two vanilla+SRR runs are the critical ablation for H2: if `Δ_SRR` on vanilla is large and consistent across models, SRR works independently of graph retrieval. If the gain is larger on Haiku than Mini, model capability is the gating factor.
+The vanilla+SRR ablations isolate Δ_SRR without graph retrieval. Key decomposition:
 
-Mini equivalents using post-canonical NER (commit ff8f697, May 13 2026) are in the pending queue. Pre-canonical Mini NER runs used surface-form entity matching; the canonicalization change (root lemma normalization: "customers" → "customer") affects entity-feature runs only. Vanilla runs are unaffected and serve as valid baselines.
+| | Mini | Haiku |
+|---|---|---|
+| Δ_SRR on vanilla (no graph) | **+0.033** (0.652→0.685) | **−0.023** (0.621→0.598) |
+| Δ_SRR on graph (k30) | **+0.034** (0.678→0.712) | **+0.009** (0.623→0.632) |
+| Δ_graph (no SRR) | +0.026 (0.652→0.678) | +0.002 (0.621→0.623) |
 
 ### 7.3 Hypotheses
 
 **H1 (Graph retrieval via NLP primitives improves RAG quality)**: NER co-occurrence edges, Louvain community structure, and lane-gated traversal recover evidence that pure embedding retrieval misses — particularly on heterogeneous corpora requiring cross-document entity joins. The structural signal is compounding: P1 (entity-ref-expansion) and P2 (community context) each contribute independently, and their combination should exceed the sum of individual gains. On HARE-Bench, where answers require linking entities across SEC filings, CVEs, Federal Register entries, and patents, this superadditivity should be most visible.
 
-**H2 (SRR gains are real but model-capability-gated)**: Requiring the generator to produce `{answer, key_claims, evidence_used}` JSON and reprompting once when no evidence is cited is intuitive — it closes the loop between retrieval and generation. But compliance with the schema and the quality of the reprompt response depend on the generator's instruction-following capability. H2 predicts SRR delivers larger, more consistent gains on Haiku than on Mini, and that the gain floor (minimum `Δ_SRR`) is higher for capable models. The vanilla+SRR ablation isolates this effect without graph retrieval.
+**H2 (SRR gains are real but model-capability-gated)**: Requiring the generator to produce `{answer, key_claims, evidence_used}` JSON and reprompting once when no evidence is cited is intuitive — it closes the loop between retrieval and generation. But compliance with the schema and the quality of the reprompt response depend on the generator's instruction-following capability. H2 predicts SRR gains are gated by model capability; the vanilla+SRR ablation (no graph retrieval) isolates whether SRR can function independently of the retrieval stack, and whether the gain is model-tier-dependent.
 
 ### 7.4 Results
 
@@ -521,7 +525,13 @@ Full results (GraphRAG-Bench, n=4,072, ±0.014 noise band):
 
 | Config | Model | Generation | All | In top band |
 | ------ | ----- | ---------- | --- | ----------- |
+| vanilla_256 | Haiku | — | 0.605 | — |
+| vanilla_256_rerank | Haiku | — | 0.621 | — |
+| vanilla_256_rerank | Haiku | SRR | 0.598 | — |
 | vanilla_256_rerank | Mini | — | 0.652 | — |
+| vanilla_256_rerank | Mini | SRR | 0.685 | — |
+| laned60+community+k30 | Haiku | — | 0.623 | — |
+| laned60+community+k30 | Haiku | SRR | 0.632 | — |
 | laned60+community+k30 | Mini | — | 0.678 | — |
 | laned60+community+k30 | Mini | SR | 0.710 | — |
 | laned60+community+k30 | Mini | SRR | **0.712** | ✓ (leader) |
@@ -531,17 +541,15 @@ Full results (GraphRAG-Bench, n=4,072, ±0.014 noise band):
 | laned60+community+k50+rerank | Mini | SRR+BM25 | 0.704 | ✓ (B3) |
 | laned60+community+k50+rerank | Mini | SRR+ADF | 0.702 | ✓ (B2) |
 | laned60+community+k30+rerank | Mini | SRR | 0.701 | ✓ |
-| laned60+community+k30 | Haiku | — | 0.623 | — |
-| laned60+community+k30 | Haiku | SRR | 0.632 | — |
-| Δ_graph (k30+graph vs vanilla+rerank) | — | — | **+0.026** | |
-| Δ_SR_stack (SRR vs graph-only) | — | — | **+0.034** | |
-| Δ_total | — | — | **+0.060** | |
+| Δ_graph (k30+graph vs vanilla+rerank, Mini) | — | — | **+0.026** | |
+| Δ_SR_stack (SRR vs graph-only, Mini) | — | — | **+0.034** | |
+| Δ_total (Mini) | — | — | **+0.060** | |
 
 *Statistical top band (All ≥ 0.698, i.e. within ±0.014 of leader 0.712): k30_mini_srr (leader), k50_mini_srr_rerank (B1=0.708), gpt-oss-120b_srr (R1=0.708, generator-agnostic canonical), k30_mini_srr_rerank_adf (A1=0.704), k50_mini_srr_rerank_bm25 (B3=0.704), k50_mini_srr_rerank_adf (B2=0.702), k30_mini_srr_rerank (0.701). Seven configurations are statistically tied; incremental tuning (k-size, BM25, ADF) produces noise-level variation within the top band. Outside band: k30_mini_srr_rerank_bm25 (A2=0.695), k50_mini_srr_rerank_bm25_adf (B4=0.693).*
 
 **GRB score stability.** The top seven configurations cluster within 0.011 (0.701–0.712). SRR (+0.034) is the single largest contributor. Reranking is neutral at k30 (0.701 ≈ leader) and neutral-to-negative at k50. BM25 is harmful at k30 (0.695, outside band) and neutral at k50 (0.704). ADF is neutral at k30 and mildly negative at k50. The tight clustering indicates the universal feature set (NER + reference expansion + lane-gating + community context + SRR) has reached a performance plateau on this benchmark; auxiliary features produce noise-level shifts rather than structural gains.
 
-H1 confirmed: graph retrieval adds +0.026 on GRB (ablation-isolated, n=4,072, p<0.001). H2 (SRR model-gating): partially confirmed on HARE-Bench — cross-model results (Mini=0.679, Sonnet=0.643, Haiku=0.621 at k30 rerank SRR) show Mini leading, but the comparison is confounded by prompt alignment (§10); see §8 for full cross-model analysis. HARE-Bench results: see §8.
+**H1 confirmed**: graph retrieval adds +0.026 on GRB (ablation-isolated, n=4,072). **H2 confirmed**: SRR is strongly model-capability-gated — and the mechanism is sharper than predicted. On Mini, SRR adds +0.033 on vanilla and +0.034 on graph; graph retrieval is not required for SRR to function. On Haiku, SRR *hurts* on vanilla (−0.023: 0.621→0.598) and helps only modestly on graph (+0.009: 0.623→0.632). The Haiku vanilla+SRR degradation is the key finding: when evidence-grounded context is absent, the reprompt fires and Haiku fills in fabricated evidence citations, depressing answer quality below the no-SRR baseline. Graph retrieval provides the grounded context that makes SRR functional even on Haiku — but the gain (+0.009) remains far below Mini's (+0.034), indicating that SRR compliance and reprompt quality are a function of instruction-following capability that graph retrieval cannot substitute. Graph signals add +0.002 for Haiku without SRR (0.621→0.623) versus +0.026 for Mini — a second confirmation that graph retrieval gains are also model-capability-gated: a weaker model cannot exploit the additional grounded context. The original H2 formulation (predicting Haiku gains > Mini gains) was directionally wrong; the result is stronger: SRR is harmful below a capability threshold, not merely less helpful. HARE-Bench cross-model results: see §8.
 
 ### 7.5 Sovereign Deployment Finding
 

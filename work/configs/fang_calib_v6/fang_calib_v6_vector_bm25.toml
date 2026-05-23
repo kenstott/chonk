@@ -1,0 +1,23 @@
+extends = "../fang_base.toml"
+run_name = "fang_calib_v6_vector_bm25"
+
+[retrieval]
+enhanced = true
+entity_ref_expansion = true
+lane_entity_min_sim = 0.60
+top_k = 10
+bm25 = true
+
+[retrieval.community]
+enabled = true
+min_coherence = 0.5
+
+[gen]
+provider = "openai"
+model    = "gpt-4o-mini-2024-07-18"
+
+[rerank]
+enabled = true
+
+[srr]
+enabled = true

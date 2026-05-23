@@ -1,0 +1,5 @@
+extends = "fang_ner_ref_laned60_community_k10_rerank_srr_mini.toml"
+run_name = "fang_calib_v6_vector_bm25"
+
+[retrieval]
+bm25 = true
