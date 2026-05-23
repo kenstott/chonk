@@ -11,6 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ._pool import ThreadLocalDuckDB
+from ._protocol import VectorBackend  # noqa: F401 — runtime isinstance check
 from ._relational import RelationalStore
 from ._vector import DuckDBVectorBackend
 
@@ -48,7 +49,8 @@ class Store:
         """
         db_path = str(db_path)
         self._db = ThreadLocalDuckDB(db_path, read_only=read_only)
-        self.vector = DuckDBVectorBackend(self._db, embedding_dim=embedding_dim)
+        self.vector: VectorBackend = DuckDBVectorBackend(self._db, embedding_dim=embedding_dim)
+        assert isinstance(self.vector, VectorBackend)
         if read_only:
             self.relational = None  # type: ignore
             return

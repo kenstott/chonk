@@ -505,10 +505,16 @@ def cmd_index(args: argparse.Namespace) -> None:
     out_dir  = Path(args.out_dir)
     data_dir = out_dir / "data"
     embed_content_only = getattr(args, "embed_content_only", False)
+    include_doc_name   = getattr(args, "include_doc_name", False)
     min_chunk = getattr(args, 'min_chunk', MIN_CHUNK) or MIN_CHUNK
     max_chunk = getattr(args, 'max_chunk', MAX_CHUNK) or MAX_CHUNK
     size_suffix = f"_{min_chunk}_{max_chunk}" if (min_chunk != MIN_CHUNK or max_chunk != MAX_CHUNK) else ""
-    base = "chonk_nobc" if embed_content_only else "chonk"
+    if embed_content_only:
+        base = "chonk_nobc"
+    elif include_doc_name:
+        base = "chunkymonkey_bc"
+    else:
+        base = "chonk"
     db_path = data_dir / f"{base}{size_suffix}.duckdb"
 
     if db_path.exists() and args.force:
@@ -583,7 +589,7 @@ def cmd_index(args: argparse.Namespace) -> None:
                 min_chunk_size=min_chunk,
                 max_chunk_size=max_chunk,
                 include_breadcrumb=True,
-                include_doc_name=False,
+                include_doc_name=include_doc_name,
                 promote_headings=False,
             )
             chunks = enrich_chunks(chunks)
@@ -641,9 +647,11 @@ def cmd_index(args: argparse.Namespace) -> None:
         _persist_entity_index(entity_index, db_path)
 
     if getattr(args, "with_community", False):
+        args.db_name = db_path.name
         cmd_build_community(args)
 
     if getattr(args, "with_svo", False):
+        args.db_name = db_path.name
         cmd_build_svo(args)
 
 
@@ -4750,6 +4758,8 @@ def _make_parser() -> argparse.ArgumentParser:
     p.add_argument("--force", action="store_true", help="Delete existing index and reindex")
     p.add_argument("--embed-content-only", action="store_true",
                    help="Embed content only (no breadcrumb); stores to chonk_nobc.duckdb")
+    p.add_argument("--include-doc-name", action="store_true", dest="include_doc_name",
+                   help="Include document name in breadcrumbs ([doc > section]); stores to chunkymonkey_bc.duckdb")
     p.add_argument("--min-chunk", type=int, default=None)
     p.add_argument("--max-chunk", type=int, default=None)
     p.add_argument("--with-ner", action="store_true",

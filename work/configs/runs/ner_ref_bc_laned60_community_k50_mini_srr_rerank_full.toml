@@ -1,0 +1,21 @@
+extends = "../base.toml"
+run_name = "ner_ref_bc_laned60_community_k50_mini_srr_rerank_full"
+
+[index]
+db_name = "chunkymonkey_bc_1100_2200.duckdb"
+
+[retrieval]
+enhanced = true
+entity_ref_expansion = true
+lane_entity_min_sim = 0.60
+top_k = 50
+
+[retrieval.community]
+enabled = true
+min_coherence = 0.5
+
+[rerank]
+enabled = true
+
+[srr]
+enabled = true

@@ -97,28 +97,46 @@ class PgVectorBackend:
             cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
             cur.execute(f"""
                 CREATE TABLE IF NOT EXISTS {t} (
-                    chunk_id      TEXT PRIMARY KEY,
-                    document_name TEXT NOT NULL,
-                    section       TEXT,
-                    chunk_index   INTEGER NOT NULL DEFAULT 0,
-                    content       TEXT NOT NULL,
-                    breadcrumb    TEXT,
-                    chunk_type    TEXT NOT NULL DEFAULT 'document',
-                    source_offset INTEGER,
-                    source_length INTEGER,
-                    namespace     TEXT,
-                    source_detail TEXT,
-                    embedding     vector({self._embedding_dim})
+                    chunk_id            TEXT PRIMARY KEY,
+                    document_name       TEXT NOT NULL,
+                    section             TEXT,
+                    chunk_index         INTEGER NOT NULL DEFAULT 0,
+                    content             TEXT NOT NULL,
+                    breadcrumb          TEXT,
+                    chunk_type          TEXT NOT NULL DEFAULT 'document',
+                    source_offset       INTEGER,
+                    source_length       INTEGER,
+                    namespace           TEXT,
+                    source_detail       TEXT,
+                    source_id           TEXT,
+                    domain_id           TEXT,
+                    session_fingerprint TEXT,
+                    embedding           vector({self._embedding_dim}),
+                    fts_vec             tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED
                 )
             """)
-            # Add source_detail column if migrating an older table
+            for col in ("source_id", "domain_id", "session_fingerprint"):
+                cur.execute(f"ALTER TABLE {t} ADD COLUMN IF NOT EXISTS {col} TEXT")
             cur.execute(f"""
-                ALTER TABLE {t} ADD COLUMN IF NOT EXISTS source_detail TEXT
+                ALTER TABLE {t} ADD COLUMN IF NOT EXISTS
+                    fts_vec tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED
             """)
             # HNSW cosine index — works on empty tables (unlike IVFFlat)
             cur.execute(f"""
                 CREATE INDEX IF NOT EXISTS {t}_embedding_hnsw_idx
                 ON {t} USING hnsw (embedding vector_cosine_ops)
+            """)
+            cur.execute(f"""
+                CREATE INDEX IF NOT EXISTS {t}_fts_idx ON {t} USING gin(fts_vec)
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS chonk_documents (
+                    document_name TEXT PRIMARY KEY,
+                    content_hash  TEXT NOT NULL,
+                    source_uri    TEXT NOT NULL DEFAULT '',
+                    indexed_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    chunk_count   INTEGER NOT NULL DEFAULT 0
+                )
             """)
         self._conn.commit()
 
@@ -142,6 +160,9 @@ class PgVectorBackend:
         chunks: list,
         embeddings,
         namespace: str | None = None,
+        source_id: str | None = None,
+        domain_id: str | None = None,
+        session_fingerprint: str | None = None,
     ) -> None:
         """Insert chunks with embeddings.
 
@@ -193,6 +214,9 @@ class PgVectorBackend:
                     getattr(chunk, "source_length", None),
                     namespace,
                     source_detail_str,
+                    source_id,
+                    domain_id,
+                    session_fingerprint,
                     vec,
                 )
             )
@@ -205,8 +229,9 @@ class PgVectorBackend:
                     INSERT INTO {t}
                         (chunk_id, document_name, section, chunk_index, content,
                          breadcrumb, chunk_type, source_offset, source_length,
-                         namespace, source_detail, embedding)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                         namespace, source_detail, source_id, domain_id,
+                         session_fingerprint, embedding)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (chunk_id) DO NOTHING
                     """,
                     rec,
@@ -225,6 +250,8 @@ class PgVectorBackend:
         include_breadcrumbs: bool = True,
         namespaces: list[str] | None = None,
         chunk_types: list[str] | None = None,
+        domain_ids: list[str] | None = None,
+        session_fingerprint: str | None = None,
     ) -> list[tuple[str, float, object]]:
         """Search by cosine similarity using pgvector HNSW index.
 
@@ -259,6 +286,12 @@ class PgVectorBackend:
         if chunk_types is not None:
             clauses.append("chunk_type = ANY(%s)")
             filter_params.append(chunk_types)
+        if domain_ids is not None:
+            clauses.append("domain_id = ANY(%s)")
+            filter_params.append(domain_ids)
+        if session_fingerprint is not None:
+            clauses.append("session_fingerprint = %s")
+            filter_params.append(session_fingerprint)
 
         where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
         all_params = [query_vec] + filter_params + [query_vec, limit]
@@ -353,6 +386,103 @@ class PgVectorBackend:
             cur.execute(f"SELECT COUNT(*) FROM {self._table}")
             result = cur.fetchone()
         return result[0] if result else 0
+
+    # ------------------------------------------------------------------
+    # get_all_chunks
+    # ------------------------------------------------------------------
+
+    def get_all_chunks(self) -> list:
+        """Return all stored chunks as DocumentChunk objects (server-side cursor)."""
+        from ..models import DocumentChunk
+
+        self._ensure_connection()
+        chunks = []
+        t = self._table
+        with self._conn.cursor("get_all_chunks") as cur:
+            cur.execute(
+                f"""
+                SELECT document_name, content, section, chunk_index,
+                       source_offset, source_length, breadcrumb, source_detail, chunk_type
+                FROM {t}
+                ORDER BY document_name, chunk_index
+                """
+            )
+            for row in cur:
+                doc_name, content, section, chunk_idx, src_off, src_len, breadcrumb, src_detail, chunk_type = row
+                chunks.append(DocumentChunk(
+                    document_name=doc_name,
+                    content=content,
+                    section=_deserialize_section(section),
+                    chunk_index=chunk_idx,
+                    source_offset=src_off,
+                    source_length=src_len,
+                    breadcrumb=breadcrumb,
+                    embedding_content=f"{breadcrumb}\n\n{content}" if breadcrumb else content,
+                    source_detail=json.loads(src_detail) if src_detail else None,
+                    chunk_type=chunk_type or "document",
+                ))
+        return chunks
+
+    # ------------------------------------------------------------------
+    # Document registry
+    # ------------------------------------------------------------------
+
+    def register_document(
+        self,
+        document_name: str,
+        content_hash: str,
+        source_uri: str = "",
+        chunk_count: int = 0,
+    ) -> None:
+        self._ensure_connection()
+        with self._conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO chonk_documents (document_name, content_hash, source_uri, indexed_at, chunk_count)
+                VALUES (%s, %s, %s, now(), %s)
+                ON CONFLICT (document_name) DO UPDATE SET
+                    content_hash = EXCLUDED.content_hash,
+                    source_uri   = EXCLUDED.source_uri,
+                    indexed_at   = EXCLUDED.indexed_at,
+                    chunk_count  = EXCLUDED.chunk_count
+                """,
+                [document_name, content_hash, source_uri, chunk_count],
+            )
+        self._conn.commit()
+
+    def get_document_hash(self, document_name: str) -> str | None:
+        self._ensure_connection()
+        with self._conn.cursor() as cur:
+            cur.execute(
+                "SELECT content_hash FROM chonk_documents WHERE document_name = %s",
+                [document_name],
+            )
+            row = cur.fetchone()
+        return row[0] if row else None
+
+    def list_documents(self) -> list[dict]:
+        self._ensure_connection()
+        with self._conn.cursor() as cur:
+            cur.execute(
+                "SELECT document_name, content_hash, source_uri, indexed_at, chunk_count "
+                "FROM chonk_documents ORDER BY document_name"
+            )
+            rows = cur.fetchall()
+        return [
+            {"document_name": r[0], "content_hash": r[1], "source_uri": r[2],
+             "indexed_at": r[3], "chunk_count": r[4]}
+            for r in rows
+        ]
+
+    # ------------------------------------------------------------------
+    # Lifecycle hints (no-ops for PG)
+    # ------------------------------------------------------------------
+
+    def rebuild_fts_index(self) -> None:
+        pass  # tsvector index is live — no manual rebuild needed
+
+    def preload_embeddings(self) -> None:
+        pass  # pgvector HNSW index handles ANN — no RAM preload needed
 
     # ------------------------------------------------------------------
     # Lifecycle

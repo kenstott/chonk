@@ -1,0 +1,5 @@
+extends = "ner_ref_laned60_community_k30_mini_srr_rerank_full.toml"
+run_name = "ner_ref_laned60_community_k30_mini_srr_rerank_bm25_full"
+
+[retrieval]
+bm25 = true
