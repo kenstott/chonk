@@ -96,7 +96,7 @@ class Job:
 
     @property
     def scores_file(self) -> Path:
-        return Path(self.out_dir) / "results" / f"{self.name}_typed_scores.json"
+        return Path(self.out_dir) / "results" / f"bench_eval_{self.name}_rp.json"
 
     def is_done(self) -> bool:
         return self.scores_file.exists()
@@ -414,6 +414,122 @@ def build_fang_jobs() -> list[Job]:
             provider="openai",
             db_name=FANG_DB,
         ),
+        # ── laned60 k10 rerank ───────────────────────────────────────────────
+        _fang(
+            "fang_ner_ref_laned60_community_k10_rerank_mini",
+            ["--rerank"] + LANED60 + db + MINI,
+            rerank=True,
+            provider="openai",
+            db_name=FANG_DB,
+        ),
+        _fang(
+            "fang_ner_ref_laned60_community_k10_rerank_srr_mini",
+            ["--rerank", "--srr"] + LANED60 + db + MINI,
+            rerank=True,
+            provider="openai",
+            db_name=FANG_DB,
+        ),
+        _fang(
+            "fang_ner_ref_laned60_community_k10_rerank_haiku",
+            ["--rerank"] + LANED60 + db + HAIKU,
+            rerank=True,
+            provider="anthropic",
+            db_name=FANG_DB,
+        ),
+        _fang(
+            "fang_ner_ref_laned60_community_k10_rerank_srr_haiku",
+            ["--rerank", "--srr"] + LANED60 + db + HAIKU,
+            rerank=True,
+            provider="anthropic",
+            db_name=FANG_DB,
+        ),
+        # ── laned60 k30 no-rerank ─────────────────────────────────────────────
+        _fang(
+            "fang_ner_ref_laned60_community_k30_mini",
+            LANED60_K30 + db + MINI,
+            rerank=False,
+            provider="openai",
+            db_name=FANG_DB,
+        ),
+        _fang(
+            "fang_ner_ref_laned60_community_k30_haiku",
+            LANED60_K30 + db + HAIKU,
+            rerank=False,
+            provider="anthropic",
+            db_name=FANG_DB,
+        ),
+        _fang(
+            "fang_ner_ref_laned60_community_k30_srr_haiku",
+            ["--srr"] + LANED60_K30 + db + HAIKU,
+            rerank=False,
+            provider="anthropic",
+            db_name=FANG_DB,
+        ),
+        _fang(
+            "fang_ner_ref_laned60_community_k30_srr_bm25_mini",
+            ["--srr", "--bm25"] + LANED60_K30 + db + MINI,
+            rerank=False,
+            provider="openai",
+            db_name=FANG_DB,
+        ),
+        # ── laned60 k30 ADF / no_gleif variants ──────────────────────────────
+        _fang(
+            "fang_ner_ref_laned60_community_k30_rerank_srr_mini_adf",
+            ["--rerank", "--srr", "--auto-domain-filter"] + LANED60_K30 + db + MINI,
+            rerank=True,
+            provider="openai",
+            db_name=FANG_DB,
+        ),
+        _fang(
+            "fang_ner_ref_laned60_community_k30_rerank_srr_mini_no_gleif",
+            ["--rerank", "--srr", "--domain-ids", "patents", "sec_10k", "cve", "fed_reg"] + LANED60_K30 + db + MINI,
+            rerank=True,
+            provider="openai",
+            db_name=FANG_DB,
+        ),
+        _fang(
+            "fang_ner_ref_laned60_community_k30_rerank_srr_haiku_adf",
+            ["--rerank", "--srr", "--auto-domain-filter"] + LANED60_K30 + db + HAIKU,
+            rerank=True,
+            provider="anthropic",
+            db_name=FANG_DB,
+        ),
+        _fang(
+            "fang_ner_ref_laned60_community_k30_rerank_srr_gptoss120b_adf",
+            ["--rerank", "--srr", "--auto-domain-filter"] + LANED60_K30 + db + ["--gen-provider", "together", "--gen-model", "openai/gpt-oss-120b"],
+            rerank=True,
+            provider="together",
+            db_name=FANG_DB,
+        ),
+        # ── laned60 k50 haiku / sonnet / ADF / no_gleif ──────────────────────
+        _fang(
+            "fang_ner_ref_laned60_community_k50_rerank_srr_haiku",
+            ["--rerank", "--srr"] + LANED60_K50 + db + HAIKU,
+            rerank=True,
+            provider="anthropic",
+            db_name=FANG_DB,
+        ),
+        _fang(
+            "fang_ner_ref_laned60_community_k50_rerank_srr_mini_adf",
+            ["--rerank", "--srr", "--auto-domain-filter"] + LANED60_K50 + db + MINI,
+            rerank=True,
+            provider="openai",
+            db_name=FANG_DB,
+        ),
+        _fang(
+            "fang_ner_ref_laned60_community_k50_rerank_srr_mini_no_gleif",
+            ["--rerank", "--srr", "--domain-ids", "patents", "sec_10k", "cve", "fed_reg"] + LANED60_K50 + db + MINI,
+            rerank=True,
+            provider="openai",
+            db_name=FANG_DB,
+        ),
+        _fang(
+            "fang_ner_ref_laned60_community_k50_rerank_srr_sonnet",
+            ["--rerank", "--srr"] + LANED60_K50 + db + ["--gen-provider", "anthropic", "--gen-model", "claude-sonnet-4-6"],
+            rerank=True,
+            provider="anthropic",
+            db_name=FANG_DB,
+        ),
         # ── BC laned60 k30 (BC index required) ───────────────────────────────
         _fang(
             "fang_ner_ref_bc_laned60_community_k30_mini",
@@ -435,6 +551,79 @@ def build_fang_jobs() -> list[Job]:
             "fang_ner_ref_bc_laned60_community_k30_srr_bm25_mini",
             ["--rerank", "--srr", "--bm25"] + LANED60_K30 + bcdb + MINI,
             rerank=True,
+            provider="openai",
+            db_name=FANG_BC_DB,
+            depends_on=bc_deps,
+        ),
+        _fang(
+            "fang_ner_ref_bc_laned60_community_k30_srr_bm25_mini_adf",
+            ["--rerank", "--srr", "--bm25", "--auto-domain-filter"] + LANED60_K30 + bcdb + MINI + ["--community-min-coherence", "0.0"],
+            rerank=True,
+            provider="openai",
+            db_name=FANG_BC_DB,
+            depends_on=bc_deps,
+        ),
+        _fang(
+            "fang_ner_ref_bc_laned60_community_k30_srr_bm25_mini_pruned",
+            ["--rerank", "--srr", "--bm25", "--redundancy-threshold", "0.92"] + LANED60_K30 + bcdb + MINI + ["--community-min-coherence", "0.0"],
+            rerank=True,
+            provider="openai",
+            db_name=FANG_BC_DB,
+            depends_on=bc_deps,
+        ),
+        _fang(
+            "fang_ner_ref_bc_laned60_community_k30_srr_bm25_mini_adf_pruned",
+            ["--rerank", "--srr", "--bm25", "--redundancy-threshold", "0.92", "--auto-domain-filter"] + LANED60_K30 + bcdb + MINI + ["--community-min-coherence", "0.0"],
+            rerank=True,
+            provider="openai",
+            db_name=FANG_BC_DB,
+            depends_on=bc_deps,
+        ),
+        _fang(
+            "fang_ner_ref_bc_laned60_community_k30_srr_bm25_mini_pruned99",
+            ["--rerank", "--srr", "--bm25", "--redundancy-threshold", "0.99"] + LANED60_K30 + bcdb + MINI + ["--community-min-coherence", "0.0"],
+            rerank=True,
+            provider="openai",
+            db_name=FANG_BC_DB,
+            depends_on=bc_deps,
+        ),
+        _fang(
+            "fang_ner_ref_bc_laned60_community_k30_srr_bm25_mini_adf_pruned99",
+            ["--rerank", "--srr", "--bm25", "--redundancy-threshold", "0.99", "--auto-domain-filter"] + LANED60_K30 + bcdb + MINI + ["--community-min-coherence", "0.0"],
+            rerank=True,
+            provider="openai",
+            db_name=FANG_BC_DB,
+            depends_on=bc_deps,
+        ),
+        # ── BC laned60 k50 ───────────────────────────────────────────────────
+        _fang(
+            "fang_ner_ref_bc_laned60_community_k50_rerank_srr_bm25_mini",
+            ["--rerank", "--srr", "--bm25"] + LANED60_K50 + bcdb + MINI,
+            rerank=True,
+            provider="openai",
+            db_name=FANG_BC_DB,
+            depends_on=bc_deps,
+        ),
+        _fang(
+            "fang_ner_ref_bc_laned60_community_k50_rerank_srr_bm25_mini_adf",
+            ["--rerank", "--srr", "--bm25", "--auto-domain-filter"] + LANED60_K50 + bcdb + MINI,
+            rerank=True,
+            provider="openai",
+            db_name=FANG_BC_DB,
+            depends_on=bc_deps,
+        ),
+        _fang(
+            "fang_ner_ref_bc_laned60_community_k50_srr_bm25_mini",
+            ["--srr", "--bm25"] + LANED60_K50 + bcdb + MINI,
+            rerank=False,
+            provider="openai",
+            db_name=FANG_BC_DB,
+            depends_on=bc_deps,
+        ),
+        _fang(
+            "fang_ner_ref_bc_laned60_community_k50_srr_bm25_mini_adf",
+            ["--srr", "--bm25", "--auto-domain-filter"] + LANED60_K50 + bcdb + MINI,
+            rerank=False,
             provider="openai",
             db_name=FANG_BC_DB,
             depends_on=bc_deps,
@@ -544,7 +733,7 @@ async def run_job(
         "--schemas", schemas,
         "--results", str(job.gen_file),
         "--out", str(job.scores_file),
-        "--embed-model", "text-embedding-3-small",
+        "--local-embed-model", "BAAI/bge-large-en-v1.5",
     ]
     if dry_run:
         log(f"DRY-RUN SCORE {job.name}: {' '.join(score_cmd)}")
@@ -618,7 +807,7 @@ async def main(grb_only: bool, fang_only: bool, dry_run: bool) -> None:
 
     global_sem = asyncio.Semaphore(3)
     rerank_sem = asyncio.Semaphore(1)
-    eval_sem = asyncio.Semaphore(1)  # all evals share gpt-4o-mini judge; serialize to avoid RPM compounding
+    eval_sem = asyncio.Semaphore(4)  # local BAAI embedder — no RPM limit; parallel scoring safe
     provider_sems = {
         "openai": asyncio.Semaphore(1),
         "anthropic": asyncio.Semaphore(1),
