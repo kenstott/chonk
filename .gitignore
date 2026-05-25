@@ -25,3 +25,9 @@ htmlcov/
 !/work/fang2026/results
 /work/fang2026/results/*
 !/work/fang2026/results/bench_eval_fang_*.json
+!/work/fang2026/data
+/work/fang2026/data/*
+!/work/fang2026/data/fang2026_questions.jsonl
+!/work/fang2026/data/fang2026_questions_corrected.jsonl
+!/work/fang2026/data/fang2026_gold_schemas.jsonl
+!/work/fang2026/data/fang2026_gold_schemas_full.jsonl
