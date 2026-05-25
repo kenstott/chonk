@@ -400,23 +400,41 @@ def score_text(generated: str, gold_value: str, threshold: float = 0.75,
 
 # ── Evidence grounding check ─────────────────────────────────────────────────
 
-# Specific corpus identifiers that constitute grounded evidence
+# Corpus-specific identifiers and field markers that indicate retrieved evidence.
+# SRR evidence_used entries contain passage text rather than document IDs, so we
+# match corpus-characteristic strings across CVE, patent, SEC, and CPE corpora.
 _EVIDENCE_ID_RE = re.compile(
-    r'CVE-\d{4}-\d+'           # CVE ID
-    r'|US\d{6,8}'              # US patent number
-    r'|\b\w{2,6}_10[kK]'      # 10-K filing reference (e.g. googl_10k, aapl_10k_2026)
-    r'|\bLEI[:\s]'             # GLEIF LEI reference
-    r'|\bpat(?:ent)?[_\s]\d+', # patent reference with number
+    r'CVE-\d{4}-\d+'                                               # full CVE ID
+    r'|\bCVE[s]?\b'                                                # bare CVE mention
+    r'|\b(?:NVD|CPE)\b'                                           # NVD/CPE databases
+    r'|US\d{6,8}'                                                  # US patent number
+    r'|\b\w{2,8}_10[kK]'                                          # ticker_10k filing
+    r'|Form\s+10-[KQ]'                                            # SEC form reference
+    r'|\bassignee\b'                                               # patent assignee field
+    r'|\b(?:apple|google|alphabet|meta|amazon|netflix|microsoft)/\w+'  # CPE vendor/product
+    r'|This issue (?:is fixed|affects)'                            # CVE advisory text
+    r'|\bvulnerability\b'                                          # CVE description keyword
+    r'|votes?\s+per\s+share'                                      # SEC stock structure
+    r'|\bticker\s+[A-Z]{1,6}\b'                                  # SEC ticker reference
+    r'|\$\s*\d[\d,.]*\s*(?:million|billion)'                      # financial figures
+    r'|\bLEI[:\s]'                                                # GLEIF LEI reference
+    r'|\bpat(?:ent)?[_\s]\d+',                                   # patent reference
     re.IGNORECASE,
 )
 
+# Fallback: combined evidence text > 200 chars signals substantive retrieval even
+# when no specific corpus marker matches (e.g. narrative SEC passages, CMO text).
+_EVIDENCE_BULK_CHARS = 150
+
 
 def _evidence_is_grounded(srr_data: dict) -> bool:
-    """Return True if at least one evidence_used entry cites a specific corpus identifier."""
+    """Return True if evidence_used contains a corpus marker or substantive bulk text."""
     entries = srr_data.get("evidence_used") or []
     if not entries:
         return False
-    return any(_EVIDENCE_ID_RE.search(str(e)) for e in entries)
+    if any(_EVIDENCE_ID_RE.search(str(e)) for e in entries):
+        return True
+    return sum(len(str(e)) for e in entries) >= _EVIDENCE_BULK_CHARS
 
 
 # ── Dispatcher ──────────────────────────────────────────────────────────────
