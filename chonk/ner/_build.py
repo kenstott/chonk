@@ -30,6 +30,7 @@ def _strip_id_alias(entity_id: str) -> str | None:
             return entity_id[: -len(suffix)]
     return None
 
+
 _NER_CACHE_DDL = (
     "CREATE TABLE IF NOT EXISTS ner_cache "
     "(config_fingerprint VARCHAR PRIMARY KEY, chunk_count INTEGER NOT NULL, "
@@ -144,9 +145,12 @@ def build_ner(
     # entity_id -> (name, display_name, entity_type) — populated from matches
     entity_meta: dict[str, tuple[str, str, str]] = {}
 
+    from ._merge import merge_matches
+
     for chunk_id, chunk in chunks_to_process:
+        ner_text = chunk.content
+
         if schema_matcher is not None or data_matcher is not None:
-            from ._merge import merge_matches
             vocab_hits: list = []
             if schema_matcher is not None:
                 vocab_hits = merge_matches(
@@ -158,13 +162,13 @@ def build_ner(
                     data_matcher.match(chunk.content), vocab_hits,
                     source_text=chunk.content,
                 )
-            combined = merge_matches(vocab_hits, matcher.match(chunk.content), source_text=chunk.content)
+            combined = merge_matches(vocab_hits, matcher.match(ner_text), source_text=ner_text)
             for m in combined:
                 if m.entity_id not in entity_meta:
                     entity_meta[m.entity_id] = (m.name, m.display_name, m.entity_type or "concept")
             entity_index.index_chunk(chunk_id, chunk.content, combined)
         else:
-            matches = matcher.match(chunk.content)
+            matches = matcher.match(ner_text)
             for m in matches:
                 if m.entity_id not in entity_meta:
                     entity_meta[m.entity_id] = (m.name, m.display_name, m.entity_type or "concept")

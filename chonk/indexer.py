@@ -130,12 +130,13 @@ class Indexer:
     def _run(self, source_config: dict) -> int:
         """Internal: run the full indexing pipeline for one source."""
         import numpy as np
-        from sentence_transformers import SentenceTransformer
 
         from chonk.models import DocumentChunk
 
         # Resolve embed model
         if isinstance(self._embed_model, str):
+            from sentence_transformers import SentenceTransformer
+
             model = SentenceTransformer(self._embed_model)
         else:
             model = self._embed_model

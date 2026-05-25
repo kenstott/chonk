@@ -1,0 +1,5 @@
+extends = "fang_ner_ref_bc_laned60_community_k30_srr_bm25_mini.toml"
+run_name = "fang_ner_ref_bc_laned60_community_k30_srr_bm25_mini_pruned"
+
+[retrieval]
+redundancy_threshold = 0.92

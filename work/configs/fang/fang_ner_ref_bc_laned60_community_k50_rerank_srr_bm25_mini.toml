@@ -3,4 +3,4 @@ run_name = "fang_ner_ref_bc_laned60_community_k50_rerank_srr_bm25_mini"
 
 [retrieval]
 top_k = 50
-rerank_device = "cpu"
+rerank_device = "cuda"

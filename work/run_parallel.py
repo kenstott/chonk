@@ -304,6 +304,14 @@ def build_fang_jobs() -> list[Job]:
             db_name=FANG_VANILLA_DB,
             depends_on=gf_deps,
         ),
+        _fang(
+            "fang_ner_ref_graph_first_k10_srr_mini",
+            ["--srr"] + GF + vdb + MINI,
+            rerank=False,
+            provider="openai",
+            db_name=FANG_VANILLA_DB,
+            depends_on=gf_deps,
+        ),
         # ── claude-haiku-4-5 ─────────────────────────────────────────────────
         _fang(
             "fang_vanilla_rerank_haiku",
@@ -412,6 +420,35 @@ def build_fang_jobs() -> list[Job]:
             ["--rerank", "--srr"] + LANED45_K50 + db + MINI,
             rerank=True,
             provider="openai",
+            db_name=FANG_DB,
+        ),
+        # ── laned60 k10 no-rerank ────────────────────────────────────────────
+        _fang(
+            "fang_ner_ref_laned60_community_k10_mini",
+            LANED60 + db + MINI,
+            rerank=False,
+            provider="openai",
+            db_name=FANG_DB,
+        ),
+        _fang(
+            "fang_ner_ref_laned60_community_k10_srr_mini",
+            ["--srr"] + LANED60 + db + MINI,
+            rerank=False,
+            provider="openai",
+            db_name=FANG_DB,
+        ),
+        _fang(
+            "fang_ner_ref_laned60_community_k10_haiku",
+            LANED60 + db + HAIKU,
+            rerank=False,
+            provider="anthropic",
+            db_name=FANG_DB,
+        ),
+        _fang(
+            "fang_ner_ref_laned60_community_k10_srr_haiku",
+            ["--srr"] + LANED60 + db + HAIKU,
+            rerank=False,
+            provider="anthropic",
             db_name=FANG_DB,
         ),
         # ── laned60 k10 rerank ───────────────────────────────────────────────
