@@ -465,37 +465,18 @@ def score_entity(generated: str, gold_values: list[str], match_mode: str = "exac
 
 # ── Text scorer ─────────────────────────────────────────────────────────────
 
-def score_text(generated: str, gold_value: str, threshold: float = 0.75,
-               embedder=None) -> float:  # threshold reserved for future min-score cutoff
+def score_text(generated: str, gold_value: str, embedder=None) -> float:
     if _is_abstention(generated[:200]):
         return 0.3
     if not generated.strip() or not gold_value.strip():
         return 0.0
-    if embedder is not None:
-        import numpy as np
-        vg = embedder(gold_value)
-        vp = embedder(generated)
-        cos = float(np.dot(vg, vp) / (np.linalg.norm(vg) * np.linalg.norm(vp) + 1e-9))
-        return max(0.0, cos)
-
-    # ROUGE-L fallback
-    def _lcs(a, b):
-        a, b = a.lower().split(), b.lower().split()
-        m, n = len(a), len(b)
-        dp = [[0] * (n + 1) for _ in range(m + 1)]
-        for i in range(1, m + 1):
-            for j in range(1, n + 1):
-                dp[i][j] = dp[i-1][j-1] + 1 if a[i-1] == b[j-1] else max(dp[i-1][j], dp[i][j-1])
-        return dp[m][n]
-
-    ref_len = len(gold_value.split())
-    hyp_len = len(generated.split())
-    lcs = _lcs(gold_value, generated)
-    if ref_len == 0 or hyp_len == 0:
-        return 0.0
-    p = lcs / hyp_len
-    r = lcs / ref_len
-    return 2 * p * r / (p + r) if (p + r) > 0 else 0.0
+    if embedder is None:
+        raise ValueError("score_text requires an embedder; pass --local-embed-model")
+    import numpy as np
+    vg = embedder(gold_value)
+    vp = embedder(generated)
+    cos = float(np.dot(vg, vp) / (np.linalg.norm(vg) * np.linalg.norm(vp) + 1e-9))
+    return max(0.0, cos)
 
 
 # ── Evidence grounding check ─────────────────────────────────────────────────
@@ -561,8 +542,7 @@ def score_one(generated: str, schema: dict, embedder=None,
         base = score_entity(generated, values, schema.get("match_mode", "exact"))
     else:
         # text (default)
-        base = score_text(generated, str(val) if val else "", schema.get("similarity_threshold", 0.75),
-                          embedder=embedder)
+        base = score_text(generated, str(val) if val else "", embedder=embedder)
 
     # require_evidence: non-SRR runs cannot satisfy citation grounding — CE is NA.
     if schema.get("require_evidence") and srr_data is None:
