@@ -1787,13 +1787,15 @@ def _init_run_db(db_path: Path) -> None:
             retrieved_scores TEXT,
             expansion_stats TEXT,
             entity_ref_retry TEXT,
-            retrieval_trace TEXT
+            retrieval_trace TEXT,
+            srr TEXT
         )
     """)
-    try:
-        con.execute("ALTER TABLE results ADD COLUMN retrieval_trace TEXT")
-    except Exception:
-        pass  # column already exists
+    for _col in ("retrieval_trace TEXT", "srr TEXT"):
+        try:
+            con.execute(f"ALTER TABLE results ADD COLUMN {_col}")
+        except Exception:
+            pass  # column already exists
     con.execute("""
         CREATE TABLE IF NOT EXISTS eval_scores (
             id TEXT PRIMARY KEY,
@@ -1821,7 +1823,7 @@ def _upsert_results_to_db(db_path: Path, results: list[dict]) -> None:
     con = _connect_with_retry(db_path)
     for r in results:
         con.execute(
-            "INSERT OR REPLACE INTO results VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT OR REPLACE INTO results VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [
                 r.get("id"), r.get("question"), r.get("source"),
                 r.get("question_type"), r.get("context"),
@@ -1832,6 +1834,7 @@ def _upsert_results_to_db(db_path: Path, results: list[dict]) -> None:
                 _json.dumps(r.get("entity_ref_expansion")) if r.get("entity_ref_expansion") else None,
                 _json.dumps(r.get("entity_ref_retry")) if r.get("entity_ref_retry") else None,
                 _json.dumps(r.get("retrieval_trace")) if r.get("retrieval_trace") else None,
+                _json.dumps(r["srr"]) if r.get("srr") else None,
             ],
         )
     con.close()
@@ -1848,7 +1851,7 @@ def _write_results_to_db(db_path: Path, results: list[dict]) -> None:
     con.execute("DELETE FROM results")
     for r in results:
         con.execute(
-            "INSERT INTO results VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO results VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [
                 r.get("id"), r.get("question"), r.get("source"),
                 r.get("question_type"), r.get("context"),
@@ -1859,6 +1862,7 @@ def _write_results_to_db(db_path: Path, results: list[dict]) -> None:
                 _json.dumps(r.get("entity_ref_expansion")) if r.get("entity_ref_expansion") else None,
                 _json.dumps(r.get("entity_ref_retry")) if r.get("entity_ref_retry") else None,
                 _json.dumps(r.get("retrieval_trace")) if r.get("retrieval_trace") else None,
+                _json.dumps(r["srr"]) if r.get("srr") else None,
             ],
         )
     con.close()
@@ -1872,12 +1876,12 @@ def _read_results_from_db(db_path: Path) -> list[dict]:
     rows = con.execute("SELECT * FROM results").fetchall()
     cols = ["id","question","source","question_type","context","evidence",
             "generated_answer","gold_answer","retrieved_chunks","retrieved_scores",
-            "expansion_stats","entity_ref_retry","retrieval_trace"]
+            "expansion_stats","entity_ref_retry","retrieval_trace","srr"]
     con.close()
     records = []
     for row in rows:
         r = dict(zip(cols[:len(row)], row))
-        for key in ("evidence","retrieved_chunks","retrieved_scores","expansion_stats","entity_ref_retry","retrieval_trace"):
+        for key in ("evidence","retrieved_chunks","retrieved_scores","expansion_stats","entity_ref_retry","retrieval_trace","srr"):
             if r.get(key):
                 try: r[key] = _json.loads(r[key])
                 except Exception: pass
@@ -3263,6 +3267,7 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
                           or r.get("ground_truth", "")),
         "context":       [r["context"]],
         "answer_schema": _answer_schemas.get(r["id"]),
+        "srr":           r.get("srr"),
     } for r in records]
 
     # Load checkpoint

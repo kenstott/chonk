@@ -34,7 +34,7 @@ sys.path.insert(0, str(ROOT))
 # ── Abstention / hallucination detection ────────────────────────────────────
 
 _ABSTENTION_PHRASES = [
-    "not in context", "not in the context", "not mentioned", "not appear",
+    "not in context", "not in the context", "not mentioned", "not appear in",
     "no information", "cannot determine", "cannot be answered", "unable to",
     "does not contain", "not provided", "not available", "context does not",
     "context provided does not", "not found in", "no evidence",
@@ -43,12 +43,13 @@ _ABSTENTION_PHRASES = [
 ]
 
 # Model hedges its source while still asserting an answer — signals confabulation.
+# Phrases must be hedging constructions ("based on X", "X suggests"), not mere
+# locatives ("in the provided context" describing where something is absent).
 _HALLUCINATION_PHRASES = [
     "based on the context", "based on the information provided",
     "based on the provided context", "based on the given context",
     "according to the context", "the context suggests", "the context indicates",
-    "from the context", "in the context provided", "as per the context",
-    "the provided context", "context provided", "and based on the context",
+    "from the context", "as per the context", "and based on the context",
 ]
 
 
@@ -64,32 +65,70 @@ def _is_hallucination_hedge(text: str) -> bool:
 
 # ── Boolean scorer ──────────────────────────────────────────────────────────
 
-_YES_RE = re.compile(r'\b(yes|true|correct|affirmative|indeed|both|same)\b', re.I)
-_NO_RE  = re.compile(r'\b(no\b|false|incorrect|not the same|different|neither|absent|none)\b', re.I)
+_YES_RE = re.compile(r'\b(yes|true|correct|affirmative|indeed|both|same|equivalent|identical)\b', re.I)
+_NO_RE  = re.compile(
+    r'\b('
+    # "no" as a direct answer — exclude when followed by abstention nouns
+    r'no(?!\s+(?:information|evidence|mention|data|details?|records?|'
+    r'reference|proof|context|content|available|present|found|listed|included))\b'
+    r'|false|incorrect|not the same|different|neither|absent|none'
+    r'|not\s+(?:as\s+)?(?:a\s+)?separate\b'
+    r'|not\s+treated(?:\s+as\b)?'
+    r'|not\s+(?:an?\s+)?independent\b'
+    r'|not\s+distinct\b'
+    r'|not\s+(?:considered|classified|identified|recognized|designated)\s+as\b'
+    r'|does\s+not\s+(?:appear|seem)\s+to\s+be\b'
+    r')',
+    re.I
+)
 
 
 def _extract_bool(text: str) -> bool | None:
     t = text.strip()
-    yes = bool(_YES_RE.search(t))
-    no  = bool(_NO_RE.search(t))
+    # Find all YES spans, then remove any that are subsumed within a NO span
+    # (e.g. "same" inside "not the same" should not count as YES).
+    no_spans = [(m.start(), m.end()) for m in _NO_RE.finditer(t)]
+    yes_matches = _YES_RE.finditer(t)
+    yes = any(
+        not any(ns <= m.start() < ne for ns, ne in no_spans)
+        for m in yes_matches
+    )
+    no = bool(no_spans)
     if yes and not no:
         return True
     if no and not yes:
         return False
-    # first word heuristic
+    # first word heuristic — resolves yes+no conflicts when the opening word is unambiguous
     first = t.split()[0].lower().rstrip(".,!") if t else ""
     if first in ("yes", "true"):
         return True
     if first in ("no", "false"):
         return False
-    # last-sentence heuristic: hedged answers often conclude with the real verdict
+    # first-sentence heuristic — main claim is usually stated up front
     sentences = re.split(r'(?<=[.!?])\s+', t)
+    if sentences:
+        s0 = sentences[0].strip()
+        no_spans_s0 = [(m.start(), m.end()) for m in _NO_RE.finditer(s0)]
+        s0_yes = any(
+            not any(ns <= m.start() < ne for ns, ne in no_spans_s0)
+            for m in _YES_RE.finditer(s0)
+        )
+        s0_no = bool(no_spans_s0)
+        if s0_yes and not s0_no:
+            return True
+        if s0_no and not s0_yes:
+            return False
+    # last-sentence heuristic: hedged answers often conclude with the real verdict
     for sent in reversed(sentences):
         s = sent.strip()
         if not s:
             continue
-        s_yes = bool(_YES_RE.search(s))
-        s_no  = bool(_NO_RE.search(s))
+        no_spans_s = [(m.start(), m.end()) for m in _NO_RE.finditer(s)]
+        s_yes = any(
+            not any(ns <= m.start() < ne for ns, ne in no_spans_s)
+            for m in _YES_RE.finditer(s)
+        )
+        s_no = bool(no_spans_s)
         if s_yes and not s_no:
             return True
         if s_no and not s_yes:
@@ -97,17 +136,28 @@ def _extract_bool(text: str) -> bool | None:
     return None
 
 
+def _first_word_is_direct_answer(text: str) -> bool:
+    first = text.strip().split()[0].lower().rstrip(".,!") if text.strip() else ""
+    return first in ("yes", "no", "true", "false")
+
+
 def score_boolean(generated: str, gold_value: bool) -> float:
-    # Epistemic Fidelity: abstention earns partial credit; hallucination earns none.
-    if _is_abstention(generated):
-        return 0.3
+    # Try extraction first — abstention phrases in supporting context should not
+    # override a clear yes/no assertion in the main claim.
     pred = _extract_bool(generated)
     if pred is not None:
         # Hallucination hedge with assertable answer → 0.0 regardless of match.
         if _is_hallucination_hedge(generated):
             return 0.0
+        # If abstention is also detected and no strong direct-answer opener exists,
+        # the extracted signal came from incidental text (e.g. "whether it is the same"),
+        # not a genuine assertion — treat as abstention.
+        if _is_abstention(generated) and not _first_word_is_direct_answer(generated):
+            return 0.3
         return 1.0 if pred == gold_value else 0.0
-    # Unparseable ("maybe") — including hedge-without-answer — earns 0.3.
+    # No clear assertion extracted — partial credit for abstention, 0.3 for unparseable.
+    if _is_abstention(generated):
+        return 0.3
     return 0.3
 
 
@@ -142,7 +192,7 @@ def _parse_date(text: str):
 
 def score_date(generated: str, gold_value: str, tolerance_days: int = 0) -> float:
     if _is_abstention(generated):
-        return 0.3
+        return 0.0
     gold_date = _parse_date(gold_value)
     if gold_date is None:
         return float("nan")
@@ -160,6 +210,25 @@ _CVE_RE  = re.compile(r'CVE-\d{4}-\d+', re.IGNORECASE)
 _PATENT_ID_RE = re.compile(r'\b(US)?\d{7,8}\b')
 _DATE_STR_RE = re.compile(r'\b\d{4}[-/]\d{1,2}[-/]\d{1,2}\b')
 _YEAR_RE = re.compile(r'\b(19|20)\d{2}\b')
+_MONTH_DAY_RE = re.compile(
+    r'\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|'
+    r'Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)'
+    r'\.?\s+\d{1,2}\b',
+    re.I,
+)
+_SEC_FORM_RE = re.compile(r'\b10-[KkQq][A-Za-z]?\b')
+_FISCAL_YEAR_RE = re.compile(r'\b(?:FY|Q[1-4])\s*\d{2,4}\b', re.I)
+
+_WORD_TO_INT = {
+    'zero': 0, 'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+    'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
+    'eleven': 11, 'twelve': 12, 'thirteen': 13, 'fourteen': 14, 'fifteen': 15,
+    'sixteen': 16, 'seventeen': 17, 'eighteen': 18, 'nineteen': 19, 'twenty': 20,
+    'thirty': 30, 'forty': 40, 'fifty': 50, 'hundred': 100,
+}
+_WORD_NUM_RE = re.compile(
+    r'\b(' + '|'.join(_WORD_TO_INT) + r')\b', re.I
+)
 
 # Expand bare financial abbreviations to full words before quantulum3 parsing.
 # MM and M are both treated as million; B as billion; K as thousand; T as trillion.
@@ -246,14 +315,28 @@ def _parse_financial(text: str) -> float | None:
 
 
 def _extract_number(text: str) -> float | None:
+    # Try cardinal word numbers first (e.g. "three distinct" → 3).
+    # Only when the result is a small integer that could plausibly be the answer.
+    wm = _WORD_NUM_RE.search(text)
+    if wm:
+        word_val = float(_WORD_TO_INT[wm.group(1).lower()])
+    else:
+        word_val = None
+
     # Strip patterns that embed misleading numbers before extracting
     cleaned = _CVE_RE.sub('', text)
+    cleaned = _SEC_FORM_RE.sub('', cleaned)       # strip "10-K", "10-Q"
+    cleaned = _FISCAL_YEAR_RE.sub('', cleaned)    # strip "FY2025", "Q1 2026"
     cleaned = _PATENT_ID_RE.sub('', cleaned)
     cleaned = _DATE_STR_RE.sub('', cleaned)
+    cleaned = _MONTH_DAY_RE.sub('', cleaned)      # strip "September 30", "Dec 31"
     cleaned = _YEAR_RE.sub('', cleaned)
     cleaned = cleaned.replace(',', '')
     m = _FLOAT_RE.search(cleaned)
-    return float(m.group()) if m else None
+    digit_val = float(m.group()) if m else None
+
+    # Prefer the digit extraction; fall back to word number only when no digit found.
+    return digit_val if digit_val is not None else word_val
 
 
 def _number_matches(val: float, gold: float, tolerance: float) -> bool:
@@ -265,7 +348,7 @@ def _number_matches(val: float, gold: float, tolerance: float) -> bool:
 def score_number(generated: str, gold_value: float, tolerance: float = 0.0,
                  unit: str | None = None) -> float:
     if _is_abstention(generated):
-        return 0.3
+        return 0.0
 
     # For financial (billion USD) values: parse with full denomination resolution,
     # then normalise to billions for comparison.
@@ -335,18 +418,35 @@ def score_entity(generated: str, gold_values: list[str], match_mode: str = "exac
             tokens.append(' '.join(words[i:i + n]))
     norm_pred = {_normalize_entity(t) for t in tokens if t.strip()}
 
+    norm_gen = _normalize_entity(generated)
+
     if match_mode == "any":
-        return 1.0 if norm_gold & norm_pred else 0.0
+        # Check token set, then full-text substring, then compound-word fallback.
+        if norm_gold & norm_pred:
+            return 1.0
+        if any(_normalize_entity(g) in norm_gen for g in gold_values):
+            return 1.0
+        # Compound fallback: all individual word-parts of a gold entity present in text.
+        for g in gold_values:
+            parts = [_normalize_entity(w) for w in g.split()]
+            parts = [p for p in parts if len(p) > 1]
+            if parts and all(p in norm_gen for p in parts):
+                return 1.0
+        return 0.0
 
     if match_mode in ("all", "exact"):
         # Per-value presence: each gold value scored independently, return mean.
         # Avoids F1 precision dilution from long generated answers.
-        norm_gen = _normalize_entity(generated)
-        hits = [
-            1.0 if (_normalize_entity(g) in norm_pred or _normalize_entity(g) in norm_gen)
-            else 0.0
-            for g in gold_values
-        ]
+        hits = []
+        for g in gold_values:
+            ng = _normalize_entity(g)
+            if ng in norm_pred or ng in norm_gen:
+                hits.append(1.0)
+            else:
+                # Compound fallback: all individual word-parts present in generated text.
+                parts = [_normalize_entity(w) for w in g.split()]
+                parts = [p for p in parts if len(p) > 1]
+                hits.append(1.0 if parts and all(p in norm_gen for p in parts) else 0.0)
         return sum(hits) / len(hits) if hits else 0.0
 
     # F1 over token sets (legacy path — not reached by any, all, or exact)
@@ -464,10 +564,12 @@ def score_one(generated: str, schema: dict, embedder=None,
         base = score_text(generated, str(val) if val else "", schema.get("similarity_threshold", 0.75),
                           embedder=embedder)
 
-    # require_evidence: cap ungrounded answers at 0.3 (abstention equivalent).
-    # Only applied when srr_data is present (SRR run); non-SRR runs are not penalised.
-    if schema.get("require_evidence") and srr_data is not None and base >= 1.0:
-        if not _evidence_is_grounded(srr_data):
+    # require_evidence: non-SRR runs cannot satisfy citation grounding — CE is NA.
+    if schema.get("require_evidence") and srr_data is None:
+        return float("nan")
+    # SRR runs: cap ungrounded answers at 0.3 (abstention equivalent).
+    if schema.get("require_evidence") and base >= 1.0:
+        if not _evidence_is_grounded(srr_data):  # type: ignore[arg-type]
             return 0.3
 
     return base
