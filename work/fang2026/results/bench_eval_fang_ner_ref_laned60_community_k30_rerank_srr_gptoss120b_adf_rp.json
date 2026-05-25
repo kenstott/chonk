@@ -1,0 +1,4012 @@
+{
+  "overall": 0.6308666516632864,
+  "by_type": {
+    "Cross-Domain Entity Resolution": 0.6559362912675047,
+    "Multi-Document Join": 0.6646666666666663,
+    "Temporal Versioning": 0.6372513135150616,
+    "Targeted Attribute Lookup": 0.640478986867196,
+    "Descriptive Attribute Lookup": 0.556
+  },
+  "per_question": [
+    {
+      "id": "FANG2026-CE-001",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.8416822454155247,
+      "generated": "In the provided 2026 patent corpus, there are no patent grants listed under either 'Alphabet Inc.' or 'Google LLC'. All ",
+      "gold": "Patent grants are issued to the legal entity. 'Google LLC' is the operating subs"
+    },
+    {
+      "id": "FANG2026-CE-002",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.8520770469117733,
+      "generated": "In the CVE listings, the vendor string \u201camazon\u201d is used for components that belong to Amazon\u2019s cloud\u2011computing side (e.g",
+      "gold": "CVEs under CPE vendor 'amazon' vs 'amazon.com' should be compared by affected pr"
+    },
+    {
+      "id": "FANG2026-CE-003",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.3,
+      "generated": "The provided context does not contain any information about how the 2026 corpus handles the different name variants of M",
+      "gold": "Across the three corpus sources, Meta appears under different naming conventions"
+    },
+    {
+      "id": "FANG2026-CE-004",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.8910481688794415,
+      "generated": "Apple\u2019s FY2025 Form 10\u2011K lists the company as \u201cApple Inc.\u201d, which is the same legal entity name used as the assignee on ",
+      "gold": "Apple Inc. is the legal entity name used in the 10-K filing, patent grants, and "
+    },
+    {
+      "id": "FANG2026-CE-005",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.3,
+      "generated": "The provided context does not list any 2026 CVEs for the WhatsApp product, so there is no vendor string (e.g., \"facebook",
+      "gold": "WhatsApp CVEs historically appeared under 'facebook' vendor strings as WhatsApp "
+    },
+    {
+      "id": "FANG2026-CE-006",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.7554649560355523,
+      "generated": "Based on the provided material, the 2026 corpus does not appear to differentiate documents among Amazon.com, Inc., Amazo",
+      "gold": "The 10-K is filed by Amazon.com, Inc. Patents are filed by Amazon Technologies, "
+    },
+    {
+      "id": "FANG2026-CE-007",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "boolean",
+      "score": 0.0,
+      "generated": "{\n  \"answer\": \"The provided context lists several Netflix, Inc. patents, but all of their grant dates are in 2025; there",
+      "gold": "Netflix's 10-K legal name is 'Netflix, Inc.' Patent grants to Netflix use 'Netfl"
+    },
+    {
+      "id": "FANG2026-CE-008",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.7891068322588008,
+      "generated": "The 2026 Federal Register references Google\u2019s parent company using the formal legal name \u201cAlphabet Inc.\u201d",
+      "gold": "Federal agencies typically use the SEC-registered entity name. For Google's pare"
+    },
+    {
+      "id": "FANG2026-CE-009",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.8631130428421384,
+      "generated": "The CPE vendor string used in the 2026 CVE entries for Amazon\u2011related products is \"amazon\" (e.g.,\u202famazon/athena\u202fodbc, am",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-CE-010",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "boolean",
+      "score": 1.0,
+      "generated": "Based on the 2026 CVE entries shown, the NVD records list the vendor as \"google\" for all Google\u2011related products (e.g., ",
+      "gold": "NVD CPE vendor strings are assigned based on how vendors submit their CPE names."
+    },
+    {
+      "id": "FANG2026-CE-011",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.8469064025492792,
+      "generated": "Yes, in the 2026 corpus the assignee \"Meta Platforms Technologies, LLC\" is treated as effectively the same legal entity ",
+      "gold": "They are distinct legal entities. Meta Platforms Technologies, LLC (formerly Ocu"
+    },
+    {
+      "id": "FANG2026-CE-012",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "Three distinct Google\u2011related entity strings appear across the four source types in 2026 \u2013 the CPE string \u201cgoogle/chrome",
+      "gold": "Three distinct strings appear: (1) 'google' as the NVD CPE vendor string (e.g., "
+    },
+    {
+      "id": "FANG2026-CE-013",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.6902293309087061,
+      "generated": "{\n  \"answer\": \"The six 'apple/' CPE product strings listed for CVE\u2011",
+      "gold": "The CPE strings represent one vendor ('apple') with six distinct product lines. "
+    },
+    {
+      "id": "FANG2026-CE-014",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "boolean",
+      "score": 0.3,
+      "generated": "The provided context only lists CVE-2024-44219 as affecting \"apple/macos (< 15.1)\" and does not contain any information ",
+      "gold": "Yes, 'apple/macos' refers to the same Apple Inc. that filed aapl_10k_2025. The C"
+    },
+    {
+      "id": "FANG2026-CE-015",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.9000587067098385,
+      "generated": "In the 2026 CVE listings, AWS does not appear as a separate CPE vendor string; the vulnerabilities are reported under ve",
+      "gold": "AWS is described in the 10-K as a reporting segment of Amazon.com, Inc. (alongsi"
+    },
+    {
+      "id": "FANG2026-CE-016",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "entity",
+      "score": 0.3,
+      "generated": "The provided context does not contain any information about CVE\u20112026\u20110031, CVE\u20112025\u201148634, or how the 'google/android' C",
+      "gold": "Both CVEs map to Google LLC, the same entity that holds the Android-related pate"
+    },
+    {
+      "id": "FANG2026-CE-017",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.3,
+      "generated": "The provided corpus does not contain any patents granted in 2026; all listed patents have grant dates in 2025. Consequen",
+      "gold": "Apple Inc. assignee: patents 12367623 (perspective correct vector graphics, 2025"
+    },
+    {
+      "id": "FANG2026-CE-018",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "boolean",
+      "score": 1.0,
+      "generated": "No. The Federal Register notices listed in the 2026 corpus (fr_2026-00963 and fr_2026-09147) do not use the exact legal ",
+      "gold": "The four Federal Register documents in the corpus excerpts contain only generic "
+    },
+    {
+      "id": "FANG2026-CE-019",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "boolean",
+      "score": 0.3,
+      "generated": "In the 2026 vulnerability corpus Chromium is not represented as a separate vendor entity; all Chrome\u2011related CVEs list t",
+      "gold": "Chromium is not a separate CPE vendor in the 2026 corpus - all three CVEs (CVE-2"
+    },
+    {
+      "id": "FANG2026-CE-020",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "",
+      "gold": "Apple uses two distinct strings across the 2026 corpus: (1) 'apple' - lowercase "
+    },
+    {
+      "id": "FANG2026-CE-021",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.8580676117403876,
+      "generated": "No. The assignee \"Meta Platforms Technologies, LLC\" that appears on the patents is a separate legal entity from \"Meta Pl",
+      "gold": "They are distinct legal entities within the same corporate family. 'Meta Platfor"
+    },
+    {
+      "id": "FANG2026-CE-022",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "entity",
+      "score": 0.3,
+      "generated": "The provided CVE data only lists the CPE vendor string \"apple\" for affected products such as iPadOS, iPhone OS, macOS, t",
+      "gold": "All three refer to the same entity: Apple Inc. The NVD CPE vendor string 'apple'"
+    },
+    {
+      "id": "FANG2026-CE-023",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "entity",
+      "score": 0.3,
+      "generated": "The provided context does not contain any information about how the CPE vendor string \"google\" maps to a legal entity, s",
+      "gold": "The CPE vendor string 'google' resolves to Google LLC, the operating subsidiary "
+    },
+    {
+      "id": "FANG2026-CE-024",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "boolean",
+      "score": 0.3,
+      "generated": "The provided context does not include any information about patents 12231204, 12418855, or 12401468, so we cannot determ",
+      "gold": "Yes. All three patents (12231204 granted 2025-02-18, 12418855 granted 2025-09-16"
+    },
+    {
+      "id": "FANG2026-CE-025",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.8398464798502652,
+      "generated": "{\n  \"answer\": \"The corpus treats the NVD CPE identifier \\\"apple/iphone os\\\" as synonymous with Apple\u2019s consumer\u2011facing p",
+      "gold": "The NVD CPE product string 'iphone os' is the legacy CPE identifier for what App"
+    },
+    {
+      "id": "FANG2026-CE-026",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.8893853364813171,
+      "generated": "The metal\u2011plate display\u2011panel patent (US\u202f12295206) and the other display\u2011related patents listed in the context are assig",
+      "gold": "Display-panel patents are granted to the subsidiary Google LLC, not the parent A"
+    },
+    {
+      "id": "FANG2026-CE-027",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.8904027890329356,
+      "generated": "Apple University is an internal program of Apple Inc., not a separate legal entity. The 2025 Form 10\u2011K describes Apple U",
+      "gold": "Apple University is an internal employee development program of Apple Inc., not "
+    },
+    {
+      "id": "FANG2026-CE-028",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "boolean",
+      "score": 0.3,
+      "generated": "In the 2026 corpus, Chromium is not represented as a separate CPE vendor; the vulnerable product is always listed under ",
+      "gold": "No. In all three 2026 Chrome CVEs (CVE-2026-7904, CVE-2026-7968, CVE-2026-3924),"
+    },
+    {
+      "id": "FANG2026-CE-029",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.9074485345440955,
+      "generated": "OpenClaw is a third\u2011party application that runs on macOS, not an Apple product. The CVE description identifies OpenClaw ",
+      "gold": "OpenClaw is a third-party product, not an Apple product. CVE-2026-26320 describe"
+    },
+    {
+      "id": "FANG2026-CE-030",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.8780237495796729,
+      "generated": "The lack of Netflix\u2011assigned patents or CVEs in the excerpt does not prove that Netflix has none in 2026; it more likely",
+      "gold": "It reflects a corpus excerpt limitation rather than a definitive absence. The pr"
+    },
+    {
+      "id": "FANG2026-CE-031",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "entity",
+      "score": 0.3,
+      "generated": "The provided context does not contain any information about the entity name under which Apple files its 10\u2011K, nor does i",
+      "gold": "Apple's 10-K is filed under 'Apple Inc.' (referenced as aapl_10k_2025, fiscal ye"
+    },
+    {
+      "id": "FANG2026-CE-032",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "entity",
+      "score": 0.3,
+      "generated": "Yes, the CPE vendor string \"google\" used in the CVE entries refers to the same entity as the patent assignee \"Google LLC",
+      "gold": "Yes, the CPE vendor 'google' (used in CVE-2026-8006, CVE-2026-4677, CVE-2026-353"
+    },
+    {
+      "id": "FANG2026-CE-033",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "boolean",
+      "score": 1.0,
+      "generated": "Yes \u2013 the assignee \"Netflix, Inc.\" listed on patents US12374372 and US12314537 corresponds to the SEC filer name used in",
+      "gold": "Yes, both patents (12360973 granted 2025-07-15 and 12314537 granted 2025-05-27) "
+    },
+    {
+      "id": "FANG2026-CE-034",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "entity",
+      "score": 0.3,
+      "generated": "The Android operating system is developed by Google, and in the 2026 corpus it is referenced using the label \"google/and",
+      "gold": "Android is developed by Google LLC. In CVE records, it appears under the CPE ven"
+    },
+    {
+      "id": "FANG2026-CE-035",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "Yes. All three documents refer to the same legal entity, Apple Inc., which is identified in the corpus by the stock tick",
+      "gold": "Yes, all three documents refer to the same legal entity, Apple Inc. The 10-K is "
+    },
+    {
+      "id": "FANG2026-CE-036",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "boolean",
+      "score": 1.0,
+      "generated": "Yes. All six CPE product strings\u2014'ipados', 'iphone os', 'macos', 'tvos', 'visionos' and 'watchos'\u2014are listed under the '",
+      "gold": "Yes. All six CPE product strings in CVE-2026-20650 are listed under the single C"
+    },
+    {
+      "id": "FANG2026-CE-037",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.8699574231184138,
+      "generated": "The provided material does not describe any mechanism for the corpus to differentiate CVE entries that use the name \u201cfac",
+      "gold": "Meta's 10-K (meta_10k_2026) identifies the SEC filer as 'Meta Platforms, Inc.' a"
+    },
+    {
+      "id": "FANG2026-CE-038",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "boolean",
+      "score": 0.0,
+      "generated": "In the provided corpus, AWS\u2011related vulnerabilities are not placed under a separate CPE vendor. All of the CVEs that inv",
+      "gold": "Amazon's 10-K reports three segments (North America, International, AWS) with AW"
+    },
+    {
+      "id": "FANG2026-CE-039",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "entity",
+      "score": 0.3,
+      "generated": "The provided context does not include any information about the Google 10\u2011K filing (googl_10k_2026), such as the parent ",
+      "gold": "Patent 12418270 is assigned to 'Google LLC', granted 2025-09-16. The 10-K identi"
+    },
+    {
+      "id": "FANG2026-CE-040",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.3,
+      "generated": "The provided context does not contain any information about patents numbered 12431138, 12412069, 12360973, 12418270, 122",
+      "gold": "Three distinct patent assignee entity names appear: (1) 'Google LLC' \u2014 assignee "
+    },
+    {
+      "id": "FANG2026-CE-041",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "entity",
+      "score": 0.3,
+      "generated": "The provided context only identifies the affected product for the Chrome vulnerabilities using the CPE vendor string \"go",
+      "gold": "The CVE database uses the lowercase CPE vendor string 'google' (e.g., 'google/ch"
+    },
+    {
+      "id": "FANG2026-CE-042",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "entity",
+      "score": 0.3,
+      "generated": "In the listed 2026 CVE entries, macOS is identified with the CPE vendor/product string \"apple/macos\" (e.g., the \"Affecte",
+      "gold": "2026 CVEs use the CPE string 'apple/macos' (CVE-2026-20647 affecting macos < 26."
+    },
+    {
+      "id": "FANG2026-CE-043",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "entity",
+      "score": 0.3,
+      "generated": "{\n  \"answer\": \"None of the 2026 CVEs listed in the provided context are linked to the telecom\u2011related patents (US1240806",
+      "gold": "No 2026 CVE in the corpus covers Apple's telecom/paging/IAB technologies (the su"
+    },
+    {
+      "id": "FANG2026-CE-044",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.9166573773229599,
+      "generated": "{\n  \"answer\": \"The filing with document ID\u202famzn_10k_2026 represents Amazon.com, Inc. The ticker\u2011based identifier \u201camzn\u201d ",
+      "gold": "The document ID 'amzn_10k_2026' uses the NASDAQ ticker symbol 'AMZN', which corr"
+    },
+    {
+      "id": "FANG2026-CE-045",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The SEC filing for the GOOGL ticker is made by Alphabet Inc., which is the legal entity that files the 10\u2011K. The patents",
+      "gold": "The GOOGL ticker is associated with Alphabet Inc., the SEC filer and parent comp"
+    },
+    {
+      "id": "FANG2026-CE-046",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The platform whose code\u2011signing infrastructure is implicated is macOS, which is operated by Apple. In other 2026 CVE ent",
+      "gold": "The platform implicated is macOS, operated by Apple Inc. (self-identified in aap"
+    },
+    {
+      "id": "FANG2026-CE-047",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "entity",
+      "score": 0.3,
+      "generated": "{\n  \"answer\": \"The filing is made by Meta Platforms, Inc. (the formal SEC registrant name). In the 2026 patent assignee ",
+      "gold": "The SEC registrant behind meta_10k_2026 is 'Meta Platforms, Inc.' In 2026 patent"
+    },
+    {
+      "id": "FANG2026-CE-048",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "entity",
+      "score": 0.3,
+      "generated": "The provided context does not contain information about the legal entity that develops Google Chrome nor the share class",
+      "gold": "Google Chrome is developed by Google LLC, the operating subsidiary of Alphabet I"
+    },
+    {
+      "id": "FANG2026-CE-049",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "boolean",
+      "score": 1.0,
+      "generated": "Yes. Both documents refer to the same legal entity, Google. The patent lists the assignee as \"Google LLC\", while the CVE",
+      "gold": "Yes \u2014 both reference the same legal entity, Google LLC. Patent 12412255 explicit"
+    },
+    {
+      "id": "FANG2026-CE-050",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "entity",
+      "score": 0.3,
+      "generated": "The document ID \u201cnflx_10k_2026\u201d encodes the ticker symbol NFLX. The SEC\u2011registered legal entity name referenced througho",
+      "gold": "The document ID 'nflx_10k_2026' encodes the ticker 'NFLX', corresponding to SEC "
+    },
+    {
+      "id": "FANG2026-CE-051",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.8406902206025076,
+      "generated": "The supplied context only describes CVE entries for Google Chrome and includes the CPE vendor string \"google\". It does n",
+      "gold": "All three references resolve to the same corporate entity: CVEs (CVE-2026-5871, "
+    },
+    {
+      "id": "FANG2026-CE-052",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "In the CVE database the CPE product identifier uses the string \"iphone os\" (e.g., \"apple/iphone os\") to represent the op",
+      "gold": "The CPE product string 'iphone os' is a legacy NVD identifier that refers to the"
+    },
+    {
+      "id": "FANG2026-CE-053",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.9015398772034159,
+      "generated": "In the 2026 CVE corpus, both \"google/android\" and \"google/chrome\" appear with the same \"google/\" prefix, indicating they",
+      "gold": "Yes \u2014 both 'google/android' (CVE-2025-48650) and 'google/chrome' (CVE-2026-6319,"
+    },
+    {
+      "id": "FANG2026-CE-054",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "entity",
+      "score": 0.3,
+      "generated": "{\n  \"answer\": \"In the 2026 corpus the competitor mentions of \u201cApple\u201d and \u201cGoogle\u201d in Meta\u2019s 10\u2011K are linked to the same ",
+      "gold": "Meta's 10-K reference to 'Apple' maps to CPE vendor 'apple' (e.g., CVE-2025-2409"
+    },
+    {
+      "id": "FANG2026-CE-055",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The 2025 Form\u202f10\u2011K for Apple Inc. refers to itself as \"the Company\" throughout the text and identifies the entity in the",
+      "gold": "All three references resolve to the same legal entity. The 10-K footer states 'A"
+    },
+    {
+      "id": "FANG2026-CE-056",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "entity",
+      "score": 0.3,
+      "generated": "The provided context does not include any of the listed 2025\u2011granted patents (patent_12267329, patent_12407837, patent_1",
+      "gold": "Only two assignee strings appear: 'Google LLC' (patent_12267329, patent_12353795"
+    },
+    {
+      "id": "FANG2026-CE-057",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "In the 2026 CVE corpus, the free\u2011text platform names used in CVE\u20112026\u201130794 correspond to the following CPE vendor strin",
+      "gold": "The free-text platform 'MacOS' maps to CPE 'apple/macos' (as used in CVE-2026-28"
+    },
+    {
+      "id": "FANG2026-CE-058",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "boolean",
+      "score": 1.0,
+      "generated": "Yes. Both CVE records list the affected product as \"google/android\" (with or without specific version numbers), indicati",
+      "gold": "Yes. Both CVEs use the identical CPE vendor string 'google' (differing only in p"
+    },
+    {
+      "id": "FANG2026-CE-059",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.8333250843863543,
+      "generated": "Yes. The 2025 patent grants listed in the provided corpus name the assignee as \"Apple Inc.,\" which matches the legal ent",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-CE-060",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "",
+      "gold": "Three distinct surface forms refer to the Google operating entity: (1) ticker/fi"
+    },
+    {
+      "id": "FANG2026-CE-061",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "Yes. The references in the FY2025 Form 10\u2011K, the 2026 patents, and the 2026 CVE entries all point to the same legal enti",
+      "gold": "Yes, all three refer to the same legal entity. The canonical legal name is 'Appl"
+    },
+    {
+      "id": "FANG2026-CE-062",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.9187355485963289,
+      "generated": "In the 2026 corpus the CPE vendor string \"google\" is used for both Chrome and Android products, and there is no separate",
+      "gold": "They refer to the same parent entity (Google/Alphabet) but the 2026 corpus uses "
+    },
+    {
+      "id": "FANG2026-CE-063",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The SEC registrant for Meta\u2019s 10\u2011K is Meta Platforms, Inc., the corporation that files the annual report. The XR patents",
+      "gold": "The SEC 10-K registrant is 'Meta Platforms, Inc.' (meta_10k_2026), while XR/arti"
+    },
+    {
+      "id": "FANG2026-CE-064",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.3,
+      "generated": "The provided context does not contain any information about the SEC registrant in amzn_10k_2026, nor does it clarify whe",
+      "gold": "The CPE vendor 'amazon' in CVE-2026-7426 maps to the same corporate group as the"
+    },
+    {
+      "id": "FANG2026-CE-065",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.8075448630265007,
+      "generated": "Within the corpus, vendor identifiers are resolved directly from the CPE strings that appear in each CVE entry. When a C",
+      "gold": "The 2026 corpus treats 'adobe' (as in CVE-2026-27285's affected product 'adobe/i"
+    },
+    {
+      "id": "FANG2026-CE-066",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "boolean",
+      "score": 1.0,
+      "generated": "Yes. In CVE-2026-30794 the description refers to \"rustdesk-client\" as the RustDesk Client, and the CPE listed is \"rustde",
+      "gold": "Yes, 'rustdesk-client' (the product name in the CVE description) and 'rustdesk' "
+    },
+    {
+      "id": "FANG2026-CE-067",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.9279823757012187,
+      "generated": "Yes. In the 2026 corpus the entity that reports the vulnerability (e.g., MediaTek, shown by the Mediatek bulletin URL) i",
+      "gold": "Yes, the 2026 corpus resolves these as distinct entities at different layers. CV"
+    },
+    {
+      "id": "FANG2026-CE-068",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.8734794783059464,
+      "generated": "In the CVE entries, each Apple operating system is listed under its own CPE product string (e.g., apple/ipados, apple/ip",
+      "gold": "The 2026 NVD CPE database treats Apple's operating systems as six distinct produ"
+    },
+    {
+      "id": "FANG2026-CE-069",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.7982572268643453,
+      "generated": "In the Federal Register documents from the 2026 corpus, Apple is referenced using its ticker symbol, AAPL, as shown by t",
+      "gold": "The Federal Register excerpts in the 2026 corpus (fr_2026-00963, fr_2026-08808, "
+    },
+    {
+      "id": "FANG2026-CE-070",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "entity",
+      "score": 0.3,
+      "generated": "The CVE description shows that the vulnerability is tied to Google Chrome (the CPE is listed as \"google/chrome\"), which ",
+      "gold": "All three artifacts trace to the same corporate group but use three distinct ide"
+    },
+    {
+      "id": "FANG2026-CE-071",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "Yes. The investor\u2011relations URL (investor.apple.com), the NVD CPE vendor string \"apple\", and the patent assignee \"Apple ",
+      "gold": "Yes, all three refer to the same legal entity. The canonical legal name from the"
+    },
+    {
+      "id": "FANG2026-CE-072",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "Alphabet Inc. is the SEC\u2011registered parent company, Google LLC is the patent\u2011holding subsidiary, and \u201cgoogle/chrome\u201d is ",
+      "gold": "Alphabet Inc is the SEC-registered parent entity (per the googl_10k_2026 section"
+    },
+    {
+      "id": "FANG2026-CE-073",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.0,
+      "generated": "",
+      "gold": ""
+    },
+    {
+      "id": "FANG2026-CE-074",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "boolean",
+      "score": 1.0,
+      "generated": "Yes. The assignee listed on patent US12231744 is \"Netflix, Inc.,\" which aligns with the corporate name format used in Ne",
+      "gold": "Yes, the patent assignee 'Netflix, Inc.' (patent_12231744, granted 2025-02-18) m"
+    },
+    {
+      "id": "FANG2026-CE-075",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "entity",
+      "score": 0.3,
+      "generated": "The\u202fFamily of Apps\u202fsegment reported $102,469\u202fmillion in income from operations for 2025. The segment\u2019s name reflects its",
+      "gold": "The 'Family of Apps' (FoA) segment generated $102,469 million in income from ope"
+    },
+    {
+      "id": "FANG2026-CE-076",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.8685529645009903,
+      "generated": "{\n  \"answer\": \"Yes. Both patents list Apple Inc. as the assignee, so they map to the same SEC\u2011reporting entity. The fact",
+      "gold": "Yes, both patents are assigned to 'Apple Inc.', the same legal entity that files"
+    },
+    {
+      "id": "FANG2026-CE-077",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "entity",
+      "score": 0.3,
+      "generated": "The provided context does not contain any information about the corporate hierarchy or SEC\u2011registered legal parent of th",
+      "gold": "Alphabet Inc is the legal parent for SEC purposes, as evidenced by the googl_10k"
+    },
+    {
+      "id": "FANG2026-CE-078",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.8682573638448495,
+      "generated": "The filing refers to the company as \u201cAmazon.com\u201d (and explicitly as \u201cAmazon.com, Inc.\u201d) rather than simply \u201cAmazon.\u201d Thi",
+      "gold": "The amzn_10k_2026 excerpt uses 'we' and 'our' as the self-reference (e.g., 'our "
+    },
+    {
+      "id": "FANG2026-CE-079",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "entity",
+      "score": 0.3,
+      "generated": "The provided context does not include any of the four CVEs (CVE-2025-46306, CVE-2026-20621, CVE-2026-28890, CVE-2026-288",
+      "gold": "The consistent NVD CPE vendor string is 'apple' (lowercase, no suffix) across al"
+    },
+    {
+      "id": "FANG2026-CE-080",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "Based on the provided CVE entries, the vendor string in the CPE is consistently \"google\" for Chrome (e.g., \"google/chrom",
+      "gold": "The NVD CPE vendor 'google' corresponds to the same legal entity Google LLC that"
+    },
+    {
+      "id": "FANG2026-CE-081",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "entity",
+      "score": 0.3,
+      "generated": "The provided context only lists Google Chrome vulnerability details (CVE entries) and does not contain any information a",
+      "gold": "The 2026 CVE corpus uses 'google/chrome' as the CPE vendor/product string (e.g.,"
+    },
+    {
+      "id": "FANG2026-CE-082",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.8789372369977178,
+      "generated": "The CVE entries use CPE vendor strings that prefix the operating\u2011system name with \"apple/\" (e.g., \"apple/macos\", \"apple/",
+      "gold": "The 2026 CVE corpus uses the lowercase short-form vendor 'apple' with product-le"
+    },
+    {
+      "id": "FANG2026-CE-083",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.8767264816745212,
+      "generated": "No, the patents assigned to \"Meta Platforms Technologies, LLC\" are not the same legal entity as the SEC filer, which is ",
+      "gold": "They are distinct legal entities within the same corporate family. The 10-K file"
+    },
+    {
+      "id": "FANG2026-CE-084",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.9309262344701152,
+      "generated": "{\n  \"answer\": \"Yes. Both the Amazon and Netflix 10\u2011K filings refer to the same Amazon entity\u2014Amazon.com, Inc. and its su",
+      "gold": "Yes, both refer to the same Amazon entity. Amazon's 10-K identifies the filer as"
+    },
+    {
+      "id": "FANG2026-CE-085",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.9017857529213126,
+      "generated": "The corpus treats the product listed in the \u201cAffected\u201d section as the entity responsible for the vulnerability. In CVE\u20112",
+      "gold": "The corpus attributes the vulnerabilities to Google via the CPE vendor string 'g"
+    },
+    {
+      "id": "FANG2026-CE-086",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "boolean",
+      "score": 0.3,
+      "generated": "Based on the provided context, there is no information indicating that Adobe appears elsewhere in the FANG2026 corpus (s",
+      "gold": "Adobe appears only in the CVE corpus (e.g., CVE-2026-21347 with CPE 'adobe/bridg"
+    },
+    {
+      "id": "FANG2026-CE-087",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.884212504355336,
+      "generated": "In the provided CVE entries, the vendor is consistently listed as \"google/chrome\" for all Chrome\u2011related vulnerabilities",
+      "gold": "The corpus does not create a separate 'chromium' CPE vendor. CVE-2026-5276, CVE-"
+    },
+    {
+      "id": "FANG2026-CE-088",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.8738902723072485,
+      "generated": "The 2026 corpus does not list any CVEs under the brand names Ring, Blink, or eero separately. All CVE entries are record",
+      "gold": "The 10-K explicitly lists Kindle, Fire tablet, Fire TV, Echo, Ring, Blink, and e"
+    },
+    {
+      "id": "FANG2026-CE-089",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.929309606810679,
+      "generated": "In the provided 2026 patent corpus, all listed patents list \"Google LLC\" as the assignee and none list \"Alphabet Inc.\" a",
+      "gold": "In the 2026 patent corpus, all observed Google patents (patent_12254891 'Targete"
+    },
+    {
+      "id": "FANG2026-CE-090",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "boolean",
+      "score": 1.0,
+      "generated": "Yes. The 2025 Form 10\u2011K identifies the filer as Apple Inc. (shown in the document headings) and then refers to it throug",
+      "gold": "Yes. The 10-K is filed under the ticker AAPL and uses 'the Company' as shorthand"
+    },
+    {
+      "id": "FANG2026-CE-091",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "Yes. The patent assignee \"Apple Inc.\", the CVE CPE identifiers \"apple/ipados\" and \"apple/iphone os\", and the filer of th",
+      "gold": "Yes, all three references resolve to the same entity. The 10-K (aapl_10k_2025) i"
+    },
+    {
+      "id": "FANG2026-CE-092",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "entity",
+      "score": 0.3,
+      "generated": "The provided context does not contain any information about the googl_10k_2026 filing, so it is not possible to determin",
+      "gold": "The googl_10k_2026 filing uses 'Alphabet Inc.' as the filing/parent entity name "
+    },
+    {
+      "id": "FANG2026-CE-093",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "text",
+      "score": 0.3,
+      "generated": "The provided CVE information does not contain any details about the 10\u2011K filing identifier \"amzn_10k_2026\" or how the 10",
+      "gold": "Yes, they refer to the same corporate group. CVE-2026-1386 lists the CPE 'amazon"
+    },
+    {
+      "id": "FANG2026-CE-094",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "Yes. In the CPE database all of the macOS version ranges that appear in those CVEs map to the single vendor\u2011product entr",
+      "gold": "Yes \u2014 both CVE-2026-28828 and CVE-2026-20693 list a single CPE vendor 'apple' wi"
+    },
+    {
+      "id": "FANG2026-CE-095",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "In the provided 2026 Netflix 10\u2011K excerpt, the transaction is referenced only as \u201cWBD\u201d or \u201cthe WBD transaction.\u201d There i",
+      "gold": "In the provided 2026 corpus excerpts, Warner Bros. Discovery appears only as the"
+    },
+    {
+      "id": "FANG2026-CE-096",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "boolean",
+      "score": 0.3,
+      "generated": "Based on the provided context, there is no information indicating that patents 12302338, 12289782, 12387379, 12387636, o",
+      "gold": "No. All five 2025-granted Apple patents in the corpus (12302338, 12289782, 12387"
+    },
+    {
+      "id": "FANG2026-CE-097",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "No. In the provided 2025 patent corpus, Larry Page and Sergey Brin are not listed as inventors or assignees on any of th",
+      "gold": "Larry Page and Sergey Brin appear only in the googl_10k_2026 10-K as Class B con"
+    },
+    {
+      "id": "FANG2026-CE-098",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "boolean",
+      "score": 1.0,
+      "generated": "In the 2026 corpus, Chrome vulnerabilities are all assigned to the CPE vendor \"google\" (e.g., \"google/chrome\"). Although",
+      "gold": "Chromium is not listed as a separate CPE vendor in the 2026 corpus CVEs reviewed"
+    },
+    {
+      "id": "FANG2026-CE-099",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "boolean",
+      "score": 0.3,
+      "generated": "Based on the supplied context, the Firecracker microVM/jailer component is only mentioned in the CVE\u20112026\u20111386 descripti",
+      "gold": "Firecracker does not appear by name in the provided amzn_10k_2026 10-K excerpt. "
+    },
+    {
+      "id": "FANG2026-CE-100",
+      "question_type": "Cross-Domain Entity Resolution",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "None of the FANG companies show a simple, uniform legal\u2011entity name across the three domains. Google exhibits the most c",
+      "gold": "Apple exhibits the simplest entity resolution: the 10-K filer is 'Apple Inc.' (a"
+    },
+    {
+      "id": "FANG2026-MJ-001",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 0.3,
+      "generated": "The patent US12230257 is assigned to Google LLC, but the provided context does not contain any information about a CVE\u20112",
+      "gold": "Yes. Patent 12230257 is assigned to Google LLC, and CVE-2026-6363 affects Google"
+    },
+    {
+      "id": "FANG2026-MJ-002",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 1.0,
+      "generated": "Yes. The FY2025 10\u2011K filing is by Apple Inc., which is also listed as the assignee of patent US12225521.",
+      "gold": "Yes. The aapl_10k_2025 filing is Apple's 10-K, and patent 12225521 is assigned t"
+    },
+    {
+      "id": "FANG2026-MJ-003",
+      "question_type": "Multi-Document Join",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The CVE\u20112026\u201120686 issue is resolved in iOS\u202f26.3 and iPadOS\u202f26.3, which address the sensitive\u2011user\u2011data access vulnerabi",
+      "gold": "iOS 26.3 and iPadOS 26.3, products of Apple Inc. (the registrant of aapl_10k_202"
+    },
+    {
+      "id": "FANG2026-MJ-004",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 1.0,
+      "generated": "Yes. The modem product affected by CVE-2026-0120 is listed as belonging to google/android, and the assignee of patent US",
+      "gold": "Yes. CVE-2026-0120 affects Google Android, and patent 12317010 is assigned to Go"
+    },
+    {
+      "id": "FANG2026-MJ-005",
+      "question_type": "Multi-Document Join",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "The Chrome WebCodecs vulnerability CVE-2026-5282 has a CVSS score of 8.1 (HIGH).",
+      "gold": "8.1 (HIGH). Google LLC is the assignee of patent 12417623, and CVE-2026-5282 aff"
+    },
+    {
+      "id": "FANG2026-MJ-006",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 0.3,
+      "generated": "The provided context does not contain any information about patent US12406469 or its assignee, nor does it mention the c",
+      "gold": "Yes. Patent 12406469 is assigned to Amazon Technologies, Inc., a subsidiary of A"
+    },
+    {
+      "id": "FANG2026-MJ-007",
+      "question_type": "Multi-Document Join",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The file access issue described in CVE\u20112026\u201128844 is fixed in macOS Tahoe version\u202f26.4.",
+      "gold": "macOS Tahoe 26.4, released by Apple Inc. (the filer of aapl_10k_2025)."
+    },
+    {
+      "id": "FANG2026-MJ-008",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 0.3,
+      "generated": "The provided context does not contain any information about CVE-2026-20671 or CVE-2025-46301, so it cannot be determined",
+      "gold": "Yes. Both CVEs affect Apple products (iOS, iPadOS, macOS, etc.), and aapl_10k_20"
+    },
+    {
+      "id": "FANG2026-MJ-009",
+      "question_type": "Multi-Document Join",
+      "check_type": "date",
+      "score": 1.0,
+      "generated": "The grant date of Apple\u2011assigned environment\u2011mapping patent US12372617 is July\u202f29\u202f2025.",
+      "gold": "2025-07-29. Patent 12372617 is assigned to Apple Inc., the same company whose iO"
+    },
+    {
+      "id": "FANG2026-MJ-010",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 0.3,
+      "generated": "The provided context does not contain any information about a company filing an FY2026 10\u2011K, so we cannot determine whet",
+      "gold": "Yes. googl_10k_2026 is filed by Alphabet/Google, and CVE-2026-0114 affects Googl"
+    },
+    {
+      "id": "FANG2026-MJ-011",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 0.3,
+      "generated": "The provided context does not contain any information about patent US12409559, so we cannot determine its assignee or wh",
+      "gold": "Yes. Patent 12409559 is assigned to Amazon Technologies, Inc., and amzn_10k_2026"
+    },
+    {
+      "id": "FANG2026-MJ-012",
+      "question_type": "Multi-Document Join",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The type\u2011confusion vulnerability (CVE\u20112026\u201128822) is fixed in iOS\u202f26.4.",
+      "gold": "iOS 26.4 (and iPadOS 26.4)."
+    },
+    {
+      "id": "FANG2026-MJ-013",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 0.0,
+      "generated": "No. The assignee of US12271995 is Meta Platforms Technologies, LLC, while the FY2026 10\u2011K is filed by Meta Platforms, In",
+      "gold": "Yes. Patent 12271995 is assigned to Meta Platforms Technologies, LLC, an entity "
+    },
+    {
+      "id": "FANG2026-MJ-014",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 0.3,
+      "generated": "The provided context does not contain any information about the assignee of patent US12244499, nor does it mention CVE\u20112",
+      "gold": "Yes. Patent 12244499 is assigned to Google LLC, and CVE-2026-4450 affects Google"
+    },
+    {
+      "id": "FANG2026-MJ-015",
+      "question_type": "Multi-Document Join",
+      "check_type": "number",
+      "score": 0.5,
+      "generated": "The CVSS score for CVE\u20112026\u20114450, the V8 out\u2011of\u2011bounds write vulnerability in Chrome, is 8.8.",
+      "gold": "8.8 (HIGH)."
+    },
+    {
+      "id": "FANG2026-MJ-016",
+      "question_type": "Multi-Document Join",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The sandboxed\u2011app sensitive\u2011data access vulnerability described in CVE\u20112026\u201120680 is fixed in macOS\u202fSonoma version\u202f14.8.",
+      "gold": "macOS Sonoma 14.8.4."
+    },
+    {
+      "id": "FANG2026-MJ-017",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 0.0,
+      "generated": "Based on the provided context, only CVE-2026-0124 is listed and it affects Google Android products. There is no informat",
+      "gold": "Yes. Both CVEs affect Google Android, and googl_10k_2026 is filed by Alphabet (G"
+    },
+    {
+      "id": "FANG2026-MJ-018",
+      "question_type": "Multi-Document Join",
+      "check_type": "date",
+      "score": 0.0,
+      "generated": "The grant date of patent US12208310 is 2025\u201101\u201128.",
+      "gold": "January 28, 2025."
+    },
+    {
+      "id": "FANG2026-MJ-019",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 1.0,
+      "generated": "Yes. The patent US12294864 is assigned to Apple Inc., and the iOS versions mentioned in CVE\u20112026\u201120680 are also affected",
+      "gold": "Yes. Patent 12294864 is assigned to Apple Inc., and CVE-2026-20680 affects Apple"
+    },
+    {
+      "id": "FANG2026-MJ-020",
+      "question_type": "Multi-Document Join",
+      "check_type": "number",
+      "score": 0.5,
+      "generated": "The CVSS score for the Chrome V8 vulnerability CVE\u20112026\u20113543 is 8.8 (High).",
+      "gold": "8.8 (HIGH)."
+    },
+    {
+      "id": "FANG2026-MJ-021",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 0.3,
+      "generated": "The provided context does not mention a patent numbered US12340147, nor does it identify its assignee. Therefore, we can",
+      "gold": "Yes - both are Amazon (Amazon Technologies, Inc. is the patent assignee, and Ama"
+    },
+    {
+      "id": "FANG2026-MJ-022",
+      "question_type": "Multi-Document Join",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The V8 use\u2011after\u2011free vulnerability described in CVE\u20112026\u20115861 is fixed in Google Chrome version\u202f147.0.7727.55 and later",
+      "gold": "Chrome 147.0.7727.55"
+    },
+    {
+      "id": "FANG2026-MJ-023",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 0.0,
+      "generated": "No. The assignee of US12349528 is Meta Platforms Technologies, LLC, while the FY2026 10\u2011K is filed by Meta Platforms, In",
+      "gold": "Yes - Meta Platforms Technologies, LLC (patent assignee) is a subsidiary of Meta"
+    },
+    {
+      "id": "FANG2026-MJ-024",
+      "question_type": "Multi-Document Join",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The sensitive user data access issue is fixed in macOS Sonoma version\u202f14.8.5.",
+      "gold": "macOS Sonoma 14.8.5"
+    },
+    {
+      "id": "FANG2026-MJ-025",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 0.3,
+      "generated": "The provided context does not mention CVE-2026-5861 or CVE-2026-7929, so there is no evidence that these CVEs affect Goo",
+      "gold": "Yes - both CVEs affect Google Chrome, and Google (Alphabet Inc.) files the googl"
+    },
+    {
+      "id": "FANG2026-MJ-026",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 0.0,
+      "generated": "No. The assignee of patent US12200297 is Apple Inc., and the CVE identifiers listed in the provided context are CVE\u20112026",
+      "gold": "Yes - Apple Inc. is the patent assignee and macOS (an Apple product) is affected"
+    },
+    {
+      "id": "FANG2026-MJ-027",
+      "question_type": "Multi-Document Join",
+      "check_type": "number",
+      "score": 0.5,
+      "generated": "The MediaRecording use\u2011after\u2011free vulnerability (CVE\u20112026\u20117929) in Google Chrome has a CVSS score of 7.5 (HIGH).",
+      "gold": "7.5 (HIGH)"
+    },
+    {
+      "id": "FANG2026-MJ-028",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 0.0,
+      "generated": "Based on the provided context, the assignee of patent US12244032 is Apple Inc. However, the CVE identifier CVE-2026-2881",
+      "gold": "Yes - both are Apple Inc."
+    },
+    {
+      "id": "FANG2026-MJ-029",
+      "question_type": "Multi-Document Join",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The integer overflow vulnerability (CVE\u20112026\u20110031) affects Google\u2019s Android operating system.",
+      "gold": "Google Android"
+    },
+    {
+      "id": "FANG2026-MJ-030",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 1.0,
+      "generated": "Yes. The assignee of patent US12299263 is Apple Inc., which is the same company that files Apple\u2019s FY2025 10\u2011K.",
+      "gold": "Yes - both are Apple Inc."
+    },
+    {
+      "id": "FANG2026-MJ-031",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 0.3,
+      "generated": "The provided context does not contain any information about patent US12386654 or its assignee, nor does it mention the c",
+      "gold": "Yes. Patent 12386654 is assigned to Amazon Technologies, Inc., and amzn_10k_2026"
+    },
+    {
+      "id": "FANG2026-MJ-032",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 1.0,
+      "generated": "Yes. The assignee of US12355216 is Meta Platforms Technologies, LLC, which is an affiliate of Meta Platforms, Inc., the ",
+      "gold": "Yes. Patent 12355216 is assigned to Meta Platforms Technologies, LLC, a subsidia"
+    },
+    {
+      "id": "FANG2026-MJ-033",
+      "question_type": "Multi-Document Join",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The vulnerability in Views is fixed starting with Chrome version\u202f148.0.7778.96; versions earlier than this are vulnerabl",
+      "gold": "Chrome version 148.0.7778.96 (versions prior to 148.0.7778.96 are affected)."
+    },
+    {
+      "id": "FANG2026-MJ-034",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 0.0,
+      "generated": "No. The assignee of patent US12328471 is Google LLC, which is a subsidiary of Alphabet Inc., not the same entity that fi",
+      "gold": "Yes. Patent 12328471 is assigned to Google LLC, and googl_10k_2026 is the 10-K f"
+    },
+    {
+      "id": "FANG2026-MJ-035",
+      "question_type": "Multi-Document Join",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The path\u2011handling issue described in CVE\u20112025\u201143417 is fixed in macOS\u202fSonoma version\u202f14.8.4.",
+      "gold": "macOS Sonoma 14.8.4."
+    },
+    {
+      "id": "FANG2026-MJ-036",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 1.0,
+      "generated": "Yes. The assignee of patent US12368946 is Apple Inc., which is also the company that filed Apple\u2019s FY2025 Form 10\u2011K.",
+      "gold": "Yes. Patent 12368946 is assigned to Apple Inc., the filer of the aapl_10k_2025 1"
+    },
+    {
+      "id": "FANG2026-MJ-037",
+      "question_type": "Multi-Document Join",
+      "check_type": "number",
+      "score": 0.5,
+      "generated": "The Chrome Companion vulnerability (CVE\u20112026\u20117978) has a CVSS score of 8.1 (HIGH).",
+      "gold": "8.1 (HIGH). Patent 12361381 is assigned to Google LLC, and CVE-2026-7978 affects"
+    },
+    {
+      "id": "FANG2026-MJ-038",
+      "question_type": "Multi-Document Join",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The authorization issue that could allow an app to access sensitive user data is fixed in macOS Tahoe version\u202f26.3.",
+      "gold": "macOS Tahoe 26.3."
+    },
+    {
+      "id": "FANG2026-MJ-039",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 1.0,
+      "generated": "Yes. The assignee of patent US12432095 is Meta Platforms, Inc., which is the same company that would file Meta Platforms",
+      "gold": "Yes. Patent 12432095 is assigned to Meta Platforms, Inc., which files the meta_1"
+    },
+    {
+      "id": "FANG2026-MJ-040",
+      "question_type": "Multi-Document Join",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The privacy issue described in CVE\u20112026\u201120674 is fixed in iOS\u202f26.3.",
+      "gold": "iOS 26.3 (and iPadOS 26.3)."
+    },
+    {
+      "id": "FANG2026-MJ-041",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 0.3,
+      "generated": "The provided context does not contain any information about patent US12275586 or the assignee of that patent, nor does i",
+      "gold": "Yes - both are Amazon (patent 12275586 is assigned to Amazon Technologies, Inc.,"
+    },
+    {
+      "id": "FANG2026-MJ-042",
+      "question_type": "Multi-Document Join",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The sensitive user\u2011data access vulnerability described in CVE\u20112026\u201128820 is resolved in macOS\u202fTahoe\u202f26.4, as confirmed b",
+      "gold": "macOS Tahoe 26.4."
+    },
+    {
+      "id": "FANG2026-MJ-043",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 1.0,
+      "generated": "Yes. The assignee of patent US12249014 is Meta Platforms, Inc., which is the same company that filed Meta Platforms Inc.",
+      "gold": "Yes - both are Meta Platforms, Inc."
+    },
+    {
+      "id": "FANG2026-MJ-044",
+      "question_type": "Multi-Document Join",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "The CVSS score for CVE-2026-4451 is 8.8.",
+      "gold": "8.8 (HIGH)."
+    },
+    {
+      "id": "FANG2026-MJ-045",
+      "question_type": "Multi-Document Join",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The kernel state leakage issue described in CVE\u20112026\u201128867 is fixed in watchOS\u202f26.4.",
+      "gold": "watchOS 26.4."
+    },
+    {
+      "id": "FANG2026-MJ-046",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 0.0,
+      "generated": "No. The context does not provide any information indicating that the assignee of patent US12411963 (Tokenization of stru",
+      "gold": "Yes - both are Amazon (Amazon Technologies, Inc. / Amazon.com, Inc.)."
+    },
+    {
+      "id": "FANG2026-MJ-047",
+      "question_type": "Multi-Document Join",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The sandbox\u2011bypass race condition in CVE\u20112026\u201120677 is fixed in iOS\u202f26.3.",
+      "gold": "iOS 26.3."
+    },
+    {
+      "id": "FANG2026-MJ-048",
+      "question_type": "Multi-Document Join",
+      "check_type": "date",
+      "score": 0.0,
+      "generated": "The grant date for patent US12355216 is not provided in the given context.",
+      "gold": "2025-07-08."
+    },
+    {
+      "id": "FANG2026-MJ-049",
+      "question_type": "Multi-Document Join",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The vulnerability is fixed in Xcode version\u202f26.4.",
+      "gold": "Xcode 26.4."
+    },
+    {
+      "id": "FANG2026-MJ-050",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 0.3,
+      "generated": "The provided context does not mention patent US12387315 or its assignee, so we cannot determine that its assignee is the",
+      "gold": "Yes - both are Amazon (Amazon Technologies, Inc.)."
+    },
+    {
+      "id": "FANG2026-MJ-051",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 0.3,
+      "generated": "The context identifies the assignee of patent US12271995 as Meta Platforms Technologies, LLC and the FY2026 10\u2011K as bein",
+      "gold": "Yes. Patent 12271995 is assigned to Meta Platforms Technologies, LLC, a subsidia"
+    },
+    {
+      "id": "FANG2026-MJ-052",
+      "question_type": "Multi-Document Join",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The Activation Lock bypass vulnerability (CVE-2025-43534) is associated with CWE\u2011284.",
+      "gold": "CWE-284"
+    },
+    {
+      "id": "FANG2026-MJ-053",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 0.3,
+      "generated": "The provided context does not contain any information about patent US12389306 or its assignee, so we cannot determine wh",
+      "gold": "Yes. Patent 12389306 is assigned to Amazon Technologies, Inc., a subsidiary of A"
+    },
+    {
+      "id": "FANG2026-MJ-054",
+      "question_type": "Multi-Document Join",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "The CVE-2026-5485 vulnerability in the Amazon Athena ODBC driver has a CVSS score of 7.3 (HIGH).",
+      "gold": "7.3 (HIGH)"
+    },
+    {
+      "id": "FANG2026-MJ-055",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 0.3,
+      "generated": "The provided context does not include any information about the assignee of patent US12249317, nor does it mention CVE-2",
+      "gold": "Yes. Patent 12249317 is assigned to Google LLC, and CVE-2026-2319 affects Google"
+    },
+    {
+      "id": "FANG2026-MJ-056",
+      "question_type": "Multi-Document Join",
+      "check_type": "entity",
+      "score": 0.6666666666666666,
+      "generated": "The ADB mutual authentication bypass (CVE\u20112026\u20110073) affects Android versions 14.0 through 16.0.",
+      "gold": "Android 14.0, 15.0, and 16.0"
+    },
+    {
+      "id": "FANG2026-MJ-057",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 1.0,
+      "generated": "Yes. The patent US12212249 is assigned to Apple Inc., and the iOS versions affected by CVE-2025-46303 belong to Apple as",
+      "gold": "Yes. Patent 12212249 is assigned to Apple Inc., and CVE-2025-46303 affects Apple"
+    },
+    {
+      "id": "FANG2026-MJ-058",
+      "question_type": "Multi-Document Join",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The disclosure issue described in CVE\u20112026\u201128856 is fixed in iOS\u202f26.4 (also in iOS\u202f18.7.7, but the FY2025 10\u2011K reference",
+      "gold": "iOS 26.4 (and iPadOS 26.4)"
+    },
+    {
+      "id": "FANG2026-MJ-059",
+      "question_type": "Multi-Document Join",
+      "check_type": "date",
+      "score": 1.0,
+      "generated": "The grant date of US12279066 is 2025-04-15.",
+      "gold": "April 15, 2025"
+    },
+    {
+      "id": "FANG2026-MJ-060",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 0.3,
+      "generated": "The provided context does not contain any information about patent US12425669 or about CVE-2026-0031, so it is not possi",
+      "gold": "Yes. Patent 12425669 is assigned to Google LLC, and CVE-2026-0031 affects Google"
+    },
+    {
+      "id": "FANG2026-MJ-061",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 0.3,
+      "generated": "Based on the provided context, the assignee of patent US12345872 is Meta Platforms Technologies, LLC. The context does n",
+      "gold": "Yes. Patent 12345872 is assigned to Meta Platforms Technologies, LLC, a subsidia"
+    },
+    {
+      "id": "FANG2026-MJ-062",
+      "question_type": "Multi-Document Join",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The libvpx heap buffer overflow described in CVE\u20112026\u20111861 is fixed starting with Chrome version\u202f144.0.7559.132. That is",
+      "gold": "Google Chrome 144.0.7559.132."
+    },
+    {
+      "id": "FANG2026-MJ-063",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 0.3,
+      "generated": "The patent US12216669 is assigned to Google LLC. However, the specific CVE\u20112026\u20113938 is not mentioned in the provided co",
+      "gold": "Yes. Patent 12216669 is assigned to Google LLC, and CVE-2026-3938 affects Google"
+    },
+    {
+      "id": "FANG2026-MJ-064",
+      "question_type": "Multi-Document Join",
+      "check_type": "number",
+      "score": 0.5,
+      "generated": "The CVSS score for the WebGPU vulnerability (CVE\u20112026\u20112315) in Google Chrome is 8.8.",
+      "gold": "8.8 (HIGH)."
+    },
+    {
+      "id": "FANG2026-MJ-065",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 1.0,
+      "generated": "Yes. The assignee of patent US12273086 is Apple Inc., which is also the company that filed Apple Inc.'s FY2025 Form 10\u2011K",
+      "gold": "Yes. Patent 12273086 is assigned to Apple Inc., which is the filer of the aapl_1"
+    },
+    {
+      "id": "FANG2026-MJ-066",
+      "question_type": "Multi-Document Join",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The symlink handling issue described in CVE\u20112026\u201120694 is fixed in iOS\u202f26.3.",
+      "gold": "iOS 26.3 (and iPadOS 26.3)."
+    },
+    {
+      "id": "FANG2026-MJ-067",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 1.0,
+      "generated": "Yes. Both patents list Meta Platforms Technologies, LLC as the assignee, and that entity is an affiliate (and thus a sub",
+      "gold": "Yes. Both patents are assigned to Meta Platforms Technologies, LLC, a subsidiary"
+    },
+    {
+      "id": "FANG2026-MJ-068",
+      "question_type": "Multi-Document Join",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "The integer overflow vulnerability affecting macOS (CVE-2025-43238) has a CVSS score of 6.2.",
+      "gold": "6.2 (MEDIUM)."
+    },
+    {
+      "id": "FANG2026-MJ-069",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 0.3,
+      "generated": "The provided information shows that the assignee of patent US12320999 is Meta Platforms Technologies, LLC, and the FY202",
+      "gold": "Yes. Patent 12320999 is assigned to Meta Platforms Technologies, LLC, a subsidia"
+    },
+    {
+      "id": "FANG2026-MJ-070",
+      "question_type": "Multi-Document Join",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The inconsistent UI issue is fixed in iOS\u202f18.7.5 (and again in iOS\u202f26.3). Both releases address the vulnerability that c",
+      "gold": "iOS 18.7.5 (and iPadOS 18.7.5), as well as iOS 26.3 / iPadOS 26.3."
+    },
+    {
+      "id": "FANG2026-MJ-071",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 0.3,
+      "generated": "The provided context does not mention patent US12411826 or its assignee, so we cannot determine whether its assignee is ",
+      "gold": "Yes. Patent 12411826 is assigned to Amazon Technologies, Inc., and the amzn_10k_"
+    },
+    {
+      "id": "FANG2026-MJ-072",
+      "question_type": "Multi-Document Join",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "The CVSS score for CVE-2026-0902, the V8 out\u2011of\u2011bounds memory read vulnerability in Google Chrome, is 8.8 (HIGH).",
+      "gold": "8.8 (HIGH)"
+    },
+    {
+      "id": "FANG2026-MJ-073",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 1.0,
+      "generated": "Yes. The assignee of patent US12413880 is Apple Inc., which is also the company that files Apple\u2019s FY2025 Form 10\u2011K.",
+      "gold": "Yes. Patent 12413880 is assigned to Apple Inc., which is the company that files "
+    },
+    {
+      "id": "FANG2026-MJ-074",
+      "question_type": "Multi-Document Join",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The race condition described in CVE\u20112026\u201120617 is fixed in iOS\u202f26.3.",
+      "gold": "iOS 26.3 (and iPadOS 26.3)"
+    },
+    {
+      "id": "FANG2026-MJ-075",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 1.0,
+      "generated": "Yes. The assignee of US12270948 is Meta Platforms Technologies, LLC, which is an entity within the Meta corporate group ",
+      "gold": "Yes. Patent 12270948 is assigned to Meta Platforms Technologies, LLC, which is p"
+    },
+    {
+      "id": "FANG2026-MJ-076",
+      "question_type": "Multi-Document Join",
+      "check_type": "date",
+      "score": 0.0,
+      "generated": "The grant date for the Amazon\u2011assigned migration patent numbered 12273408 is not provided in the supplied context.",
+      "gold": "2025-04-08"
+    },
+    {
+      "id": "FANG2026-MJ-077",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 0.3,
+      "generated": "Both CVE\u20112026\u20117901 and CVE\u20112026\u20117914 list Google Chrome as the affected product (\"google/chrome (< 148.0.7778.96)\"). How",
+      "gold": "Yes. Both CVEs affect Google Chrome, and Google is the assignee of patent 122302"
+    },
+    {
+      "id": "FANG2026-MJ-078",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 0.3,
+      "generated": "The provided context identifies the affected Chrome browser as belonging to \"google/chrome,\" indicating Google as the ve",
+      "gold": "Yes. CVE-2026-7335 affects Google Chrome, and Google (Alphabet) files the googl_"
+    },
+    {
+      "id": "FANG2026-MJ-079",
+      "question_type": "Multi-Document Join",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The Privacy preferences bypass issue identified in CVE\u20112025\u201131186 is resolved by Xcode version\u202f16.3, as confirmed by the",
+      "gold": "Xcode 16.3"
+    },
+    {
+      "id": "FANG2026-MJ-080",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 0.3,
+      "generated": "The assignee of patent US12348786 is Apple Inc., but the CVE identifier CVE\u20112026\u201120617 does not appear in the provided c",
+      "gold": "Yes. Patent 12348786 is assigned to Apple Inc., and CVE-2026-20617 affects Apple"
+    },
+    {
+      "id": "FANG2026-MJ-081",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 0.3,
+      "generated": "The provided context does not contain any information about patent US12388741 or its assignee, so it is not possible to ",
+      "gold": "Yes. Patent 12388741 is assigned to Amazon Technologies, Inc., and the amzn_10k_"
+    },
+    {
+      "id": "FANG2026-MJ-082",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 1.0,
+      "generated": "Yes. Patent US12375462 lists Netflix, Inc. as its assignee, and the Netflix FY2026 filing explicitly states that Netflix",
+      "gold": "Yes. Patent 12375462 is assigned to Netflix, Inc., which is the same company tha"
+    },
+    {
+      "id": "FANG2026-MJ-083",
+      "question_type": "Multi-Document Join",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The file input UI\u2011spoofing vulnerability (CVE\u20112026\u20112320) is fixed in Chrome\u202f145.0.7632.45; any Chrome version at or abov",
+      "gold": "Chrome version 145.0.7632.45 (Google is the vendor identified in both the CVE an"
+    },
+    {
+      "id": "FANG2026-MJ-084",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 1.0,
+      "generated": "Yes. The assignee of patent US12248626 is Apple Inc., which is also the company that filed Apple Inc.'s FY2025 10\u2011K.",
+      "gold": "Yes. Patent 12248626 is assigned to Apple Inc., which is the company that files "
+    },
+    {
+      "id": "FANG2026-MJ-085",
+      "question_type": "Multi-Document Join",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The privacy issue described in CVE\u20112026\u201120629 is fixed starting with macOS\u202fTahoe\u202f26.3.",
+      "gold": "macOS Tahoe 26.3 (Apple is the vendor identified in both documents)."
+    },
+    {
+      "id": "FANG2026-MJ-086",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 0.3,
+      "generated": "Based on the provided information, the vendor of the RustDesk Client (rustdesk) is not shown to be the assignee of any A",
+      "gold": "No. CVE-2026-30791 affects RustDesk Client (rustdesk-client), which is not the a"
+    },
+    {
+      "id": "FANG2026-MJ-087",
+      "question_type": "Multi-Document Join",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "The CVE-2026-5291 WebGL information\u2011disclosure vulnerability in Google Chrome has a CVSS severity score of 6.5 (Medium).",
+      "gold": "6.5 (MEDIUM)."
+    },
+    {
+      "id": "FANG2026-MJ-088",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 0.0,
+      "generated": "No. The assignee of patent US12379759 is Google LLC, whereas the FY2026 10\u2011K is filed by Alphabet Inc., which is a disti",
+      "gold": "Yes. Patent 12379759 is assigned to Google LLC, which is the entity behind the g"
+    },
+    {
+      "id": "FANG2026-MJ-089",
+      "question_type": "Multi-Document Join",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The stack\u2011overflow denial\u2011of\u2011service issue in CVE\u20112026\u201128852 is fixed for the legacy iOS\u202f18 line in iOS\u202f18.7.7 (and the ",
+      "gold": "iOS 18.7.7 (and iPadOS 18.7.7); Apple is the vendor identified in both documents"
+    },
+    {
+      "id": "FANG2026-MJ-090",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 0.3,
+      "generated": "The provided context does not contain any information about patent US12387727, its assignee, or Netflix's FY2026 10\u2011K fi",
+      "gold": "Yes. Patent 12387727 is assigned to Amazon Technologies, Inc., and nflx_10k_2026"
+    },
+    {
+      "id": "FANG2026-MJ-091",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 1.0,
+      "generated": "Yes. The assignee of patent US12267645 is Meta Platforms Technologies, LLC, which is a subsidiary of Meta Platforms, Inc",
+      "gold": "Yes. Patent 12267645 is assigned to Meta Platforms Technologies, LLC, a subsidia"
+    },
+    {
+      "id": "FANG2026-MJ-092",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 1.0,
+      "generated": "Yes. The CVE\u20112026\u20115708 vulnerability affects the Amazon Research and Engineering Studio product, which is owned by Amazo",
+      "gold": "Yes. CVE-2026-5708 affects AWS Research and Engineering Studio (Amazon), and the"
+    },
+    {
+      "id": "FANG2026-MJ-093",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 1.0,
+      "generated": "Yes. The assignee of patent US12262161 is Apple Inc., which is also the company that filed the Apple Inc. FY2025 10\u2011K.",
+      "gold": "Yes. Patent 12262161 is assigned to Apple Inc., which is the company that files "
+    },
+    {
+      "id": "FANG2026-MJ-094",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 0.0,
+      "generated": "No. The patent US12254038 is assigned to Google LLC, but the provided context does not list a CVE-2026-6307 affecting Ch",
+      "gold": "Yes. Patent 12254038 is assigned to Google LLC, and CVE-2026-6307 affects Google"
+    },
+    {
+      "id": "FANG2026-MJ-095",
+      "question_type": "Multi-Document Join",
+      "check_type": "number",
+      "score": 0.5,
+      "generated": "The CVSS score for CVE\u20112026\u20110114, the Android modem vulnerability, is 9.8 (Critical).",
+      "gold": "9.8 (CRITICAL). Patent 12254038 is assigned to Google LLC, and CVE-2026-0114 aff"
+    },
+    {
+      "id": "FANG2026-MJ-096",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 1.0,
+      "generated": "Yes. The assignee of patent US12295726 is Apple Inc., which is the same company referenced in the App Store/DMA discussi",
+      "gold": "Yes. Patent 12295726 is assigned to Apple Inc., which is the same company filing"
+    },
+    {
+      "id": "FANG2026-MJ-097",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 1.0,
+      "generated": "Yes. The assignee of patent US12405706 is Apple Inc., which is also the company that filed Apple Inc.'s FY2025 Form 10\u2011K",
+      "gold": "Yes. Patent 12405706 is assigned to Apple Inc., which is the company that files "
+    },
+    {
+      "id": "FANG2026-MJ-098",
+      "question_type": "Multi-Document Join",
+      "check_type": "date",
+      "score": 1.0,
+      "generated": "The grant date of the Meta Platforms Technologies polymer thin film patent (US12214541) is February 4, 2025.",
+      "gold": "February 4, 2025. Patent 12214541 is assigned to Meta Platforms Technologies, LL"
+    },
+    {
+      "id": "FANG2026-MJ-099",
+      "question_type": "Multi-Document Join",
+      "check_type": "boolean",
+      "score": 0.3,
+      "generated": "The provided context does not include any information about CVE-2025-48587 or patent US12254038, so it is not possible t",
+      "gold": "Yes. CVE-2025-48587 affects Google Android, and patent 12254038 is assigned to G"
+    },
+    {
+      "id": "FANG2026-MJ-100",
+      "question_type": "Multi-Document Join",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "The Chrome Omnibox spoofing vulnerability (CVE-2026-0906) has a CVSS score of 9.8, which is classified as Critical.",
+      "gold": "9.8 (CRITICAL). CVE-2026-0906 affects Google Chrome on Android, and Google (Alph"
+    },
+    {
+      "id": "FANG2026-TV-001",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "CVE\u20112026\u201128816 is classified as CWE\u201122 (path\u2011traversal) and it could allow a malicious app to delete files that it does ",
+      "gold": "CVE-2026-28816 is assigned CWE-22 (Path Traversal). The vulnerability allows an "
+    },
+    {
+      "id": "FANG2026-TV-002",
+      "question_type": "Temporal Versioning",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "The provided context does not specify the exact date on which Amazon filed its fiscal year 2025 Form 10\u2011K with the SEC, ",
+      "gold": "Amazon's FY ends December 31. Large accelerated filers must file 10-Ks within 60"
+    },
+    {
+      "id": "FANG2026-TV-003",
+      "question_type": "Temporal Versioning",
+      "check_type": "boolean",
+      "score": 0.3,
+      "generated": "",
+      "gold": "The CVE corpus covers January 1 to May 10, 2026. CVE counts by publication month"
+    },
+    {
+      "id": "FANG2026-TV-004",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.3,
+      "generated": "The provided context does not include the filing date of Apple\u2019s FY2025 Form\u202f10\u2011K, so we cannot determine how many month",
+      "gold": "Apple is a large accelerated filer required to file within 60 days of fiscal yea"
+    },
+    {
+      "id": "FANG2026-TV-005",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "",
+      "gold": "The CVE corpus contains 'published' and 'lastModified' timestamp fields for each"
+    },
+    {
+      "id": "FANG2026-TV-006",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.3,
+      "generated": "{\n  \"answer\": \"The provided context does not list any patents granted in January\u202f2026 or April\u202f2026 for any",
+      "gold": "Patent grant dates in the patent corpus allow filtering by patent_date quarter. "
+    },
+    {
+      "id": "FANG2026-TV-007",
+      "question_type": "Temporal Versioning",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "Meta reported that revenue grew about 22% from FY2024 to FY2025.  Its capital\u2011expenditure guidance for FY2026 of $115\u202fbi",
+      "gold": "Meta's FY2025 10-K income statement reports year-over-year revenue growth. The 1"
+    },
+    {
+      "id": "FANG2026-TV-008",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.0,
+      "generated": "",
+      "gold": "Amazon has 25 CVEs in the 2026 corpus. Splitting these by publication date into "
+    },
+    {
+      "id": "FANG2026-TV-009",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The longest\u2011running legal matter disclosed in Alphabet\u2019s 2026 10\u2011K is the series of putative class actions that were fir",
+      "gold": "Alphabet's 10-K legal proceedings section lists matters with inception dates. Th"
+    },
+    {
+      "id": "FANG2026-TV-010",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.8809329136858347,
+      "generated": "The 2026 Form\u202f10\u2011K does not provide a subscriber\u2011count figure for either the fourth quarter of 2024 or the fourth quarte",
+      "gold": "Netflix's FY2025 10-K reports quarterly subscriber metrics. The 10-K MD&A sectio"
+    },
+    {
+      "id": "FANG2026-TV-011",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The batch of CVEs published on 2026\u201104\u201108 and the later CVE disclosed on 2026\u201104\u201128 are 20 days apart. This roughly thre",
+      "gold": "20 days elapsed between the April 8, 2026 disclosure of CVE-2026-5897 and CVE-20"
+    },
+    {
+      "id": "FANG2026-TV-012",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The CVE\u20112026\u201128879 entry shows fixes for both iOS\u202f18.7.7 and iOS\u202f26.4, indicating Apple was maintaining two parallel iOS",
+      "gold": "CVE-2026-28879 (published 2026-03-25) is fixed in iOS/iPadOS 18.7.7 (for devices"
+    },
+    {
+      "id": "FANG2026-TV-013",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "CVE-2026-5912 is assigned CWE\u2011472 and its NVD status is \u201cModified\u201d as of its last modification on 2026\u201104\u201129.",
+      "gold": "CVE-2026-5912 is assigned CWE-472 (Use of Externally-Controlled Format String). "
+    },
+    {
+      "id": "FANG2026-TV-014",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The vulnerable component is the WebView tag in Google Chrome, and the issue is fixed in Chrome version 143.0.7499.192 (v",
+      "gold": "CVE-2026-0628 affected the WebView tag in Google Chrome. The fix was Chrome vers"
+    },
+    {
+      "id": "FANG2026-TV-015",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.0,
+      "generated": "",
+      "gold": "General and administrative expense grew faster. G&A rose from $1,702,039 thousan"
+    },
+    {
+      "id": "FANG2026-TV-016",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "",
+      "gold": "The earliest Google LLC patent grant is patent_12225239 ('High-fidelity generati"
+    },
+    {
+      "id": "FANG2026-TV-017",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "CVE-2026-28817 has a CVSS score of 8.1 (high), is classified under CWE\u2011362 (race condition), and the vulnerability can l",
+      "gold": "CVE-2026-28817 has a CVSS score of 8.1 (HIGH) and CWE-362 (Race Condition). A sa"
+    },
+    {
+      "id": "FANG2026-TV-018",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The vulnerability was fixed in iOS\u202f26.3 and iPadOS\u202f26.3. According to the CVE description, the issue could cause a user ",
+      "gold": "CVE-2026-20638 is fixed in iOS 26.3 and iPadOS 26.3. The issue affected Live Cal"
+    },
+    {
+      "id": "FANG2026-TV-019",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "Apple\u2019s 10\u2011K covers the earliest\u2011ending fiscal year because its fiscal year ends on the last Saturday of September. The ",
+      "gold": "Apple's 10-K (aapl_10k_2025) covers FY2025 ending September 30, 2025 \u2014 the earli"
+    },
+    {
+      "id": "FANG2026-TV-020",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "{\n  \"answer\": \"CVE-2026-5914 is the one that remains in \u201cModified\u201d status, while CVE-2026-5862 is in \u201cAnalyzed\u201d status. ",
+      "gold": "CVE-2026-5912 (Chrome WebRTC integer overflow, CVSS 8.8) has status 'Modified' a"
+    },
+    {
+      "id": "FANG2026-TV-021",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.9036699685199584,
+      "generated": "{\n  \"answer\": \"The CVE\u20112026\u201128868 record lists fixes for the following platforms: iOS (fixed in 18.7.7 and again in 26.4",
+      "gold": "CVE-2026-28868 is fixed in iOS 18.7.7 and iPadOS 18.7.7, iOS 26.4 and iPadOS 26."
+    },
+    {
+      "id": "FANG2026-TV-022",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The CVE\u20112026\u201128820 vulnerability is resolved by updating to macOS Tahoe version\u202f26.4.",
+      "gold": "CVE-2026-28820 is fixed in macOS Tahoe 26.4. Only the 26.x (Tahoe) branch is aff"
+    },
+    {
+      "id": "FANG2026-TV-023",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "Apple transitioned to the Apple Watch Series\u202f11, Apple Watch SE\u202f3, and Apple Watch Ultra\u202f3 lineup during its fiscal year",
+      "gold": "Apple's FY2025 10-K (fiscal year ending September 30, 2025) is the filing that d"
+    },
+    {
+      "id": "FANG2026-TV-024",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.0,
+      "generated": "",
+      "gold": "CVE-2026-28822 was fixed simultaneously across iOS/iPadOS 26.4, macOS Sequoia 15"
+    },
+    {
+      "id": "FANG2026-TV-025",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.9418762201834794,
+      "generated": "The fact that CVE\u20112026\u201128868 lists fixes for both iOS\u202f18.7.7/iPadOS\u202f18.7.7 and iOS\u202f26.4/iPadOS\u202f26.4 shows that, as of Ma",
+      "gold": "As of the March 25, 2026 publication of CVE-2026-28868, Apple was actively maint"
+    },
+    {
+      "id": "FANG2026-TV-026",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.8504791382208812,
+      "generated": "The CVE year prefix reflects the year in which the identifier was reserved, not the year it was publicly disclosed. The ",
+      "gold": "CVE-2025-20802 was reserved in calendar year 2025 (as indicated by the CVE ID pr"
+    },
+    {
+      "id": "FANG2026-TV-027",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 0.3,
+      "generated": "The provided context does not contain any entry for CVE\u20112026\u201121345, so its CVSS severity score and last modified date ar",
+      "gold": "CVE-2026-21345 carries a CVSS score of 7.8 (HIGH). Its last modified date is 202"
+    },
+    {
+      "id": "FANG2026-TV-028",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.9083209004737836,
+      "generated": "CVE\u20112026\u20117360 is assigned a CVSS score of 3.1 (LOW). Exploiting it requires a remote attacker who has already compromise",
+      "gold": "CVE-2026-7360 has a CVSS score of 3.1 (LOW). The vulnerability requires an attac"
+    },
+    {
+      "id": "FANG2026-TV-029",
+      "question_type": "Temporal Versioning",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "Apple\u2019s fiscal year ends on the last Saturday of September, while the other companies use a December\u202f31 year\u2011end. The ti",
+      "gold": "Apple's FY2025 ended September 30, 2025, while Amazon's, Google's (Alphabet's), "
+    },
+    {
+      "id": "FANG2026-TV-030",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "",
+      "gold": "Meta's patent 12313740 was granted first on 2025-05-27, followed by Google's pat"
+    },
+    {
+      "id": "FANG2026-TV-031",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "",
+      "gold": "The earliest Apple patent granted in 2025 in the corpus is patent_12244540 ('Ape"
+    },
+    {
+      "id": "FANG2026-TV-032",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.9255775867322544,
+      "generated": "{\n  \"answer\": \"CVE\u20112026\u201120608 is exploitable on iOS and iPadOS versions that are either earlier than 18.7.5 or fall in t",
+      "gold": "CVE-2026-20608 affects iOS and iPadOS versions below 18.7.5 as well as versions "
+    },
+    {
+      "id": "FANG2026-TV-033",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.7310279382259988,
+      "generated": "{\n  \"answer\": \"The two authorizations were announced in September\u202f2023 and December\u202f2024, which is a gap of about 15\u202fmon",
+      "gold": "The initial $10 billion repurchase authorization was made in September 2023, and"
+    },
+    {
+      "id": "FANG2026-TV-034",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "CVE\u20112026\u20117333 affects the GPU component of Google Chrome. It has a CVSS score of 9.6 (critical) and the use\u2011after\u2011free f",
+      "gold": "CVE-2026-7333 affects the GPU component of Google Chrome. Its CVSS score is 9.6 "
+    },
+    {
+      "id": "FANG2026-TV-035",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.9231525677256791,
+      "generated": "All three CVEs were fixed in Google Chrome version\u202f147.0.7727.55. The fact that they share the same publication date of\u202f",
+      "gold": "All three CVEs (CVE-2026-5869, CVE-2026-5882, CVE-2026-5890) reference Chrome ve"
+    },
+    {
+      "id": "FANG2026-TV-036",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.3,
+      "generated": "The provided context does not contain any information about CVE-2025-20784, so the gap between its CVE ID assignment yea",
+      "gold": "CVE-2025-20784 was assigned a 2025 CVE ID but was published on January 6, 2026 \u2014"
+    },
+    {
+      "id": "FANG2026-TV-037",
+      "question_type": "Temporal Versioning",
+      "check_type": "number",
+      "score": 0.5,
+      "generated": "The vulnerability covers four minor versions of the gematik Authenticator (4.12.x, 4.13.x, 4.14.x, and 4.15.x). The time",
+      "gold": "Four minor versions of gematik Authenticator are vulnerable: 4.12.0, 4.13.x, 4.1"
+    },
+    {
+      "id": "FANG2026-TV-038",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.4509080515816204,
+      "generated": "{",
+      "gold": "As of December 31, 2025, Amazon's money market funds carried a weighted-average "
+    },
+    {
+      "id": "FANG2026-TV-039",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.9310481724001675,
+      "generated": "{\n  \"answer\": \"Both CVE-2026-20603 and CVE-2026-20608 have an NVD status of \\\"Modified\\\". CVE-2026-20608 patches the fol",
+      "gold": "Both CVE-2026-20603 and CVE-2026-20608 have NVD status 'Modified'. CVE-2026-2060"
+    },
+    {
+      "id": "FANG2026-TV-040",
+      "question_type": "Temporal Versioning",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "",
+      "gold": "Two Google LLC patents in the corpus were granted in July 2025: patent_12346836 "
+    },
+    {
+      "id": "FANG2026-TV-041",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "CVE\u20112026\u20112313 is fixed in Google Chrome version\u202f145.0.7632.45 (or any later release), and the vulnerability is classifie",
+      "gold": "CVE-2026-2313 is fixed in Google Chrome prior to 145.0.7632.45. The CWE type is "
+    },
+    {
+      "id": "FANG2026-TV-042",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "",
+      "gold": "Chrome 146.0.7680.153 came first (CVE-2026-4456, published 2026-03-20), followed"
+    },
+    {
+      "id": "FANG2026-TV-043",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.8777874927019703,
+      "generated": "In Netflix\u2019s streaming revenue, there was no hedging gain or loss reported for FY2023. In FY2024 the company recorded a ",
+      "gold": "In FY2023, no hedging gains or losses were recognized in total streaming revenue"
+    },
+    {
+      "id": "FANG2026-TV-044",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "For CVE\u20112026\u201120621, Apple first remedied the vulnerability in the iOS\u202f18.x line with iOS\u202f18.7.5 (and the matching iPadOS",
+      "gold": "CVE-2026-20621 was fixed in iOS/iPadOS 18.7.5 on the legacy 18.x branch and in i"
+    },
+    {
+      "id": "FANG2026-TV-045",
+      "question_type": "Temporal Versioning",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "",
+      "gold": "The earliest Apple patent in the corpus is patent_12231132 (PLL duty cycle calib"
+    },
+    {
+      "id": "FANG2026-TV-046",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.7850637034716165,
+      "generated": "{\n  \"answer\": \"Netflix\u2019s revenue grew from $33.72\u202fbillion in FY2023 to $39.00\u202fbillion in FY2024 \u2013 an increase of about $",
+      "gold": "FY2024 revenue of $39,000,966 thousand vs FY2023 revenue of $33,723,297 thousand"
+    },
+    {
+      "id": "FANG2026-TV-047",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "CVE\u20112026\u20110899 has a CVSS v3.1 score of 8.8 (HIGH). The vulnerability is addressed in Google Chrome version\u202f144.0.7559.59",
+      "gold": "CVE-2026-0899 has a CVSS score of 8.8 (HIGH). It is fixed in Google Chrome prior"
+    },
+    {
+      "id": "FANG2026-TV-048",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.9529270814652994,
+      "generated": "Both CVE\u20112026\u201127273 and CVE\u20112026\u201127275 were published on the same day, 2026\u201103\u201110. CVE\u20112026\u201127273 was last modified the ",
+      "gold": "Both CVEs were published on 2026-03-10. CVE-2026-27273 was last modified on 2026"
+    },
+    {
+      "id": "FANG2026-TV-049",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.3,
+      "generated": "The provided context does not include entries for CVE-2026-20621 or CVE-2026-20663, so their publication and last\u2011modifi",
+      "gold": "Both CVE-2026-20621 and CVE-2026-20663 were published on 2026-02-11 and last mod"
+    },
+    {
+      "id": "FANG2026-TV-050",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.9222022261989532,
+      "generated": "{\n  \"answer\": \"The European Commission opened the Article\u202f5(4) DMA investigation on March\u202f25\u202f2024 and opened the Article",
+      "gold": "The Article 5(4) Investigation opened on March 25, 2024, and the Article 6(4) In"
+    },
+    {
+      "id": "FANG2026-TV-051",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "CVE\u20112026\u201120602 was patched in three separate macOS branches: the Sequoia line (15.7.4), the Sonoma line (14.8.4) and the",
+      "gold": "CVE-2026-20602 was fixed in macOS Sonoma 14.8.4, macOS Sequoia 15.7.4, and macOS"
+    },
+    {
+      "id": "FANG2026-TV-052",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The vulnerability is fixed in Chrome version 148.0.7778.96 and it is classified under CWE\u2011416 (Use\u2011After\u2011Free).",
+      "gold": "CVE-2026-7940 is fixed in Chrome prior to 148.0.7778.96. The CWE type is CWE-416"
+    },
+    {
+      "id": "FANG2026-TV-053",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.0,
+      "generated": "",
+      "gold": "Alphabet's operating cash flow grew from $125,299 million in 2024 to $164,713 mi"
+    },
+    {
+      "id": "FANG2026-TV-054",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.888009739884879,
+      "generated": "{\n  \"answer\": \"Amazon\u2019s provision for income taxes rose from $8.3\u202fbillion in 2024 to $25.5\u202fbillion in 2025 \u2013 an increase",
+      "gold": "Amazon recorded a provision for income taxes of $9.3 billion in 2024 and $19.1 b"
+    },
+    {
+      "id": "FANG2026-TV-055",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.0,
+      "generated": "",
+      "gold": "Patents 12294842 (wireless audio connection switching) and 12293753 (adaptive no"
+    },
+    {
+      "id": "FANG2026-TV-056",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The fix for CVE\u20112026\u20113338 is to upgrade amazon/aws libcrypto to version\u202f1.69.0. The affected range for this package star",
+      "gold": "CVE-2026-3338 is resolved in amazon/aws libcrypto version 1.69.0. The affected r"
+    },
+    {
+      "id": "FANG2026-TV-057",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The fix for the 15.x branch is provided in Adobe Bridge version\u202f15.1.3. The affected list shows that all versions earlie",
+      "gold": "CVE-2026-21283 is fixed in Adobe Bridge 15.1.3 (for the 15.x branch). The affect"
+    },
+    {
+      "id": "FANG2026-TV-058",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The vulnerability is fixed in version\u202fV4.2.6 for the 4.2\u2011branch and in version\u202fV4.4.1 for the 4.4\u2011branch. Amazon\u2019s pract",
+      "gold": "CVE-2026-7425 is fixed in FreeRTOS-Plus-TCP V4.2.6 (for the 4.0.0\u20134.2.x branch) "
+    },
+    {
+      "id": "FANG2026-TV-059",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.3,
+      "generated": "The provided context does not contain any entry for CVE-2026-0024, so there is no information about which Android versio",
+      "gold": "CVE-2026-0024 (published 2026-03-02) lists Android 14.0, 15.0, and 16.0 as affec"
+    },
+    {
+      "id": "FANG2026-TV-060",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "CVE-2026-21346 affects Adobe Bridge. The fix is provided in Bridge version\u202f15.1.4 (for earlier 15.x releases) and versio",
+      "gold": "CVE-2026-21346 affects adobe/bridge, fixed in versions prior to 15.1.4. The CVSS"
+    },
+    {
+      "id": "FANG2026-TV-061",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.900174060609685,
+      "generated": "{\n  \"answer\": \"One day elapsed between the publication date (2026-04-02) and the last modified date (2026-04-03) for CVE",
+      "gold": "CVE-2025-43236 was published on 2026-04-02 and last modified on 2026-04-03, a on"
+    },
+    {
+      "id": "FANG2026-TV-062",
+      "question_type": "Temporal Versioning",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "",
+      "gold": "The earliest Apple patent grant is patent_12294864 (In-field remote profile mana"
+    },
+    {
+      "id": "FANG2026-TV-063",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.0,
+      "generated": "",
+      "gold": "Both CVE-2026-0114 and CVE-2026-0115 were published on 2026-03-10. Despite simul"
+    },
+    {
+      "id": "FANG2026-TV-064",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 0.3,
+      "generated": "{\n  \"answer\": \"The provided context does not contain any entry for CVE-2026-20692, so the fix version for macOS Tahoe an",
+      "gold": "CVE-2026-20692 is patched in macOS Tahoe 26.4. The CVSS score is 5.3 (MEDIUM)."
+    },
+    {
+      "id": "FANG2026-TV-065",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.0,
+      "generated": "",
+      "gold": "CVE-2026-4680 was published 2026-03-24 and patched in Chrome 146.0.7680.165; CVE"
+    },
+    {
+      "id": "FANG2026-TV-066",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "CVE\u20112026\u20115915 is fixed in Google Chrome version\u202f147.0.7727.55 (or any later release), and it carries a CVSS\u202fscore of\u202f8.1",
+      "gold": "CVE-2026-5915 is fixed in Chrome prior to 147.0.7727.55. The CVSS score is 8.1 ("
+    },
+    {
+      "id": "FANG2026-TV-067",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.8765286552129434,
+      "generated": "{\n  \"answer\": \"The Apple 10\u2011K that is labeled \u201c2025\u201d reports the results of Apple\u2019s fiscal year that ends on the last Sa",
+      "gold": "Apple's 10-K is labeled 2025 (aapl_10k_2025) because Apple's fiscal year ends in"
+    },
+    {
+      "id": "FANG2026-TV-068",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.8800777547313372,
+      "generated": "{\n  \"answer\": \"CVE-2026-4680 has a CVSS score of 8.8 (HIGH). The description says the issue is fixed in Chrome versions ",
+      "gold": "CVE-2026-4680 has a CVSS score of 8.8 (HIGH). Yes \u2014 the description states 'prio"
+    },
+    {
+      "id": "FANG2026-TV-069",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.8450162061859634,
+      "generated": "{\n  \"answer\": \"CVE-2025-43236 lists an affected range that includes macOS Ventura 13.x (the \\\"apple/macos (>= 13.0, < 13",
+      "gold": "CVE-2025-43236 (published 2026-04-02) affects macOS Ventura 13.0\u201313.7.7, Sonoma "
+    },
+    {
+      "id": "FANG2026-TV-070",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The CVE\u20112026\u201120611 fix is included in iOS\u202f18.7.5 for the 18.x branch and in iOS\u202f26.3 for the 26.x branch.",
+      "gold": "CVE-2026-20611 is fixed in iOS 18.7.5 and iPadOS 18.7.5 (for the 18.x branch) an"
+    },
+    {
+      "id": "FANG2026-TV-071",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.8487633485183871,
+      "generated": "The record shows a publication date of 2026-01-09 and a last\u2011modified date of 2026-01-14, which is a difference of 5 day",
+      "gold": "CVE-2025-48646 was published on 2026-03-02 and last modified on 2026-03-06, an e"
+    },
+    {
+      "id": "FANG2026-TV-072",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The CVE\u20112026\u20117363 description calls out Linux and ChromeOS as the operating systems affected, and it is assigned a CVSS ",
+      "gold": "CVE-2026-7363 specifically names Linux and ChromeOS as the affected operating sy"
+    },
+    {
+      "id": "FANG2026-TV-073",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.8919806958587326,
+      "generated": "All three CVEs were published on 2026-02-10. Because they all list the same fixed version threshold of \"< 25.6.4,\" Adobe",
+      "gold": "All three CVEs were published on 2026-02-10 and were resolved in After Effects 2"
+    },
+    {
+      "id": "FANG2026-TV-074",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "",
+      "gold": "The earliest Google LLC patent granted in 2025 is patent_12292939 (Discovering a"
+    },
+    {
+      "id": "FANG2026-TV-075",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.9302682011662985,
+      "generated": "CVE-2026-28841 is present in macOS Tahoe releases from version\u202f26.0 up through any version before 26.4 (i.e., 26.0, 26.1",
+      "gold": "The vulnerable version window is macOS Tahoe 26.0 through 26.3 (inclusive), with"
+    },
+    {
+      "id": "FANG2026-TV-076",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.9150503197642983,
+      "generated": "Both CVE-2025-48646 and CVE-2026-0014 reference the Android security bulletin dated 2026\u201103\u201101. The Android versions tha",
+      "gold": "Both CVEs were published 2026-03-02 and last modified 2026-03-06, referencing th"
+    },
+    {
+      "id": "FANG2026-TV-077",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "CVE\u20112026\u201128879 is fixed in iOS\u202f18.7.7 for the 18\u2011series and in iOS\u202f26.4 for the 26\u2011series.",
+      "gold": "CVE-2026-28879 is fixed in iOS 18.7.7 and iPadOS 18.7.7 (for the 18.x branch) an"
+    },
+    {
+      "id": "FANG2026-TV-078",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The vulnerability is mitigated by upgrading AWS-LC to version\u202f1.69.0, and its CVSS score is\u202f8.7 (HIGH).",
+      "gold": "CVE-2026-3338 is resolved in AWS-LC version 1.69.0. The CVSS score is 8.7 (HIGH)"
+    },
+    {
+      "id": "FANG2026-TV-079",
+      "question_type": "Temporal Versioning",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "",
+      "gold": "Meta's patent_12423916 was granted approximately 28 days (just under one month) "
+    },
+    {
+      "id": "FANG2026-TV-080",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "Updating Chrome to version\u202f148.0.7778.96 (or any later release) fixes CVE\u20112026\u20118014. The flaw lets a remote attacker lea",
+      "gold": "CVE-2026-8014 is fixed in Chrome prior to 148.0.7778.96. It allows a remote atta"
+    },
+    {
+      "id": "FANG2026-TV-081",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.8885137783277839,
+      "generated": "{\n  \"answer\": \"CVE-2026-21346 affects Adobe Bridge versions earlier than 15.1.4 and versions from 16.0 up to but not inc",
+      "gold": "CVE-2026-21345 affects Adobe Substance 3D Stager versions 3.1.6 and earlier (fix"
+    },
+    {
+      "id": "FANG2026-TV-082",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "",
+      "gold": "The Chrome fix versions in chronological order are: 143.0.7499.192 (CVE-2026-062"
+    },
+    {
+      "id": "FANG2026-TV-083",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "",
+      "gold": "CVE-2026-20636 is fixed in Safari 26.3, iOS 26.3, iPadOS 26.3, macOS Tahoe 26.3,"
+    },
+    {
+      "id": "FANG2026-TV-084",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "CVE\u20112026\u20115862 is fixed in Google Chrome version\u202f147.0.7727.55 (or any later version), and the vulnerability has a CVSS s",
+      "gold": "CVE-2026-5862 is fixed in Google Chrome prior to 147.0.7727.55. The CVSS score i"
+    },
+    {
+      "id": "FANG2026-TV-085",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.3,
+      "generated": "The provided context does not contain any entry for CVE\u20112026\u201120670, so the specific Apple operating system versions it f",
+      "gold": "CVE-2026-20670 is fixed in macOS Sonoma 14.8.4 and macOS Tahoe 26.3. It does NOT"
+    },
+    {
+      "id": "FANG2026-TV-086",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "",
+      "gold": "Chrome 148.0.7778.96 (released 2026-05-06) remediated CVE-2026-7930 (CVSS 8.8 HI"
+    },
+    {
+      "id": "FANG2026-TV-087",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.9268991109618795,
+      "generated": "YouTube ads revenue rose by $4.2\u202fbillion year\u2011over\u2011year, while Google Network revenue fell by $567\u202fmillion from 2024 to ",
+      "gold": "Per Alphabet's 2026 10-K (covering FY2025), YouTube ads revenues increased $4.2 "
+    },
+    {
+      "id": "FANG2026-TV-088",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.9421123525523522,
+      "generated": "The monetization metrics table shows that from 2024 to 2025, paid clicks for Google Search\u202f&\u202fother rose by 6% and cost\u2011p",
+      "gold": "From 2024 to 2025, Google Search & other paid clicks increased 6% and cost-per-c"
+    },
+    {
+      "id": "FANG2026-TV-089",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "CVE\u20112026\u20118022 is fixed in Google Chrome version 148.0.7778.96 (or any later version), and it has a CVSS score of 3.1 (Lo",
+      "gold": "CVE-2026-8022 is fixed in Google Chrome prior to 148.0.7778.96. The CVSS score i"
+    },
+    {
+      "id": "FANG2026-TV-090",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The Chrome version that fixes CVE\u20112026\u20114443 is 146.0.7680.153 (any version later than this is not vulnerable), and the v",
+      "gold": "CVE-2026-4443 is fixed in Chrome prior to 146.0.7680.153. The CVSS score is 8.8 "
+    },
+    {
+      "id": "FANG2026-TV-091",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 0.3,
+      "generated": "The supplied context does not contain entries for CVE-2026-4445 or CVE-2026-4680, so the specific Chrome versions vulner",
+      "gold": "CVE-2026-4445 affected Chrome versions prior to 146.0.7680.153, while CVE-2026-4"
+    },
+    {
+      "id": "FANG2026-TV-092",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.8502375576000919,
+      "generated": "The dual\u2011branch version ranges (for example, iPadOS\u202f<\u202f18.7.5 and iPadOS\u202f\u2265\u202f26.0,\u202f<\u202f26.3) show that Apple was issuing fixe",
+      "gold": "CVE-2026-20652 (published 2026-02-11) was patched in both the legacy 18.x branch"
+    },
+    {
+      "id": "FANG2026-TV-093",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The vulnerability is fixed in Adobe Connect version\u202f12.11 (or any later version), and it has a CVSS score of\u202f9.6\u202f(CRITIC",
+      "gold": "CVE-2026-27303 is fixed in Adobe Connect version 12.11. The CVSS score is 9.6 (C"
+    },
+    {
+      "id": "FANG2026-TV-094",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.7660737707686408,
+      "generated": "The advisory lists two separate upper\u2011bound versions for the same \"acrobat\" product (\"<\u202f24.001.30362\" and \"<\u202f24.001.3036",
+      "gold": "CVE-2026-34621, published 2026-04-11 and last modified 2026-04-13, lists Adobe A"
+    },
+    {
+      "id": "FANG2026-TV-095",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "Both CVE-2026-21267 and CVE-2026-21268 affect Adobe Dreamweaver Desktop versions up to 21.6 (i.e., any version earlier t",
+      "gold": "Both CVE-2026-21267 and CVE-2026-21268 affect Dreamweaver Desktop versions 21.6 "
+    },
+    {
+      "id": "FANG2026-TV-096",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "",
+      "gold": "CVE-2026-35559 had an 11-day gap between publication (2026-04-03) and last modif"
+    },
+    {
+      "id": "FANG2026-TV-097",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "CVE-2025-20804 has a CVSS score of 6.7 (Medium) and is classified under CWE\u2011416 (Use\u2011After\u2011Free).",
+      "gold": "CVE-2025-20804 has a CVSS score of 6.7 (MEDIUM). The CWE type is CWE-416 (Use Af"
+    },
+    {
+      "id": "FANG2026-TV-098",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The patch for macOS Tahoe (major version\u202f26) was released in version\u202f26.4, which is numerically higher than the fixes fo",
+      "gold": "CVE-2026-28824 (published 2026-03-25) was fixed in macOS Sequoia 15.7.5, macOS S"
+    },
+    {
+      "id": "FANG2026-TV-099",
+      "question_type": "Temporal Versioning",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "CVE-2026-1861 is fixed in Google Chrome version 144.0.7559.132 and has a CVSS score of 8.8 (HIGH).",
+      "gold": "CVE-2026-1861 is fixed in Google Chrome prior to 144.0.7559.132. The CVSS score "
+    },
+    {
+      "id": "FANG2026-TV-100",
+      "question_type": "Temporal Versioning",
+      "check_type": "text",
+      "score": 0.8904518377754057,
+      "generated": "{\n  \"answer\": \"The filing shows that Netflix announced the WBD merger in early December\u202f2025 \u2013 just before the fiscal ye",
+      "gold": "Netflix's FY2025 10-K (filed in 2026) describes the WBD transaction as pending \u2014"
+    },
+    {
+      "id": "FANG2026-TAL-001",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "Amazon\u2019s operating income for fiscal year 2025 was $79,975\u202fmillion (approximately $80\u202fbillion).",
+      "gold": "79.975 billion USD \u2014 from amzn_10k_2026 chunk 80: | Consolidated | $ | 68,593 | "
+    },
+    {
+      "id": "FANG2026-TAL-002",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "Amazon's total net sales for fiscal year 2025 were $716,924\u202fmillion (approximately $716.9\u202fbillion).",
+      "gold": "716.9 billion USD \u2014 from amzn_10k_2026: | Total net sales | 574,785\u00a0 |  |  | 637"
+    },
+    {
+      "id": "FANG2026-TAL-003",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "Amazon\u2019s AWS revenue for fiscal year 2025 was $128,725\u202fmillion (approximately $128.7\u202fbillion).",
+      "gold": "128.725 billion USD \u2014 from amzn_10k_2026 chunk 72: | AWS | 107,556 | | 128,725 |"
+    },
+    {
+      "id": "FANG2026-TAL-004",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "Meta's Operating Cash Flow for fiscal year 2025 was $164.7\u202fbillion.",
+      "gold": "115.8 billion USD \u2014 from meta_10k_2026: | Net cash provided by operating activit"
+    },
+    {
+      "id": "FANG2026-TAL-005",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "Netflix\u2019s Net Income for the fiscal year ended December\u202f31\u202f2025 was $10,981,201 (in thousands), i.e., about $10.98\u202fbilli",
+      "gold": "11.0 billion USD \u2014 from nflx_10k_2026: | Net income |  | $ | 10,981,201\u00a0 |  |  |"
+    },
+    {
+      "id": "FANG2026-TAL-006",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "Google's total revenue for fiscal year 2025 was $402.8\u202fbillion (reported as $402,836\u202fmillion).",
+      "gold": "402.8 billion USD \u2014 from googl_10k_2026: | Total revenues | $ | 350,018\u00a0 |  |  |"
+    },
+    {
+      "id": "FANG2026-TAL-007",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "Netflix reported total revenue of $45,183,036 (in thousands) for the fiscal year ended December\u202f31\u202f2025, which equals ap",
+      "gold": "45.2 billion USD \u2014 from nflx_10k_2026: | Total revenues |  | $ | 45,183,036\u00a0 |  "
+    },
+    {
+      "id": "FANG2026-TAL-008",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "Meta's Advertising Revenue for fiscal year 2025 was $196,175\u202fmillion.",
+      "gold": "196.175 billion USD \u2014 from meta_10k_2026 chunk 190: | Advertising | $ | 196,175 "
+    },
+    {
+      "id": "FANG2026-TAL-009",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "Meta's total revenue for fiscal year 2025 was about $200.97\u202fbillion (approximately $200,966\u202fmillion).",
+      "gold": "201.0 billion USD \u2014 from meta_10k_2026: Our mission is to build the future of hu"
+    },
+    {
+      "id": "FANG2026-TAL-010",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "Meta\u2019s capital expenditures for fiscal year 2025 were $91.4\u202fbillion.",
+      "gold": "69.7 billion USD \u2014 from meta_10k_2026: On July 4, 2025, the One Big Beautiful Bi"
+    },
+    {
+      "id": "FANG2026-TAL-011",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "Netflix\u2019s Operating Income for fiscal year 2025 was $13,326,603 (in thousands), which is approximately $13.33\u202fbillion.",
+      "gold": "13.3 billion USD \u2014 from nflx_10k_2026: | Operating income |  | $ | 13,326,603\u00a0 |"
+    },
+    {
+      "id": "FANG2026-TAL-012",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "Amazon reported free cash flow of $43,585\u202fmillion for fiscal year 2025.",
+      "gold": "11.2 billion USD \u2014 from amzn_10k_2026: | Free cash flow | $ | 38,219\u00a0 |  |  | $ "
+    },
+    {
+      "id": "FANG2026-TAL-013",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "Amazon reported net income of $60.46\u202fbillion for the fiscal year ended December\u202f31,\u202f2025.",
+      "gold": "77.7 billion USD \u2014 from amzn_10k_2026: | Net income | 30,425\u00a0 |  |  | 59,248\u00a0 | "
+    },
+    {
+      "id": "FANG2026-TAL-014",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "Meta's Free Cash Flow for fiscal year 2025 was $43,585\u202fmillion (approximately $43.6\u202fbillion).",
+      "gold": "43.6 billion USD \u2014 from meta_10k_2026: | Free cash flow | $ | 43,585\u00a0 |  |  | $ "
+    },
+    {
+      "id": "FANG2026-TAL-015",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "Amazon\u2019s research and development expense for fiscal year 2025 was $61,087\u202fmillion.",
+      "gold": "108.5 billion USD \u2014 from amzn_10k_2026: See Item\u00a08 of Part II, \u201cFinancial Statem"
+    },
+    {
+      "id": "FANG2026-TAL-016",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "Google\u2019s operating cash flow for fiscal year 2025 was $164.7\u202fbillion.",
+      "gold": "164.7 billion USD \u2014 from googl_10k_2026: | Net cash provided by operating activi"
+    },
+    {
+      "id": "FANG2026-TAL-017",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "Google's Google Cloud revenue for fiscal year 2025 was $58,705\u202fmillion.",
+      "gold": "58.705 billion USD \u2014 from googl_10k_2026 chunk 117: | Google Cloud | 43,229 | | "
+    },
+    {
+      "id": "FANG2026-TAL-018",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "Netflix's capital expenditures for fiscal year 2025 were $91.4\u202fbillion.",
+      "gold": "0.688 billion USD \u2014 from nflx_10k_2026: Net cash provided by operating activitie"
+    },
+    {
+      "id": "FANG2026-TAL-019",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "Apple's Services revenue for fiscal year 2025 was $109,158\u202fmillion.",
+      "gold": "109.158 billion USD \u2014 from aapl_10k_2025 chunk 71: | Services (1) | 109,158 | | "
+    },
+    {
+      "id": "FANG2026-TAL-020",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "Meta reported research and development expenses of $57,372\u202fmillion for fiscal year 2025.",
+      "gold": "57.4 billion USD \u2014 from meta_10k_2026: We are also making significant investment"
+    },
+    {
+      "id": "FANG2026-TAL-021",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "Apple's Total Net Sales for fiscal year 2025 were $416,161\u202fmillion.",
+      "gold": "416.2 billion USD \u2014 from aapl_10k_2025: | Total net sales | $ | 416,161\u00a0 |  |  |"
+    },
+    {
+      "id": "FANG2026-TAL-022",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "Netflix's operating cash flow for fiscal year 2025 was $139.5\u202fbillion (reported as $139,514\u202fmillion).",
+      "gold": "10.1 billion USD \u2014 from nflx_10k_2026: | Net cash provided by operating activiti"
+    },
+    {
+      "id": "FANG2026-TAL-023",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "Google's research and development expense for fiscal year 2025 was $57,372\u202fmillion.",
+      "gold": "61.087 billion USD \u2014 from googl_10k_2026 chunk 119: | Research and development |"
+    },
+    {
+      "id": "FANG2026-TAL-024",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "Google's Google Search revenue (listed as \"Google Search & other\") for fiscal year 2025 was $224,532\u202fmillion.",
+      "gold": "224.532 billion USD \u2014 from googl_10k_2026 chunk 117: | Google Search & other | 1"
+    },
+    {
+      "id": "FANG2026-TAL-025",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "Apple\u2019s research and development expense for fiscal year 2025 was $61,087\u202fmillion.",
+      "gold": "34.5 billion USD \u2014 from aapl_10k_2025: | Research and development | $ | 34,550\u00a0 "
+    },
+    {
+      "id": "FANG2026-TAL-026",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "CVE-2024-44219 affects the Apple macOS operating system (specifically versions older than 15.1).",
+      "gold": "macos \u2014 affected product from CVE record CVE-2024-44219"
+    },
+    {
+      "id": "FANG2026-TAL-027",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.3,
+      "generated": "The provided context does not list any product affected by CVE-2026-20650.",
+      "gold": "ipados \u2014 affected product from CVE record CVE-2026-20650"
+    },
+    {
+      "id": "FANG2026-TAL-028",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "CVE\u20112026\u20117904 affects Google Chrome (versions prior to 148.0.7778.96).",
+      "gold": "chrome \u2014 affected product from CVE record CVE-2026-7904"
+    },
+    {
+      "id": "FANG2026-TAL-029",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "The CVSS score for CVE-2025-46306 is not provided in the given context, as there is no entry for that CVE identifier.",
+      "gold": "5.5 \u2014 CVSS score from CVE record CVE-2025-46306"
+    },
+    {
+      "id": "FANG2026-TAL-030",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "date",
+      "score": 0.0,
+      "generated": "The provided context does not contain any information about CVE-2025-46300, so its publication date is not available her",
+      "gold": "2026-02-11 \u2014 publication date from CVE record CVE-2025-46300"
+    },
+    {
+      "id": "FANG2026-TAL-031",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.3,
+      "generated": "The provided context does not contain any entry for CVE-2026-7926, so no affected product can be identified from the giv",
+      "gold": "chrome \u2014 affected product from CVE record CVE-2026-7926"
+    },
+    {
+      "id": "FANG2026-TAL-032",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "CVE-2026-5864 has a CVSS score of 4.3.",
+      "gold": "4.3 \u2014 CVSS score from CVE record CVE-2026-5864"
+    },
+    {
+      "id": "FANG2026-TAL-033",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "The CVSS score for CVE-2026-5889 is 4.3.",
+      "gold": "4.3 \u2014 CVSS score from CVE record CVE-2026-5889"
+    },
+    {
+      "id": "FANG2026-TAL-034",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.3,
+      "generated": "The provided context does not mention CVE-2026-30794, so the affected product cannot be identified from the given inform",
+      "gold": "rustdesk \u2014 affected product from CVE record CVE-2026-30794"
+    },
+    {
+      "id": "FANG2026-TAL-035",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "The CVSS score for CVE-2026-7930 is 8.8 (HIGH).",
+      "gold": "8.8 \u2014 CVSS score from CVE record CVE-2026-7930"
+    },
+    {
+      "id": "FANG2026-TAL-036",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "date",
+      "score": 1.0,
+      "generated": "CVE-2026-0903 was published on 2026-01-20.",
+      "gold": "2026-01-20 \u2014 publication date from CVE record CVE-2026-0903"
+    },
+    {
+      "id": "FANG2026-TAL-037",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "CVE\u20112025\u201124090 affects Apple\u2019s mobile operating systems \u2013 iPhone\u202fOS (iOS) and iPadOS versions earlier than 18.3.",
+      "gold": "ipados \u2014 affected product from CVE record CVE-2025-24090"
+    },
+    {
+      "id": "FANG2026-TAL-038",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "CVE-2026-7333 has a CVSS score of 9.6 (Critical).",
+      "gold": "9.6 \u2014 CVSS score from CVE record CVE-2026-7333"
+    },
+    {
+      "id": "FANG2026-TAL-039",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "date",
+      "score": 0.0,
+      "generated": "The provided context does not include any entry for CVE-2026-5277, so its publication date is not available here.",
+      "gold": "2026-04-01 \u2014 publication date from CVE record CVE-2026-5277"
+    },
+    {
+      "id": "FANG2026-TAL-040",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.3,
+      "generated": "The provided context does not list any product affected by CVE-2025-48646; that CVE identifier is not mentioned in the d",
+      "gold": "android \u2014 affected product from CVE record CVE-2025-48646"
+    },
+    {
+      "id": "FANG2026-TAL-041",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "date",
+      "score": 1.0,
+      "generated": "CVE-2026-4680 was published on 2026-03-24.",
+      "gold": "2026-03-24 \u2014 publication date from CVE record CVE-2026-4680"
+    },
+    {
+      "id": "FANG2026-TAL-042",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "The CVSS score for CVE-2026-35559 is not provided in the given context.",
+      "gold": "7.1 \u2014 CVSS score from CVE record CVE-2026-35559"
+    },
+    {
+      "id": "FANG2026-TAL-043",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "CVE-2026-5915 affects Google Chrome (versions prior to 147.0.7727.55).",
+      "gold": "chrome \u2014 affected product from CVE record CVE-2026-5915"
+    },
+    {
+      "id": "FANG2026-TAL-044",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "The CVSS score for CVE-2025-61615 is 7.5, which is classified as HIGH.",
+      "gold": "7.5 \u2014 CVSS score from CVE record CVE-2025-61615"
+    },
+    {
+      "id": "FANG2026-TAL-045",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "The provided context does not contain any entry for CVE-2026-20692, so its CVSS score cannot be determined from this inf",
+      "gold": "5.3 \u2014 CVSS score from CVE record CVE-2026-20692"
+    },
+    {
+      "id": "FANG2026-TAL-046",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "date",
+      "score": 1.0,
+      "generated": "CVE-2026-27275 was published on 2026-03-10.",
+      "gold": "2026-03-10 \u2014 publication date from CVE record CVE-2026-27275"
+    },
+    {
+      "id": "FANG2026-TAL-047",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "date",
+      "score": 1.0,
+      "generated": "CVE-2026-7940 was published on 2026-05-06.",
+      "gold": "2026-05-06 \u2014 publication date from CVE record CVE-2026-7940"
+    },
+    {
+      "id": "FANG2026-TAL-048",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "CVE-2026-3062 has a CVSS score of 9.8.",
+      "gold": "9.8 \u2014 CVSS score from CVE record CVE-2026-3062"
+    },
+    {
+      "id": "FANG2026-TAL-049",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "date",
+      "score": 0.0,
+      "generated": "The provided context does not include any information about CVE-2025-20801, so its publication date cannot be determined",
+      "gold": "2026-01-06 \u2014 publication date from CVE record CVE-2025-20801"
+    },
+    {
+      "id": "FANG2026-TAL-050",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "CVE-2026-0008 has a CVSS score of 8.4 (HIGH).",
+      "gold": "8.4 \u2014 CVSS score from CVE record CVE-2026-0008"
+    },
+    {
+      "id": "FANG2026-TAL-051",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "date",
+      "score": 0.0,
+      "generated": "The grant date for patent US12332430 is not provided in the given context.",
+      "gold": "2025-06-17 \u2014 grant date of US12332430 (Title: Seals for optical components, Appl"
+    },
+    {
+      "id": "FANG2026-TAL-052",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.3,
+      "generated": "The assignee of patent US12334118 is not mentioned in the provided context.",
+      "gold": "Netflix, Inc. \u2014 assignee of US12334118 (Title: Techniques for identifying synchr"
+    },
+    {
+      "id": "FANG2026-TAL-053",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "text",
+      "score": 0.3,
+      "generated": "The title of patent US12333382 is not provided in the given context.",
+      "gold": "Quantum circuit optimization using windowed quantum arithmetic \u2014 title of US1233"
+    },
+    {
+      "id": "FANG2026-TAL-054",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.3,
+      "generated": "The provided context does not include any information about patent US12332442, so its assignee cannot be determined from",
+      "gold": "Meta Platforms Technologies, LLC \u2014 assignee of US12332442 (Title: High efficienc"
+    },
+    {
+      "id": "FANG2026-TAL-055",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "date",
+      "score": 0.0,
+      "generated": "The grant date for patent US12353119 is not provided in the given context.",
+      "gold": "2025-07-08 \u2014 grant date of US12353119 (Title: Camera with folded optics having m"
+    },
+    {
+      "id": "FANG2026-TAL-056",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "text",
+      "score": 0.3,
+      "generated": "The title of patent US12333681 is not provided in the given context.",
+      "gold": "Targeted generative visual editing of images \u2014 title of US12333681 (Meta Platfor"
+    },
+    {
+      "id": "FANG2026-TAL-057",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.3,
+      "generated": "The provided context does not specify an assignee for patent US12333858; that patent is not listed among the patents des",
+      "gold": "Apple Inc. \u2014 assignee of US12333858 (Title: Emotion detection)"
+    },
+    {
+      "id": "FANG2026-TAL-058",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "text",
+      "score": 0.3,
+      "generated": "The title of patent US12334069 is not provided in the given context.",
+      "gold": "Automated assistant that utilizes radar data to determine user presence and virt"
+    },
+    {
+      "id": "FANG2026-TAL-059",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The patent for quantum circuit optimization using windowed quantum arithmetic (US12333382) is held by Google LLC.",
+      "gold": "Google LLC \u2014 assignee of US12333382 (Quantum circuit optimization using windowed"
+    },
+    {
+      "id": "FANG2026-TAL-060",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The patent number for Apple's invention on directional voice sensing using coherent optical detection is US12334096.",
+      "gold": "US12334096 \u2014 Apple Inc. patent for directional voice sensing using coherent opti"
+    },
+    {
+      "id": "FANG2026-TAL-061",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The patent titled \"Techniques for identifying synchronization errors in media titles\" was assigned to Netflix, Inc.",
+      "gold": "Netflix, Inc. \u2014 assignee of US12334118 (Techniques for identifying synchronizati"
+    },
+    {
+      "id": "FANG2026-TAL-062",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "date",
+      "score": 1.0,
+      "generated": "Google's patent titled \"In-conversation search\" was granted on June 17, 2025.",
+      "gold": "2025-06-17 \u2014 grant date of US12332948 (In-conversation search, Google LLC)"
+    },
+    {
+      "id": "FANG2026-TAL-063",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The patent number for Meta's invention on targeted generative visual editing of images is US12333681.",
+      "gold": "US12333681 \u2014 Meta Platforms Technologies, LLC patent for targeted generative vis"
+    },
+    {
+      "id": "FANG2026-TAL-064",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The patent \"Feedforward compensation of high-luminance banding Mura compensation\" is held by Apple Inc.",
+      "gold": "Apple Inc. \u2014 assignee of US12333995 (Feedforward compensation of high-luminance "
+    },
+    {
+      "id": "FANG2026-TAL-065",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The patent number for Google\u2019s \u201cApplication hosting in a distributed application execution system\u201d is US12333332.",
+      "gold": "US12333332 \u2014 Google LLC patent for application hosting in a distributed applicat"
+    },
+    {
+      "id": "FANG2026-TAL-066",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "date",
+      "score": 1.0,
+      "generated": "Apple's patent on the \"low-dropout regulator circuit with dynamic transition between operation modes\" (US12353231) was g",
+      "gold": "2025-07-08 \u2014 grant date of US12353231 (Low-dropout regulator circuit with dynami"
+    },
+    {
+      "id": "FANG2026-TAL-067",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "text",
+      "score": 0.5739252115156122,
+      "generated": "Graphics processing architecture in a cloud gaming environment",
+      "gold": "Techniques for identifying synchronization errors in media titles \u2014 the only Net"
+    },
+    {
+      "id": "FANG2026-TAL-068",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "There are eight patents in the provided corpus that list Meta Platforms Technologies, LLC as the assignee.",
+      "gold": "2 \u2014 US12333681 (Targeted generative visual editing of images) and US12332442 (Hi"
+    },
+    {
+      "id": "FANG2026-TAL-069",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The Apple patent granted on 2025\u201107\u201108 that relates to camera optics is US12353119, titled \u201cCamera with folded optics ha",
+      "gold": "US12353119 \u2014 Camera with folded optics having moveable lens (Apple Inc., granted"
+    },
+    {
+      "id": "FANG2026-TAL-070",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The assignee of the patent about selecting an input mode for a virtual assistant granted in June 2025 is Google LLC.",
+      "gold": "Google LLC \u2014 assignee of US12333126 (Selecting an input mode for a virtual assis"
+    },
+    {
+      "id": "FANG2026-TAL-071",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The Apple patent granted on 2025-07-08 that relates to electronic voltage regulation circuits is US12355352, titled \u201cSwi",
+      "gold": "US12353231 \u2014 Low-dropout regulator circuit with dynamic transition between opera"
+    },
+    {
+      "id": "FANG2026-TAL-072",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The patent abstract described is from US12332948, which is assigned to Google LLC.",
+      "gold": "Google LLC \u2014 assignee of US12332948 (In-conversation search)"
+    },
+    {
+      "id": "FANG2026-TAL-073",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The patent that describes detecting and decoding visual markers with user\u2011selectable appearance is US12333378.",
+      "gold": "US12333378 \u2014 Visual marker with user selectable appearance (Apple Inc.)"
+    },
+    {
+      "id": "FANG2026-TAL-074",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The low-dropout (LDO) regulator circuit with dynamic transitioning was assigned to Apple Inc.",
+      "gold": "Apple Inc. \u2014 assignee of US12353231 (Low-dropout regulator circuit with dynamic "
+    },
+    {
+      "id": "FANG2026-TAL-075",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The patent number is US12333067.",
+      "gold": "US12333067 \u2014 Detecting unexpected user interface behavior using physiological da"
+    },
+    {
+      "id": "FANG2026-TAL-076",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The document with docket number 2025\u201124146 was published by the U.S. International Trade Commission.",
+      "gold": "International Trade Commission \u2014 agency for docket 2025-24146 in document fr_202"
+    },
+    {
+      "id": "FANG2026-TAL-077",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "text",
+      "score": 0.46814781508692643,
+      "generated": "The provided excerpts do not contain any information about a Federal Register document with docket number 2025\u201124169, so",
+      "gold": "Notice is hereby given that, on October 30, 2025, pursuant to section 6(a) of th"
+    },
+    {
+      "id": "FANG2026-TAL-078",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The Federal Register document with docket number 2026-09204 was published by the U.S. International Trade Commission.",
+      "gold": "International Trade Commission \u2014 agency for docket 2026-09204 in document fr_202"
+    },
+    {
+      "id": "FANG2026-TAL-079",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "text",
+      "score": 0.5966026493376488,
+      "generated": "The Federal Register document identified as docket number\u202f2026\u201104286 is a summary of the Media Bureau\u2019s public notice (M",
+      "gold": "Pursuant to \u00a7\u00a7 1.415 and 1.419 of the Commission's rules, 47 CFR 1.415, 1.419, i"
+    },
+    {
+      "id": "FANG2026-TAL-080",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The document with docket number 2026\u201107817 was published by Federal Student Aid, which is part of the U.S. Department of",
+      "gold": "Department of Education \u2014 agency for docket 2026-07817 in document fr_2026-07817"
+    },
+    {
+      "id": "FANG2026-TAL-081",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "text",
+      "score": 0.7795393868830526,
+      "generated": "The Federal Register document with docket number 2026\u201107251 is a notice that the Office of Hazardous Materials Safety ha",
+      "gold": "In accordance with the procedures governing the application for, and the process"
+    },
+    {
+      "id": "FANG2026-TAL-082",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The Federal Trade Commission (FTC) published the Federal Register document with docket number 2026\u201104952.",
+      "gold": "Federal Trade Commission \u2014 agency for docket 2026-04952 in document fr_2026-0495"
+    },
+    {
+      "id": "FANG2026-TAL-083",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "text",
+      "score": 0.6501419911345943,
+      "generated": "The Federal Register document identified by docket number\u202f2026\u201105870 is EPA\u2019s System of Records Notice (SORN).  It annou",
+      "gold": "Environmental Protection Agency's (EPA) Office of Acquisition Solutions is givin"
+    },
+    {
+      "id": "FANG2026-TAL-084",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The document with docket number 2026\u201103067 was published by the U.S. Department of Transportation (specifically the Offi",
+      "gold": "Pipeline and Hazardous Materials Safety Administration \u2014 agency for docket 2026-"
+    },
+    {
+      "id": "FANG2026-TAL-085",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "text",
+      "score": 0.5035307177582569,
+      "generated": "The Federal Register document identified by docket number\u202f2026\u201104987 is a notice that provides the public\u2011comment instru",
+      "gold": "The United States Patent and Trademark Office (USPTO) has recently received feed"
+    },
+    {
+      "id": "FANG2026-TAL-086",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.3,
+      "generated": "The provided context does not contain any reference to a Federal Register document with docket number 2026-00870, so the",
+      "gold": "Pipeline and Hazardous Materials Safety Administration \u2014 agency for docket 2026-"
+    },
+    {
+      "id": "FANG2026-TAL-087",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "text",
+      "score": 0.5867542704740966,
+      "generated": "The document (FR\u00a0Doc\u00a02026\u201101227) is a U.S. International Trade Commission notice warning that a respondent\u2019s failure to ",
+      "gold": "The complaint, except for any confidential information contained therein, may be"
+    },
+    {
+      "id": "FANG2026-TAL-088",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.3,
+      "generated": "The provided context does not mention a Federal Register document with docket number\u202f2026\u201101377, so the agency that publ",
+      "gold": "Securities and Exchange Commission \u2014 agency for docket 2026-01377 in document fr"
+    },
+    {
+      "id": "FANG2026-TAL-089",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "text",
+      "score": 0.3,
+      "generated": "The provided context does not include any information about a Federal Register document with docket number 2026\u201101376, s",
+      "gold": "Self-Regulatory Organization's Statement of the Terms of Substance of the Propos"
+    },
+    {
+      "id": "FANG2026-TAL-090",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The Federal Register document with docket number 2026\u201107804 was published by the Consumer Financial Protection Bureau.",
+      "gold": "Consumer Financial Protection Bureau \u2014 agency for docket 2026-07804 in document "
+    },
+    {
+      "id": "FANG2026-TAL-091",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "text",
+      "score": 0.4093035520006051,
+      "generated": "The provided excerpts do not contain any reference to a Federal Register document with docket number 2026-01118, so its ",
+      "gold": "On May 1, 2025, the Nasdaq ISE, LLC (\u201cISE\u201d or \u201cExchange\u201d) filed with the Securit"
+    },
+    {
+      "id": "FANG2026-TAL-092",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The Federal Register document with docket number 2026\u201107825 was published by the U.S. Department of Education\u2019s Federal ",
+      "gold": "Department of Education \u2014 agency for docket 2026-07825 in document fr_2026-07825"
+    },
+    {
+      "id": "FANG2026-TAL-093",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "text",
+      "score": 0.6116217598707496,
+      "generated": "{\n  \"answer\": \"The Federal Register document FR\u00a0Doc\u00a02026\u201108808 is a notice from the Office of Pesticide Programs announc",
+      "gold": "Comments must be received on or before June 5, 2026 \u2014 subject of docket 2026-088"
+    },
+    {
+      "id": "FANG2026-TAL-094",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.3,
+      "generated": "The provided context does not contain any reference to a Federal Register document with docket number 2026-00872, so the",
+      "gold": "Pipeline and Hazardous Materials Safety Administration \u2014 agency for docket 2026-"
+    },
+    {
+      "id": "FANG2026-TAL-095",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "text",
+      "score": 0.5668317431911596,
+      "generated": "The Federal Register document with docket number\u202f2026\u201107473 concerns the Food Delivery Fees ANPRM (Project No.\u202fP267101).",
+      "gold": "Comments must be received on or before May 18, 2026 \u2014 subject of docket 2026-074"
+    },
+    {
+      "id": "FANG2026-TAL-096",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The Federal Register document with docket number 2026-07826 was published by the U.S. Department of Education, specifica",
+      "gold": "Department of Education \u2014 agency for docket 2026-07826 in document fr_2026-07826"
+    },
+    {
+      "id": "FANG2026-TAL-097",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "text",
+      "score": 0.3,
+      "generated": "The provided context does not contain any information about the subject of a Federal Register document with docket numbe",
+      "gold": "The system of records described herein will become effective March 27, 2026 \u2014 su"
+    },
+    {
+      "id": "FANG2026-TAL-098",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The Federal Register document with docket number 2026\u201107827 was published by Federal Student Aid, which is an agency wit",
+      "gold": "Department of Education \u2014 agency for docket 2026-07827 in document fr_2026-07827"
+    },
+    {
+      "id": "FANG2026-TAL-099",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "text",
+      "score": 0.5014995894668934,
+      "generated": "The Federal Register document with docket number 2026\u201100345 is about the composition of document headings. It explains t",
+      "gold": "The complaint, except for any confidential information contained therein, may be"
+    },
+    {
+      "id": "FANG2026-TAL-100",
+      "question_type": "Targeted Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.3,
+      "generated": "The provided context does not identify which agency published a Federal Register document with docket number 2026\u201107779.",
+      "gold": "International Trade Commission \u2014 agency for docket 2026-07779 in document fr_202"
+    },
+    {
+      "id": "FANG2026-DAL-001",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The company is Meta Platforms, Inc. (formerly Facebook), which reported net income of roughly $60\u202fbillion for fiscal yea",
+      "gold": "Amazon \u2014 the e-commerce and cloud computing company, reported in amzn_10k_2026"
+    },
+    {
+      "id": "FANG2026-DAL-002",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "The company's Free Cash Flow for fiscal year 2025 was $11.194\u202fbillion (reported as $11,194\u202fmillion).",
+      "gold": "43.6 billion USD \u2014 from meta_10k_2026"
+    },
+    {
+      "id": "FANG2026-DAL-003",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "",
+      "gold": "Meta \u2014 the social media company behind Facebook and Instagram, reported in meta_"
+    },
+    {
+      "id": "FANG2026-DAL-004",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "The e\u2011commerce and cloud\u2011computing company reported operating income of about $79.98\u202fbillion for fiscal year\u202f2025.",
+      "gold": "79.975 billion USD \u2014 from amzn_10k_2026"
+    },
+    {
+      "id": "FANG2026-DAL-005",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "",
+      "gold": "Amazon \u2014 the e-commerce and cloud computing company, reported in amzn_10k_2026"
+    },
+    {
+      "id": "FANG2026-DAL-006",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "The company\u2019s total Net Sales for fiscal year 2025 were $716,924\u202fmillion.",
+      "gold": "716.9 billion USD \u2014 from amzn_10k_2026"
+    },
+    {
+      "id": "FANG2026-DAL-007",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The company is Amazon \u2013 its AWS segment is reported in Amazon\u2019s financial results.",
+      "gold": "Amazon \u2014 the e-commerce and cloud computing company, reported in amzn_10k_2026"
+    },
+    {
+      "id": "FANG2026-DAL-008",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "The streaming entertainment company reported operating cash flow of $139.5\u202fbillion for fiscal year 2025.",
+      "gold": "10.1 billion USD \u2014 from nflx_10k_2026"
+    },
+    {
+      "id": "FANG2026-DAL-009",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "{\n  \"answer\": \"The company is Alphabet Inc. (Google).\",\n  \"key_claims\": [\n    \"Alphabet (Google) reported advertising re",
+      "gold": "Netflix \u2014 the streaming entertainment company, reported in nflx_10k_2026"
+    },
+    {
+      "id": "FANG2026-DAL-010",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "The company's research and development expense for fiscal year 2025 was $61,087\u202fmillion (approximately $61.1\u202fbillion).",
+      "gold": "61.1 billion USD \u2014 from googl_10k_2026"
+    },
+    {
+      "id": "FANG2026-DAL-011",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The company is Alphabet Inc., the Google parent, which reported total consolidated revenue of roughly $350\u202fbillion (spec",
+      "gold": "Google \u2014 the search engine and digital advertising company, reported in googl_10"
+    },
+    {
+      "id": "FANG2026-DAL-012",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "The company reported Google Cloud revenue of $58,705\u202fmillion for fiscal year 2025.",
+      "gold": "58.7 billion USD \u2014 from googl_10k_2026"
+    },
+    {
+      "id": "FANG2026-DAL-013",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The company is Netflix, which reported net income of about $11.0\u202fbillion for fiscal year 2025.",
+      "gold": "Netflix \u2014 the streaming entertainment company, reported in nflx_10k_2026"
+    },
+    {
+      "id": "FANG2026-DAL-014",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "The company's Operating Income for fiscal year 2025 was $80.0\u202fbillion.",
+      "gold": "133.1 billion USD \u2014 from aapl_10k_2025"
+    },
+    {
+      "id": "FANG2026-DAL-015",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "",
+      "gold": "Amazon \u2014 the e-commerce and cloud computing company, reported in amzn_10k_2026"
+    },
+    {
+      "id": "FANG2026-DAL-016",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "The company reported capital expenditures of $91.4\u202fbillion for fiscal year 2025.",
+      "gold": "69.7 billion USD \u2014 from meta_10k_2026"
+    },
+    {
+      "id": "FANG2026-DAL-017",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The company that reported free cash flow of roughly $38.2\u202fbillion for fiscal year 2025 is Alphabet Inc.",
+      "gold": "Amazon \u2014 the e-commerce and cloud computing company, reported in amzn_10k_2026"
+    },
+    {
+      "id": "FANG2026-DAL-018",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "The company's operating income for fiscal year 2025 was $13,326,603 (in thousands), which is approximately $13.33\u202fbillio",
+      "gold": "13.3 billion USD \u2014 from nflx_10k_2026"
+    },
+    {
+      "id": "FANG2026-DAL-019",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "",
+      "gold": "Meta \u2014 the social media company behind Facebook and Instagram, reported in meta_"
+    },
+    {
+      "id": "FANG2026-DAL-020",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "The company reported advertising revenue of $196,175\u202fmillion (approximately $196.2\u202fbillion) for fiscal year 2025.",
+      "gold": "196.2 billion USD \u2014 from meta_10k_2026"
+    },
+    {
+      "id": "FANG2026-DAL-021",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The company is Apple Inc.",
+      "gold": "Apple \u2014 the consumer electronics and software company known for iPhone, reported"
+    },
+    {
+      "id": "FANG2026-DAL-022",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 1.0,
+      "generated": "The company reported Operating Cash Flow of $164.7\u202fbillion for the fiscal year ended December\u202f31\u202f2025.",
+      "gold": "164.7 billion USD \u2014 from googl_10k_2026"
+    },
+    {
+      "id": "FANG2026-DAL-023",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The company is Meta Platforms, Inc. (the former Facebook company), which reported total revenue of approximately $201\u202fbi",
+      "gold": "Meta \u2014 the social media company behind Facebook and Instagram, reported in meta_"
+    },
+    {
+      "id": "FANG2026-DAL-024",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "{\n  \"answer\": \"The company reported research and development (R&D) expense of",
+      "gold": "34.5 billion USD \u2014 from aapl_10k_2025"
+    },
+    {
+      "id": "FANG2026-DAL-025",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The company is Netflix, which reported total revenue of about $45.2\u202fbillion for fiscal year 2025.",
+      "gold": "Netflix \u2014 the streaming entertainment company, reported in nflx_10k_2026"
+    },
+    {
+      "id": "FANG2026-DAL-026",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "The vulnerability published on 2026\u201104\u201108 has a CVSS score of 8.8.",
+      "gold": "8.1 \u2014 CVSS score of CVE-2026-5915, published 2026-04-08"
+    },
+    {
+      "id": "FANG2026-DAL-027",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The CVE published on 2026\u201101\u201106 with a CVSS score of 7.0 affects the Google Android product, specifically versions 14.0,",
+      "gold": "android \u2014 affected product of CVE-2025-20801"
+    },
+    {
+      "id": "FANG2026-DAL-028",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The CVE identifier is CVE-2026-27277.",
+      "gold": "CVE-2026-27275 \u2014 CVE record for substance with CVSS 7.8"
+    },
+    {
+      "id": "FANG2026-DAL-029",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "The Chrome vulnerability published on 2026\u201104\u201128 has a CVSS score of 8.8 (High).",
+      "gold": "9.6 \u2014 CVSS score of CVE-2026-7333, published 2026-04-28"
+    },
+    {
+      "id": "FANG2026-DAL-030",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The CVE published on 2026\u201102\u201111 with a CVSS score of 7.5 affects Safari.",
+      "gold": "ipados \u2014 affected product of CVE-2026-20650"
+    },
+    {
+      "id": "FANG2026-DAL-031",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The CVE identifier for the Athena vulnerability with a CVSS score of 7.1 published on 2026-04-03 is CVE-2026-35559.",
+      "gold": "CVE-2026-35559 \u2014 CVE record for athena with CVSS 7.1"
+    },
+    {
+      "id": "FANG2026-DAL-032",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "The vulnerability published on 2026\u201104\u201101 has a CVSS score of 8.8 (HIGH).",
+      "gold": "7.5 \u2014 CVSS score of CVE-2026-5277, published 2026-04-01"
+    },
+    {
+      "id": "FANG2026-DAL-033",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.3,
+      "generated": "The provided context does not contain any Google CVE published on 2026\u201103\u201102 with a CVSS score of 7.3, so no product can",
+      "gold": "android \u2014 affected product of CVE-2025-48634"
+    },
+    {
+      "id": "FANG2026-DAL-034",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The vulnerability is identified as CVE-2026-0109.",
+      "gold": "CVE-2025-61615 \u2014 CVE record for android with CVSS 7.5"
+    },
+    {
+      "id": "FANG2026-DAL-035",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "The macOS vulnerability that was updated on 2026\u201104\u201102 (CVE\u20112026\u201120620) has a CVSS score of 7.7 (HIGH).",
+      "gold": "7.5 \u2014 CVSS score of CVE-2024-44219, published 2026-04-02"
+    },
+    {
+      "id": "FANG2026-DAL-036",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "",
+      "gold": "safari \u2014 affected product of CVE-2026-20636"
+    },
+    {
+      "id": "FANG2026-DAL-037",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The CVE identifier is CVE-2026-7914.",
+      "gold": "CVE-2026-7911 \u2014 CVE record for chrome with CVSS 8.3"
+    },
+    {
+      "id": "FANG2026-DAL-038",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "The provided context does not contain any Google Chrome vulnerability that was published on 2026-01-20, so a CVSS score ",
+      "gold": "5.4 \u2014 CVSS score of CVE-2026-0903, published 2026-01-20"
+    },
+    {
+      "id": "FANG2026-DAL-039",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.3,
+      "generated": "The provided context does not contain any Google CVE published on 2026\u201101\u201106 with a CVSS score of 6.7, so no affected pr",
+      "gold": "android \u2014 affected product of CVE-2025-20784"
+    },
+    {
+      "id": "FANG2026-DAL-040",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The vulnerability is identified as CVE-2026-20686.",
+      "gold": "CVE-2026-20692 \u2014 CVE record for ipados with CVSS 5.3"
+    },
+    {
+      "id": "FANG2026-DAL-041",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "The Chrome vulnerability published on 2026\u201105\u201106 has a CVSS score of 8.8 (HIGH).",
+      "gold": "4.3 \u2014 CVSS score of CVE-2026-7904, published 2026-05-06"
+    },
+    {
+      "id": "FANG2026-DAL-042",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The CVE published on 2026\u201103\u201110 with a CVSS score of 7.8 affects Adobe Acrobat Reader (and Acrobat DC) versions.",
+      "gold": "acrobat \u2014 affected product of CVE-2026-27278"
+    },
+    {
+      "id": "FANG2026-DAL-043",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The CVE identifier is CVE-2025-46306.",
+      "gold": "CVE-2025-46306 \u2014 CVE record for keynote with CVSS 5.5"
+    },
+    {
+      "id": "FANG2026-DAL-044",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "The macOS vulnerability that was updated on 2026\u201104\u201102 has a CVSS score of 7.7 (HIGH).",
+      "gold": "3.3 \u2014 CVSS score of CVE-2025-43236, published 2026-04-02"
+    },
+    {
+      "id": "FANG2026-DAL-045",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "There is no CVE from Google in the provided context that was published on 2026-03-02 with a CVSS score of 6.2, so no aff",
+      "gold": "android \u2014 affected product of CVE-2026-0014"
+    },
+    {
+      "id": "FANG2026-DAL-046",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The CVE identifier is CVE-2025-24090.",
+      "gold": "CVE-2025-24090 \u2014 CVE record for ipados with CVSS 3.3"
+    },
+    {
+      "id": "FANG2026-DAL-047",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "The provided context does not contain any Android vulnerability from Google that was published on 2026-04-06, so a CVSS ",
+      "gold": "6.2 \u2014 CVSS score of CVE-2026-0049, published 2026-04-06"
+    },
+    {
+      "id": "FANG2026-DAL-048",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The CVE published on 2026\u201102\u201111 with a CVSS score of 5.5 affects macOS (e.g., macOS Sequoia\u202f15.7.4, macOS Sonoma\u202f14.8.4,",
+      "gold": "ipados \u2014 affected product of CVE-2026-20638"
+    },
+    {
+      "id": "FANG2026-DAL-049",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The CVE identifier is CVE-2026-28866.",
+      "gold": "CVE-2026-28833 \u2014 CVE record for ipados with CVSS 6.2"
+    },
+    {
+      "id": "FANG2026-DAL-050",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "number",
+      "score": 0.0,
+      "generated": "The Chrome vulnerability that was published on 2026\u201104\u201108 has a CVSS score of 8.8 (HIGH).",
+      "gold": "4.3 \u2014 CVSS score of CVE-2026-5889, published 2026-04-08"
+    },
+    {
+      "id": "FANG2026-DAL-051",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "date",
+      "score": 1.0,
+      "generated": "The patent titled \"Directional voice sensing using coherent optical detection\" (US12334096) was granted on June 17, 2025",
+      "gold": "2025-06-17 \u2014 grant date of US12334096"
+    },
+    {
+      "id": "FANG2026-DAL-052",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The patent titled \"Artificial reality system with varifocal display of artificial reality content\" granted on 2025-06-17",
+      "gold": "Meta Platforms Technologies, LLC \u2014 assignee of US12333665 granted 2025-06-17"
+    },
+    {
+      "id": "FANG2026-DAL-053",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "date",
+      "score": 1.0,
+      "generated": "The patent \"Detecting unexpected user interface behavior using physiological data\" (US12333067) was granted on June 17, ",
+      "gold": "2025-06-17 \u2014 grant date of US12333067"
+    },
+    {
+      "id": "FANG2026-DAL-054",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The patent titled \"End-to-end streaming keyword spotting\" (US12334058) granted on 2025-06-17 is held by Google LLC.",
+      "gold": "Google LLC \u2014 assignee of US12334058 granted 2025-06-17"
+    },
+    {
+      "id": "FANG2026-DAL-055",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "date",
+      "score": 1.0,
+      "generated": "The patent titled \"User interface for loyalty accounts and private label accounts for a wearable device\" (US12333509) wa",
+      "gold": "2025-06-17 \u2014 grant date of US12333509"
+    },
+    {
+      "id": "FANG2026-DAL-056",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "Apple Inc. holds the patent titled \"User interfaces for managing user interface sharing\" that was granted on 2025-06-17.",
+      "gold": "Apple Inc. \u2014 assignee of US12333123 granted 2025-06-17"
+    },
+    {
+      "id": "FANG2026-DAL-057",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "date",
+      "score": 1.0,
+      "generated": "The patent titled \"Linear pixel shifting for a non-rectilinear pixel arrangement\" (US12333971) was granted on June 17, 2",
+      "gold": "2025-06-17 \u2014 grant date of US12333971"
+    },
+    {
+      "id": "FANG2026-DAL-058",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The patent titled \"Affinity-based graphics scheduling\" (US12333339) granted on 2025-06-17 is held by Apple Inc.",
+      "gold": "Apple Inc. \u2014 assignee of US12333339 granted 2025-06-17"
+    },
+    {
+      "id": "FANG2026-DAL-059",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "date",
+      "score": 1.0,
+      "generated": "The \"Music user interface\" patent (US12333124) was granted on June 17, 2025.",
+      "gold": "2025-06-17 \u2014 grant date of US12333124"
+    },
+    {
+      "id": "FANG2026-DAL-060",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "Apple Inc. holds the patent titled \"Preemption techniques for memory-backed registers\" granted on 2025-07-08.",
+      "gold": "Apple Inc. \u2014 assignee of US12353330 granted 2025-07-08"
+    },
+    {
+      "id": "FANG2026-DAL-061",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "date",
+      "score": 1.0,
+      "generated": "The patent \"Efficient neural networks via ensembles and cascades\" (US12333775) was granted on June 17, 2025.",
+      "gold": "2025-06-17 \u2014 grant date of US12333775"
+    },
+    {
+      "id": "FANG2026-DAL-062",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "Apple Inc. holds the patent titled \"Low-dropout regulator circuit with dynamic transition between operation modes\" grant",
+      "gold": "Apple Inc. \u2014 assignee of US12353231 granted 2025-07-08"
+    },
+    {
+      "id": "FANG2026-DAL-063",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "date",
+      "score": 1.0,
+      "generated": "The \"Seals for optical components\" patent (US12332430) was granted on 2025-06-17.",
+      "gold": "2025-06-17 \u2014 grant date of US12332430"
+    },
+    {
+      "id": "FANG2026-DAL-064",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The patent titled \"Memory-guided video object detection\" granted on 2025-06-17 is held by Google LLC.",
+      "gold": "Google LLC \u2014 assignee of US12333806 granted 2025-06-17"
+    },
+    {
+      "id": "FANG2026-DAL-065",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "date",
+      "score": 1.0,
+      "generated": "The patent titled \u201cVirtual assistant in a communication session\u201d (US12333404) was granted on June\u202f17,\u202f2025.",
+      "gold": "2025-06-17 \u2014 grant date of US12333404"
+    },
+    {
+      "id": "FANG2026-DAL-066",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The patent titled \"Large-scale accelerator system energy performance optimization\" granted on 2025-07-08 is held by Goog",
+      "gold": "Google LLC \u2014 assignee of US12353236 granted 2025-07-08"
+    },
+    {
+      "id": "FANG2026-DAL-067",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "date",
+      "score": 1.0,
+      "generated": "The patent titled \"Systems for high-speed computing using an optical interchange\" (US12353340) was granted on July 8, 20",
+      "gold": "2025-07-08 \u2014 grant date of US12353340"
+    },
+    {
+      "id": "FANG2026-DAL-068",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The patent titled \"Identifying a position of a controllable device using a wearable device\" (US12333759) granted on 2025",
+      "gold": "Google LLC \u2014 assignee of US12333759 granted 2025-06-17"
+    },
+    {
+      "id": "FANG2026-DAL-069",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "date",
+      "score": 1.0,
+      "generated": "The patent titled \"Integrating trans-inductor voltage regulator (TLVR) in vertical power delivery\" was granted on June 1",
+      "gold": "2025-06-17 \u2014 grant date of US12334245"
+    },
+    {
+      "id": "FANG2026-DAL-070",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "Apple Inc. holds the patent titled \"Methods for manipulating objects in an environment\" that was granted on 2025-06-17.",
+      "gold": "Apple Inc. \u2014 assignee of US12333083 granted 2025-06-17"
+    },
+    {
+      "id": "FANG2026-DAL-071",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "date",
+      "score": 1.0,
+      "generated": "The \"Universal serial bus time synchronization\" patent (US12332834) was granted on June 17, 2025.",
+      "gold": "2025-06-17 \u2014 grant date of US12332834"
+    },
+    {
+      "id": "FANG2026-DAL-072",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The patent titled \"Rendering suggestion for searching entity within application in response to dete\" granted on 2025-07-",
+      "gold": "Google LLC \u2014 assignee of US12353427 granted 2025-07-08"
+    },
+    {
+      "id": "FANG2026-DAL-073",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "date",
+      "score": 1.0,
+      "generated": "The patent titled \"Rotating data for neural network computations\" (US12333417) was granted on June 17, 2025.",
+      "gold": "2025-06-17 \u2014 grant date of US12333417"
+    },
+    {
+      "id": "FANG2026-DAL-074",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "Apple Inc. holds the patent titled \"Method, device, and system for generating affordances linked to a representation\" th",
+      "gold": "Apple Inc. \u2014 assignee of US12333804 granted 2025-06-17"
+    },
+    {
+      "id": "FANG2026-DAL-075",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "date",
+      "score": 1.0,
+      "generated": "The patent titled \"Indicating location status\" (US12332957) was granted on June 17, 2025.",
+      "gold": "2025-06-17 \u2014 grant date of US12332957"
+    },
+    {
+      "id": "FANG2026-DAL-076",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The provided excerpts do not include a docket number for the Treasury notice that states the system of records will beco",
+      "gold": "2026-05932 \u2014 docket number of fr_2026-05932 published by Department of Treasury"
+    },
+    {
+      "id": "FANG2026-DAL-077",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The Federal Register document from the International Trade Commission is a\u202fNotice\u202f\u2014 the type of regulatory action listed",
+      "gold": "NOTICE \u2014 action type of fr_2026-09204 with docket 2026-09204"
+    },
+    {
+      "id": "FANG2026-DAL-078",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The docket number for the notice is DN\u202f3905.",
+      "gold": "2026-07779 \u2014 docket number of fr_2026-07779 published by International Trade Com"
+    },
+    {
+      "id": "FANG2026-DAL-079",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The Federal Register entry is a \u201cNotice\u201d \u2013 a notice of investigation issued by the U.S. International Trade Commission.",
+      "gold": "NOTICE \u2014 action type of fr_2026-01227 with docket 2026-01227"
+    },
+    {
+      "id": "FANG2026-DAL-080",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The notice issued by the Pipeline and Hazardous Materials Safety Administration is identified by the docket number\u202fPHMSA",
+      "gold": "2026-03067 \u2014 docket number of fr_2026-03067 published by Pipeline and Hazardous "
+    },
+    {
+      "id": "FANG2026-DAL-081",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The document is a \"proposed rule change\" filed by a self\u2011regulatory organization, specifically a non\u2011controversial propo",
+      "gold": "PROPOSED RULE \u2014 action type of fr_2026-01374 with docket 2026-01374"
+    },
+    {
+      "id": "FANG2026-DAL-082",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The docket number for the Department of Education notice that asks for comments on the modified system of records notice",
+      "gold": "2026-07817 \u2014 docket number of fr_2026-07817 published by Department of Education"
+    },
+    {
+      "id": "FANG2026-DAL-083",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The document is an Advance Notice of Proposed Rulemaking (ANPRM) issued by the Federal Trade Commission. An ANPRM is a p",
+      "gold": "NOTICE \u2014 action type of fr_2026-04952 with docket 2026-04952"
+    },
+    {
+      "id": "FANG2026-DAL-084",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The docket number for the USPTO notice is PTO-P-2026-0133.",
+      "gold": "2026-04987 \u2014 docket number of fr_2026-04987 published by United States Patent an"
+    },
+    {
+      "id": "FANG2026-DAL-085",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "It is a \"non\u2011controversial proposed rule change\" filed under Section\u202f19(b)(3)(A)(iii) of the Securities Exchange Act of ",
+      "gold": "PROPOSED RULE \u2014 action type of fr_2026-01376 with docket 2026-01376"
+    },
+    {
+      "id": "FANG2026-DAL-086",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The notice references MB Docket No.\u202f26\u201142 as its docket number.",
+      "gold": "2026-04286 \u2014 docket number of fr_2026-04286 published by Federal Communications "
+    },
+    {
+      "id": "FANG2026-DAL-087",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "It is a \"notice\" \u2013 specifically a notice of membership changes filed under section\u202f6(a) of the National Cooperative Rese",
+      "gold": "NOTICE \u2014 action type of fr_2025-24169 with docket 2025-24169"
+    },
+    {
+      "id": "FANG2026-DAL-088",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The notice issued by the Pipeline and Hazardous Materials Safety Administration does not provide a docket number; the do",
+      "gold": "2026-00872 \u2014 docket number of fr_2026-00872 published by Pipeline and Hazardous "
+    },
+    {
+      "id": "FANG2026-DAL-089",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The document is a\u202fnotice\u202fissued by the U.S. International Trade Commission.",
+      "gold": "NOTICE \u2014 action type of fr_2026-00345 with docket 2026-00345"
+    },
+    {
+      "id": "FANG2026-DAL-090",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The EPA notice that requires comments by June\u202f5,\u202f2026 lists the docket number EPA\u2011HQ\u2011OPP\u20112025\u20113951.",
+      "gold": "2026-08808 \u2014 docket number of fr_2026-08808 published by Environmental Protectio"
+    },
+    {
+      "id": "FANG2026-DAL-091",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The document is a\u202fnotice\u202f\u2013 specifically a \u201cNotice of actions on special permit applications\u201d issued by the Pipeline and ",
+      "gold": "NOTICE \u2014 action type of fr_2026-00870 with docket 2026-00870"
+    },
+    {
+      "id": "FANG2026-DAL-092",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The docket number for the Department of Education\u2019s notice that asks for comments on the modified system of records by M",
+      "gold": "2026-07825 \u2014 docket number of fr_2026-07825 published by Department of Education"
+    },
+    {
+      "id": "FANG2026-DAL-093",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "It is a\u202fnotice\u202f\u2014 specifically a \u201cNotice of a modified system of records\u201d published by the U.S. Department of Education u",
+      "gold": "NOTICE \u2014 action type of fr_2026-07827 with docket 2026-07827"
+    },
+    {
+      "id": "FANG2026-DAL-094",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The docket number for the notice is DN\u202f3905.",
+      "gold": "2025-24146 \u2014 docket number of fr_2025-24146 published by International Trade Com"
+    },
+    {
+      "id": "FANG2026-DAL-095",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The document is a\u202fnotice\u202f\u2014 specifically a \u201cNotice of actions on special permit applications\u201d issued by the Pipeline and ",
+      "gold": "NOTICE \u2014 action type of fr_2026-07251 with docket 2026-07251"
+    },
+    {
+      "id": "FANG2026-DAL-096",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The docket number for the CFPB\u2019s final rule is CFPB-2025-0039.",
+      "gold": "2026-07804 \u2014 docket number of fr_2026-07804 published by Consumer Financial Prot"
+    },
+    {
+      "id": "FANG2026-DAL-097",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "It is a proposed rule change \u2013 specifically a non\u2011controversial proposed rule change filed under Section\u202f19(b) of the Se",
+      "gold": "PROPOSED RULE \u2014 action type of fr_2026-01377 with docket 2026-01377"
+    },
+    {
+      "id": "FANG2026-DAL-098",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The docket number for the Department of Education\u2019s notice that requests comments on the modified system of records by M",
+      "gold": "2026-07826 \u2014 docket number of fr_2026-07826 published by Department of Education"
+    },
+    {
+      "id": "FANG2026-DAL-099",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 1.0,
+      "generated": "The document is an Advance Notice of Proposed Rulemaking (ANPRM) issued by the Federal Trade Commission, which solicits ",
+      "gold": "PROPOSED RULE \u2014 action type of fr_2026-07473 with docket 2026-07473"
+    },
+    {
+      "id": "FANG2026-DAL-100",
+      "question_type": "Descriptive Attribute Lookup",
+      "check_type": "entity",
+      "score": 0.0,
+      "generated": "The docket number for the EPA notice from the Office of Acquisition Solutions is EPA\u2011HQ\u2011OMS\u20112020\u20110210.",
+      "gold": "2026-05870 \u2014 docket number of fr_2026-05870 published by Environmental Protectio"
+    }
+  ]
+}

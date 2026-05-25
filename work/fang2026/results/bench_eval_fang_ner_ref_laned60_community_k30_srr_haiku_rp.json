@@ -1,0 +1,24 @@
+{
+  "_params": {
+    "judge": "gpt-4o-mini-2024-07-18",
+    "judge_provider": "openai",
+    "run_name": "fang_ner_ref_laned60_community_k30_srr_haiku_rp",
+    "n_evaluated": 500
+  },
+  "Cross-Domain Entity Resolution": {
+    "answer_correctness": 0.7392721026674041,
+    "typed_score": 0.5198652445655508
+  },
+  "Multi-Document Join": {
+    "typed_score": 0.591
+  },
+  "Temporal Versioning": {
+    "typed_score": 0.6997425194978714
+  },
+  "Targeted Attribute Lookup": {
+    "typed_score": 0.6486839460134506
+  },
+  "Descriptive Attribute Lookup": {
+    "typed_score": 0.565
+  }
+}

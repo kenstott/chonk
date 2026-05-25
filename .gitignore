@@ -20,3 +20,8 @@ htmlcov/
 /work/*
 !/work/configs
 !/work/score_typed.py
+!/work/fang2026
+/work/fang2026/*
+!/work/fang2026/results
+/work/fang2026/results/*
+!/work/fang2026/results/bench_eval_fang_*.json
