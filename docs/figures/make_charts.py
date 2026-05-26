@@ -163,7 +163,7 @@ def fig_srr_model():
     ax.set_xticklabels(conditions)
     ax.set_ylabel("All (answer_correctness, GRB)")
     ax.set_ylim(0.560, 0.740)
-    ax.set_title("Figure 3 — SRR Gains Are Model-Capability-Gated\nHaiku vanilla+SRR degrades (−0.023); Mini gains in both graph and non-graph settings")
+    ax.set_title("Figure 4 — SRR Gains Are Model-Capability-Gated\nHaiku vanilla+SRR degrades (−0.023); Mini gains in both graph and non-graph settings")
     ax.legend(loc="upper left", framealpha=0.9)
     ax.axhline(0.652, color=GREY, lw=0.7, ls=":", alpha=0.7, label="Mini baseline")
 
@@ -177,40 +177,40 @@ def fig_srr_model():
 def fig_hare_heatmap():
     runs_short = [
         "k50+BC+BM25+ADF",
-        "k50+SRR",
         "k50+BC+BM25",
-        "k30+BC+BM25+ADF",
         "k30+BC+BM25",
-        "k50 (no GLEIF)",
-        "k50+ADF",
-        "k30+rerank (no GLEIF)",
+        "k50+SRR",
+        "k50+SRR (no GLEIF)",
+        "k50+SRR+ADF",
+        "k30+BC+BM25+ADF",
+        "k30+SRR",
         "k30+rerank+ADF",
-        "k30 (SRR only)",
         "k30+rerank",
+        "k30+rerank (no GLEIF)",
         "vanilla+rerank",
-        "Sonnet k30",
         "Haiku k50",
+        "Sonnet k30",
         "Haiku k30",
         "sovereign k30",
     ]
-    # TAL, DAL, MDJ, TVR, CE
+    # TAL, DAL, MDJ, TVR, CE  (post-embedder-rescore, n=500)
     data = [
-        [0.705, 0.590, 0.883, 0.769, 0.750],
-        [0.712, 0.580, 0.853, 0.768, 0.745],
-        [0.713, 0.603, 0.830, 0.776, 0.728],
-        [0.676, 0.581, 0.856, 0.766, 0.757],
-        [0.670, 0.588, 0.828, 0.772, 0.754],
-        [0.694, 0.563, 0.844, 0.757, 0.745],
-        [0.687, 0.530, 0.849, 0.770, 0.739],
-        [0.664, 0.536, 0.817, 0.753, 0.746],
-        [0.674, 0.518, 0.848, 0.753, 0.721],
-        [0.631, 0.521, 0.816, 0.775, 0.758],
-        [0.628, 0.490, 0.773, 0.761, 0.745],
-        [0.552, 0.595, 0.771, 0.692, 0.758],
-        [0.711, 0.612, 0.657, 0.687, 0.549],
-        [0.699, 0.614, 0.644, 0.668, 0.582],
-        [0.667, 0.596, 0.613, 0.689, 0.542],
-        [0.626, 0.505, 0.678, 0.588, 0.601],
+        [0.694, 0.600, 0.848, 0.802, 0.832],  # k50+BC+BM25+ADF  0.755
+        [0.696, 0.590, 0.849, 0.798, 0.829],  # k50+BC+BM25      0.752
+        [0.662, 0.625, 0.854, 0.792, 0.801],  # k30+BC+BM25      0.747
+        [0.670, 0.580, 0.848, 0.810, 0.808],  # k50+SRR          0.743
+        [0.686, 0.565, 0.858, 0.799, 0.796],  # k50+SRR no GLEIF 0.741
+        [0.655, 0.583, 0.849, 0.794, 0.799],  # k50+SRR+ADF      0.736
+        [0.667, 0.553, 0.838, 0.795, 0.811],  # k30+BC+BM25+ADF  0.733
+        [0.595, 0.548, 0.854, 0.786, 0.830],  # k30+SRR          0.723
+        [0.639, 0.565, 0.830, 0.792, 0.785],  # k30+rerank+ADF   0.722
+        [0.645, 0.520, 0.833, 0.808, 0.793],  # k30+rerank       0.720
+        [0.628, 0.550, 0.840, 0.794, 0.776],  # k30+rerank noGL  0.718
+        [0.517, 0.592, 0.763, 0.717, 0.000],  # vanilla+rerank   0.647 (CE=NaN→0)
+        [0.695, 0.644, 0.679, 0.726, 0.616],  # Haiku k50        0.672
+        [0.688, 0.666, 0.647, 0.713, 0.586],  # Sonnet k30       0.660
+        [0.631, 0.616, 0.601, 0.712, 0.578],  # Haiku k30        0.628
+        [0.622, 0.565, 0.643, 0.652, 0.552],  # sovereign k30    0.607
     ]
     col_labels = ["TAL", "DAL", "MDJ", "TVR", "CE"]
 
@@ -238,7 +238,7 @@ def fig_hare_heatmap():
     ax.text(4.6, 12.0, "other models", fontsize=7.5, ha="right", color=GREY)
 
     plt.colorbar(im, ax=ax, shrink=0.6, label="typed_score")
-    ax.set_title("Figure 4 — HARE-Bench Per-Type Scores (n=500)\nRuns sorted by Mean; MDJ highest-variance type; DAL hardest overall", pad=14)
+    ax.set_title("Figure 5 — HARE-Bench Per-Type Scores (n=500, post-rescore)\nRuns sorted by Mean; MDJ highest-variance type; DAL hardest overall", pad=14)
 
     fig.tight_layout()
     fig.savefig("docs/figures/fig4_hare_heatmap.png")
@@ -249,24 +249,24 @@ def fig_hare_heatmap():
 # ── Fig 5: k-depth effect on HARE-Bench ──────────────────────────────────────
 def fig_k_depth():
     k_vals = [10, 30, 50]
-    laned = [0.364, 0.679, 0.732]  # laned60+community+rerank+SRR
+    laned = [0.364, 0.720, 0.743]  # laned60+community+rerank+SRR (post-rescore)
 
     fig, ax = plt.subplots(figsize=(5, 3.4))
     ax.plot(k_vals, laned, "o-", color=BLUE, lw=2, markersize=7, label="laned60+community+rerank+SRR (Mini)")
-    ax.axhline(0.674, color=GREY, lw=0.9, ls="--", label="vanilla+rerank baseline (0.674)")
+    ax.axhline(0.647, color=GREY, lw=0.9, ls="--", label="vanilla+rerank baseline (0.647)")
 
     for k, v in zip(k_vals, laned):
         ax.text(k, v + 0.008, f"{v:.3f}", ha="center", fontsize=9)
 
-    ax.annotate("+0.053\n(k30→k50)", xy=(50, 0.732), xytext=(44, 0.700),
+    ax.annotate("+0.023\n(k30→k50)", xy=(50, 0.743), xytext=(44, 0.710),
                 fontsize=8, color=BLUE,
                 arrowprops=dict(arrowstyle="->", color=BLUE, lw=0.9))
 
     ax.set_xlabel("Retrieval depth k")
     ax.set_ylabel("Mean typed_score (HARE-Bench)")
-    ax.set_ylim(0.30, 0.78)
+    ax.set_ylim(0.30, 0.80)
     ax.set_xticks(k_vals)
-    ax.set_title("Figure 5 — Retrieval Depth Is the Primary Driver on HARE-Bench\nSame strategy (laned60+community+SRR); only k varies")
+    ax.set_title("Figure 6 — Retrieval Depth Is the Primary Driver on HARE-Bench\nSame strategy (laned60+community+rerank+SRR); only k varies")
     ax.legend(loc="upper left", fontsize=8.5, framealpha=0.9)
 
     fig.tight_layout()
@@ -310,7 +310,7 @@ def fig_superadditivity():
     ax2.set_title("Pruning × Depth\n(superadditivity +0.005 at k=20)")
     ax2.legend(fontsize=7.5, framealpha=0.9)
 
-    fig.suptitle("Figure 6 — Superadditivity Requires Pruning at k=20 (GRB grid, n=300)\n"
+    fig.suptitle("Figure 3 — Superadditivity Requires Pruning at k=20 (GRB grid, n=300)\n"
                  "× = additive prediction; actual exceeds prediction only with pruning", fontsize=9.5)
     fig.tight_layout()
     fig.savefig("docs/figures/fig6_superadditivity.png")
