@@ -15,6 +15,7 @@ from ._protocol import FetchResult
 
 try:
     import boto3 as _boto3
+
     _BOTO3_AVAILABLE = True
 except ImportError:
     _BOTO3_AVAILABLE = False
@@ -40,8 +41,19 @@ class S3Transport:
         if kwargs.get("region"):
             session_kwargs["region_name"] = kwargs["region"]
 
+        import os
+
+        if not session_kwargs.get("region_name"):
+            region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
+            if region:
+                session_kwargs["region_name"] = region
+
         session = _boto3.Session(**session_kwargs)
-        s3 = session.client("s3")
+        client_kwargs: dict = {}
+        endpoint = kwargs.get("endpoint_url") or os.environ.get("AWS_ENDPOINT_OVERRIDE")
+        if endpoint:
+            client_kwargs["endpoint_url"] = endpoint
+        s3 = session.client("s3", **client_kwargs)
         obj = s3.get_object(Bucket=bucket, Key=key)
 
         return FetchResult(

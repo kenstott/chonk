@@ -149,7 +149,16 @@ class DirectoryCrawler:
         bucket = parsed.netloc
         prefix = parsed.path.lstrip("/")
 
-        s3 = boto3.client("s3")
+        import os
+
+        client_kwargs: dict = {}
+        endpoint = os.environ.get("AWS_ENDPOINT_OVERRIDE")
+        if endpoint:
+            client_kwargs["endpoint_url"] = endpoint
+        region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
+        if region:
+            client_kwargs["region_name"] = region
+        s3 = boto3.client("s3", **client_kwargs)
         paginator = s3.get_paginator("list_objects_v2")
 
         results: list[str] = []

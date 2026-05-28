@@ -7,7 +7,7 @@
 
 """Live integration tests for SharePointCrawler against kenstott.sharepoint.com.
 
-Skipped automatically when SHAREPOINT_CLIENT_SECRET is not in the environment.
+Skipped automatically when SP_CLIENT_SECRET is not in the environment.
 Load credentials with: python-dotenv or export from .env before running.
 
     pytest tests/integration/test_sharepoint.py -v -s
@@ -31,8 +31,8 @@ if _ENV_FILE.exists():
         pass  # dotenv optional; export vars manually if not installed
 
 _CREDS = pytest.mark.skipif(
-    not os.environ.get("SHAREPOINT_CLIENT_SECRET"),
-    reason="SHAREPOINT_CLIENT_SECRET not set — skipping live SharePoint tests",
+    not os.environ.get("SP_CLIENT_SECRET"),
+    reason="SP_CLIENT_SECRET not set — skipping live SharePoint tests",
 )
 
 
@@ -40,11 +40,11 @@ def _crawler(**kwargs):
     from chonk.transports import SharePointCrawler
 
     return SharePointCrawler(
-        site_url=os.environ["SHAREPOINT_SITE_URL"],
+        site_url=os.environ["SP_SITE_URL"],
         auth_mode="azure_ad",
-        tenant_id=os.environ["SHAREPOINT_TENANT_ID"],
-        client_id=os.environ["SHAREPOINT_CLIENT_ID"],
-        client_secret=os.environ["SHAREPOINT_CLIENT_SECRET"],
+        tenant_id=os.environ["SP_TENANT_ID"],
+        client_id=os.environ["SP_CLIENT_ID"],
+        client_secret=os.environ["SP_CLIENT_SECRET"],
         **kwargs,
     )
 
@@ -53,7 +53,7 @@ def _crawler(**kwargs):
 class TestSharePointCrawlerLive:
     def test_can_handle_site_url(self):
         c = _crawler()
-        assert c.can_handle(os.environ["SHAREPOINT_SITE_URL"])
+        assert c.can_handle(os.environ["SP_SITE_URL"])
         assert not c.can_handle("https://example.com/not-sharepoint")
 
     def test_crawl_returns_uris(self):
@@ -132,7 +132,7 @@ class TestSharePointCrawlerLive:
 
         c = _crawler(artifacts=["pages"], max_items=10)
         loader = DocumentLoader(extra_transports=[c])
-        chunks = loader.load_crawl(os.environ["SHAREPOINT_SITE_URL"], crawler=c)
+        chunks = loader.load_crawl(os.environ["SP_SITE_URL"], crawler=c)
         assert isinstance(chunks, list)
         print(f"\n  load_crawl() produced {len(chunks)} chunk(s)")
         if chunks:
