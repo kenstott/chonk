@@ -3,7 +3,9 @@ name = "chonk"
 version = "0.1.0"
 description = "A dairy-free RAG pipeline for delicious semantic similarity, clustering and NER."
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "sentence-transformers>=3.0",
+]
 
 [project.optional-dependencies]
 dev = [

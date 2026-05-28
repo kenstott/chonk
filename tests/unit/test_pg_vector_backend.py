@@ -75,7 +75,9 @@ def backend():
         backend_obj._dsn = "postgresql://user:pass@localhost/test"
         backend_obj._embedding_dim = DIM
         backend_obj._table = "chonk_embeddings"
-        backend_obj._conn = mock_conn
+        backend_obj._docs_table = "chonk_documents"
+        backend_obj._global_attached = False
+        backend_obj._pgconn = mock_conn
         yield backend_obj, mock_conn, mock_cursor
 
 

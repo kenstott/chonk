@@ -19,16 +19,21 @@ GLOBAL_NAMESPACE = "global"
 
 
 class Store:
-    """Composed storage facade backed by DuckDB.
+    """Composed storage facade backed by DuckDB (default) or PostgreSQL.
 
-    Provides a high-level interface to both vector search and
-    relational entity storage via a single DuckDB file.
+    DuckDB is the default for local development and single-process deployments.
+    Pass ``dsn`` to use the PostgreSQL + pgvector backend for horizontal scale.
 
     Usage::
 
+        # DuckDB (local dev)
         with Store("index.duckdb") as store:
             store.add_document(chunks, embeddings)
             results = store.search(query_vec, limit=5)
+
+        # PostgreSQL (horizontal scale)
+        with Store(dsn="postgresql://user:pass@host/db") as store:
+            store.add_document(chunks, embeddings)
     """
 
     def __init__(
@@ -36,20 +41,29 @@ class Store:
         db_path: str | Path = ":memory:",
         embedding_dim: int = 1024,
         read_only: bool = False,
+        dsn: str | None = None,
     ):
-        """Create a Store backed by DuckDB.
+        """Create a Store.
 
         Args:
             db_path: Path to DuckDB file, or ":memory:" for an in-memory store.
+                     Ignored when ``dsn`` is provided.
             embedding_dim: Embedding vector dimension. Must match your model.
-            read_only: Open in read-only mode (allows multiple concurrent readers).
-                Multiple search sessions from the same user should open the
-                namespace DB with read_only=True to avoid the single-writer
-                DuckDB limit. Only the background Indexer needs write access.
+            read_only: Open in read-only mode (DuckDB only).
+            dsn: PostgreSQL DSN (e.g. ``"postgresql://user:pass@host/db"``).
+                 When set, uses PgVectorBackend instead of DuckDB.
         """
+        if dsn is not None:
+            from ._pg import PgVectorBackend
+            self._db: ThreadLocalDuckDB | None = None
+            self.vector: VectorBackend = PgVectorBackend(dsn, embedding_dim=embedding_dim)
+            assert isinstance(self.vector, VectorBackend)
+            self.relational = None  # type: ignore
+            return
+
         db_path = str(db_path)
         self._db = ThreadLocalDuckDB(db_path, read_only=read_only)
-        self.vector: VectorBackend = DuckDBVectorBackend(self._db, embedding_dim=embedding_dim)
+        self.vector = DuckDBVectorBackend(self._db, embedding_dim=embedding_dim)
         assert isinstance(self.vector, VectorBackend)
         if read_only:
             self.relational = None  # type: ignore
@@ -532,7 +546,11 @@ class Store:
 
         Creates views: all_embeddings, all_chunk_entities, all_svo_triples,
         all_domains, all_sources, all_namespaces.
+
+        Not supported for the PG backend; raises ``NotImplementedError``.
         """
+        if self._db is None:
+            raise NotImplementedError("attach_global is not supported for the PG backend.")
         from ._schema import CHUNK_ENTITIES_DDL, CHUNK_ENTITIES_MIGRATE_NAMESPACE
 
         conn = self.vector._conn
@@ -677,7 +695,12 @@ class Store:
         self.vector._global_attached = True
 
     def detach_global(self) -> None:
-        """Drop the union views and detach the global DB."""
+        """Drop the union views and detach the global DB.
+
+        Not supported for the PG backend; raises ``NotImplementedError``.
+        """
+        if self._db is None:
+            raise NotImplementedError("detach_global is not supported for the PG backend.")
         conn = self.vector._conn
         for view in ("all_embeddings", "all_chunk_entities", "all_svo_triples",
                      "all_domains", "all_sources", "all_namespaces"):
@@ -895,7 +918,14 @@ class Store:
         ``chunk_entities`` and returns a ``{namespace: ContextGraphStats}`` dict.
         Otherwise builds for the specified namespace and returns a single
         :class:`ContextGraphStats`.
+
+        Not supported for the PG backend; raises ``NotImplementedError``.
         """
+        if self._db is None:
+            raise NotImplementedError(
+                "build_context_graph is not supported for the PG backend. "
+                "Use --coordinator mode to run graph builds."
+            )
         if namespace is None:
             from ..graph._context_graph import build_context_graph_all_namespaces
             return build_context_graph_all_namespaces(
@@ -914,6 +944,10 @@ class Store:
         namespace: str = "global",
         min_weight: float = 0.1,
     ) -> list[ContextEdge]:
+        if self._db is None:
+            raise NotImplementedError(
+                "get_context_graph is not supported for the PG backend."
+            )
         from ..graph._context_graph import get_context_graph_edges
         return get_context_graph_edges(
             self._db.conn, entity_id, namespace=namespace, min_weight=min_weight
@@ -924,8 +958,11 @@ class Store:
         return self.vector.count()
 
     def close(self) -> None:
-        """Close the underlying DuckDB connection."""
-        self._db.close()
+        """Close the underlying storage connection."""
+        if self._db is not None:
+            self._db.close()
+        else:
+            self.vector.close()  # type: ignore[union-attr]
 
     def __enter__(self) -> Store:
         return self

@@ -43,27 +43,106 @@ def _deserialize_section(value) -> list[str]:
     return [value]
 
 
+def _translate_sql(sql: str) -> str:
+    """Translate DuckDB ``?`` placeholders to psycopg2 ``%s``."""
+    return sql.replace("?", "%s")
+
+
+class _PgResult:
+    """DuckDB cursor-compatible result wrapper for psycopg2 results."""
+
+    __slots__ = ("_rows",)
+
+    def __init__(self, rows: list) -> None:
+        self._rows = rows
+
+    def fetchall(self) -> list:
+        return self._rows
+
+    def fetchone(self):
+        return self._rows[0] if self._rows else None
+
+    def __iter__(self):
+        return iter(self._rows)
+
+    def __getitem__(self, idx):
+        return self._rows[idx]
+
+
+class _PsycopgAdapter:
+    """Thin psycopg2 wrapper presenting a DuckDB-compatible ``.execute()`` API.
+
+    Translates ``?`` placeholders to ``%s``, executes against the underlying
+    psycopg2 connection, and returns :class:`_PgResult` objects so callers
+    can chain ``.fetchall()`` / ``.fetchone()`` in the same style as DuckDB.
+
+    Each ``execute()`` call auto-commits (matches DuckDB's default behaviour).
+    """
+
+    def __init__(self, pgconn) -> None:
+        self._pgconn = pgconn
+
+    def execute(self, sql: str, params=None) -> _PgResult:
+        pg_sql = _translate_sql(sql)
+        param_list = list(params) if params is not None else []
+        with self._pgconn.cursor() as cur:
+            cur.execute(pg_sql, param_list)
+            rows = cur.fetchall() if cur.description else []
+        self._pgconn.commit()
+        return _PgResult(rows)
+
+    def executemany(self, sql: str, params_list) -> None:
+        pg_sql = _translate_sql(sql)
+        with self._pgconn.cursor() as cur:
+            for row in params_list:
+                cur.execute(pg_sql, list(row))
+        self._pgconn.commit()
+
+
 class PgVectorBackend:
     """Vector operations backed by PostgreSQL + pgvector (HNSW cosine index).
 
     Args:
         dsn: PostgreSQL DSN string, e.g. ``"postgresql://user:pass@host/db"``.
         embedding_dim: Embedding vector dimension. Must match your model.
-        table: Table name to use (default: ``"chonk_embeddings"``).
+        table: Table name to use (default: ``"embeddings"``).
     """
 
     def __init__(
         self,
         dsn: str,
         embedding_dim: int = 1024,
-        table: str = "chonk_embeddings",
+        table: str = "embeddings",
     ) -> None:
         _require_deps()
         self._dsn = dsn
         self._embedding_dim = embedding_dim
         self._table = table
-        self._conn = self._connect()
+        self._docs_table = "documents"
+        self._pgconn = self._connect()
+        self._global_attached = False
         self._init_schema()
+
+    # ------------------------------------------------------------------
+    # DuckDB-compatibility shims
+    # ------------------------------------------------------------------
+
+    @property
+    def _conn(self) -> _PsycopgAdapter:
+        """DuckDB-compatible adapter over the psycopg2 connection.
+
+        Allows Store catalog methods written for DuckDB to work
+        transparently with the PG backend via placeholder translation.
+        """
+        return _PsycopgAdapter(self._pgconn)
+
+    @property
+    def _fts_dirty(self) -> bool:
+        return False
+
+    @_fts_dirty.setter
+    def _fts_dirty(self, value: bool) -> None:
+        pass  # tsvector index is live — no manual rebuild needed
 
     # ------------------------------------------------------------------
     # Connection
@@ -82,10 +161,10 @@ class PgVectorBackend:
         import psycopg2
 
         try:
-            with self._conn.cursor() as cur:
+            with self._pgconn.cursor() as cur:
                 cur.execute("SELECT 1")
         except (psycopg2.OperationalError, psycopg2.InterfaceError):
-            self._conn = self._connect()
+            self._pgconn = self._connect()
 
     # ------------------------------------------------------------------
     # Schema
@@ -93,8 +172,12 @@ class PgVectorBackend:
 
     def _init_schema(self) -> None:
         t = self._table
-        with self._conn.cursor() as cur:
+        dt = self._docs_table
+        with self._pgconn.cursor() as cur:
+            # Vector extension
             cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
+
+            # Embeddings table
             cur.execute(f"""
                 CREATE TABLE IF NOT EXISTS {t} (
                     chunk_id            TEXT PRIMARY KEY,
@@ -115,12 +198,10 @@ class PgVectorBackend:
                     fts_vec             tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED
                 )
             """)
+            # Additive migrations (safe to re-run)
             for col in ("source_id", "domain_id", "session_fingerprint"):
                 cur.execute(f"ALTER TABLE {t} ADD COLUMN IF NOT EXISTS {col} TEXT")
-            cur.execute(f"""
-                ALTER TABLE {t} ADD COLUMN IF NOT EXISTS
-                    fts_vec tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED
-            """)
+
             # HNSW cosine index — works on empty tables (unlike IVFFlat)
             cur.execute(f"""
                 CREATE INDEX IF NOT EXISTS {t}_embedding_hnsw_idx
@@ -129,8 +210,10 @@ class PgVectorBackend:
             cur.execute(f"""
                 CREATE INDEX IF NOT EXISTS {t}_fts_idx ON {t} USING gin(fts_vec)
             """)
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS chonk_documents (
+
+            # Documents registry
+            cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS {dt} (
                     document_name TEXT PRIMARY KEY,
                     content_hash  TEXT NOT NULL,
                     source_uri    TEXT NOT NULL DEFAULT '',
@@ -138,7 +221,186 @@ class PgVectorBackend:
                     chunk_count   INTEGER NOT NULL DEFAULT 0
                 )
             """)
-        self._conn.commit()
+
+            # Catalog: namespaces
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS namespaces (
+                    namespace_id TEXT PRIMARY KEY,
+                    owner        TEXT,
+                    description  TEXT,
+                    created_at   TIMESTAMPTZ DEFAULT now(),
+                    updated_at   TIMESTAMPTZ DEFAULT now()
+                )
+            """)
+
+            # Catalog: domains
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS domains (
+                    domain_id    TEXT PRIMARY KEY,
+                    namespace_id TEXT,
+                    name         TEXT,
+                    description  TEXT,
+                    parent_id    TEXT,
+                    created_at   TIMESTAMPTZ DEFAULT now(),
+                    updated_at   TIMESTAMPTZ DEFAULT now()
+                )
+            """)
+
+            # Catalog: sources
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS sources (
+                    source_id    TEXT PRIMARY KEY,
+                    domain_id    TEXT,
+                    type         TEXT,
+                    uri          TEXT,
+                    config       JSONB,
+                    last_crawled TIMESTAMPTZ
+                )
+            """)
+
+            # Community cache
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS community_cache (
+                    fingerprint TEXT PRIMARY KEY,
+                    domain_ids  JSONB,
+                    chunk_count INTEGER,
+                    created_at  TIMESTAMPTZ DEFAULT now()
+                )
+            """)
+
+            # Namespace build log
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS namespace_build_log (
+                    namespace_id       TEXT PRIMARY KEY,
+                    chunks_built_at    TIMESTAMPTZ,
+                    ner_built_at       TIMESTAMPTZ,
+                    svo_built_at       TIMESTAMPTZ,
+                    community_built_at TIMESTAMPTZ
+                )
+            """)
+
+            # Entities vocabulary
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS entities (
+                    id           TEXT PRIMARY KEY,
+                    name         TEXT NOT NULL,
+                    display_name TEXT NOT NULL,
+                    entity_type  TEXT NOT NULL DEFAULT 'concept',
+                    description  TEXT,
+                    created_at   TIMESTAMPTZ DEFAULT now()
+                )
+            """)
+
+            # Chunk ↔ entity associations
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS chunk_entities (
+                    chunk_id       TEXT NOT NULL,
+                    entity_id      TEXT NOT NULL,
+                    frequency      INTEGER NOT NULL DEFAULT 1,
+                    positions_json TEXT NOT NULL DEFAULT '[]',
+                    score          REAL NOT NULL DEFAULT 0.0,
+                    namespace      TEXT,
+                    PRIMARY KEY (chunk_id, entity_id)
+                )
+            """)
+
+            # Entity aliases
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS entity_aliases (
+                    alias      TEXT NOT NULL,
+                    entity_id  TEXT NOT NULL,
+                    namespace  TEXT NOT NULL DEFAULT 'global',
+                    source     TEXT NOT NULL DEFAULT 'llm',
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    PRIMARY KEY (alias, namespace)
+                )
+            """)
+
+            # SVO triples
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS svo_triples (
+                    chunk_id   TEXT,
+                    subject_id TEXT NOT NULL,
+                    verb       TEXT NOT NULL,
+                    object_id  TEXT NOT NULL,
+                    confidence REAL NOT NULL DEFAULT 1.0,
+                    namespace  TEXT
+                )
+            """)
+
+            # NER cache
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS ner_cache (
+                    config_fingerprint TEXT PRIMARY KEY,
+                    chunk_count        INTEGER NOT NULL,
+                    created_at         TIMESTAMPTZ DEFAULT now()
+                )
+            """)
+
+            # Chunk clusters (Louvain community detection)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS chunk_clusters (
+                    chunk_id   TEXT NOT NULL,
+                    cluster_id INTEGER NOT NULL,
+                    namespace  TEXT NOT NULL DEFAULT 'global',
+                    PRIMARY KEY (chunk_id, namespace, cluster_id)
+                )
+            """)
+
+            # Context graph edges
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS context_graph_edges (
+                    source_entity_id TEXT NOT NULL,
+                    target_entity_id TEXT NOT NULL,
+                    namespace        TEXT NOT NULL DEFAULT 'global',
+                    weight           REAL NOT NULL,
+                    svo_signal       REAL NOT NULL DEFAULT 0.0,
+                    cooccur_signal   REAL NOT NULL DEFAULT 0.0,
+                    cluster_signal   REAL NOT NULL DEFAULT 0.0,
+                    PRIMARY KEY (source_entity_id, target_entity_id, namespace)
+                )
+            """)
+
+            # Context graph cache
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS context_graph_cache (
+                    namespace         TEXT PRIMARY KEY,
+                    chunk_fingerprint TEXT NOT NULL,
+                    entity_count      INTEGER NOT NULL,
+                    edge_count        INTEGER NOT NULL,
+                    created_at        TIMESTAMPTZ DEFAULT now()
+                )
+            """)
+
+            # ── Ingest queue (horizontal scale) ──────────────────────────────
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS ingest_queue (
+                    id           BIGSERIAL PRIMARY KEY,
+                    source_uri   TEXT NOT NULL,
+                    namespace    TEXT NOT NULL,
+                    content_hash TEXT,
+                    status       TEXT DEFAULT 'pending',
+                    worker_id    TEXT,
+                    leased_at    TIMESTAMPTZ,
+                    created_at   TIMESTAMPTZ DEFAULT now()
+                )
+            """)
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS ingest_queue_status_idx
+                ON ingest_queue (status)
+                WHERE status = 'pending'
+            """)
+
+            # ── Coordinator control ───────────────────────────────────────────
+            # coordinator sets key='workers_paused', value='1' during graph build
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS control (
+                    key   TEXT PRIMARY KEY,
+                    value TEXT
+                )
+            """)
+
+        self._pgconn.commit()
 
     # ------------------------------------------------------------------
     # Chunk ID
@@ -164,13 +426,7 @@ class PgVectorBackend:
         domain_id: str | None = None,
         session_fingerprint: str | None = None,
     ) -> None:
-        """Insert chunks with embeddings.
-
-        Args:
-            chunks: List of DocumentChunk objects.
-            embeddings: np.ndarray of shape (n, embedding_dim).
-            namespace: Optional partition key.
-        """
+        """Insert chunks with embeddings (ON CONFLICT DO NOTHING — idempotent)."""
         if not chunks:
             return
 
@@ -178,7 +434,7 @@ class PgVectorBackend:
         from pgvector.psycopg2 import register_vector  # type: ignore[import-untyped]
 
         self._ensure_connection()
-        register_vector(self._conn)
+        register_vector(self._pgconn)
 
         records = []
         for i, chunk in enumerate(chunks):
@@ -222,7 +478,7 @@ class PgVectorBackend:
             )
 
         t = self._table
-        with self._conn.cursor() as cur:
+        with self._pgconn.cursor() as cur:
             for rec in records:
                 cur.execute(
                     f"""
@@ -236,7 +492,7 @@ class PgVectorBackend:
                     """,
                     rec,
                 )
-        self._conn.commit()
+        self._pgconn.commit()
 
     # ------------------------------------------------------------------
     # Search
@@ -253,10 +509,11 @@ class PgVectorBackend:
         domain_ids: list[str] | None = None,
         session_fingerprint: str | None = None,
     ) -> list[tuple[str, float, object]]:
-        """Search by cosine similarity using pgvector HNSW index.
+        """Hybrid (BM25 + vector) or pure vector search via pgvector HNSW index.
 
-        BM25 hybrid is not supported on PgVectorBackend; ``query_text`` is
-        accepted for API compatibility but triggers a warning and is ignored.
+        When ``query_text`` is provided a reciprocal-rank fusion of the
+        tsvector BM25 results and vector similarity results is returned.
+        When omitted, pure cosine-similarity ordering is used.
 
         Returns:
             List of (chunk_id, score, DocumentChunk).
@@ -266,13 +523,8 @@ class PgVectorBackend:
 
         from ..models import DocumentChunk
 
-        if query_text is not None:
-            logger.debug(
-                "PgVectorBackend: query_text BM25 hybrid not supported; using pure vector search."
-            )
-
         self._ensure_connection()
-        register_vector(self._conn)
+        register_vector(self._pgconn)
 
         query_vec = np.array(query_embedding, dtype="float32").flatten()
 
@@ -294,24 +546,29 @@ class PgVectorBackend:
             filter_params.append(session_fingerprint)
 
         where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
-        all_params = [query_vec] + filter_params + [query_vec, limit]
 
-        with self._conn.cursor() as cur:
-            cur.execute(
-                f"""
-                SELECT
-                    chunk_id, document_name, section, chunk_index, content,
-                    breadcrumb, chunk_type, source_offset, source_length,
-                    source_detail,
-                    1.0 - (embedding <=> %s::vector) AS similarity
-                FROM {t}
-                {where}
-                ORDER BY embedding <=> %s::vector
-                LIMIT %s
-                """,
-                all_params,
-            )
-            rows = cur.fetchall()
+        if query_text is not None:
+            # Hybrid: BM25 + vector RRF
+            rows = self._search_hybrid(query_vec, query_text, where, filter_params, limit, t)
+        else:
+            # Pure vector
+            all_params = [query_vec] + filter_params + [query_vec, limit]
+            with self._pgconn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    SELECT
+                        chunk_id, document_name, section, chunk_index, content,
+                        breadcrumb, chunk_type, source_offset, source_length,
+                        source_detail,
+                        1.0 - (embedding <=> %s::vector) AS similarity
+                    FROM {t}
+                    {where}
+                    ORDER BY embedding <=> %s::vector
+                    LIMIT %s
+                    """,
+                    all_params,
+                )
+                rows = cur.fetchall()
 
         results = []
         for row in rows:
@@ -346,6 +603,77 @@ class PgVectorBackend:
 
         return results
 
+    def _search_hybrid(
+        self,
+        query_vec,
+        query_text: str,
+        where: str,
+        filter_params: list,
+        limit: int,
+        t: str,
+    ) -> list:
+        """RRF merge of BM25 and vector results."""
+        rrf_k = 60
+        candidate_limit = limit * 4
+
+        # Vector ranking
+        vec_params = [query_vec] + filter_params + [query_vec, candidate_limit]
+        with self._pgconn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT chunk_id, ROW_NUMBER() OVER (ORDER BY embedding <=> %s::vector) AS rank
+                FROM {t} {where}
+                ORDER BY embedding <=> %s::vector
+                LIMIT %s
+                """,
+                vec_params,
+            )
+            vec_ranks = {row[0]: row[1] for row in cur.fetchall()}
+
+        # BM25 ranking
+        safe_query = query_text.replace("'", "''")
+        bm25_where = (where + " AND " if where else "WHERE ") + f"fts_vec @@ plainto_tsquery('english', '{safe_query}')"
+        bm25_params = filter_params + [candidate_limit]
+        with self._pgconn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT chunk_id,
+                       ROW_NUMBER() OVER (ORDER BY ts_rank(fts_vec, plainto_tsquery('english', '{safe_query}')) DESC) AS rank
+                FROM {t} {bm25_where}
+                LIMIT %s
+                """,
+                bm25_params,
+            )
+            bm25_ranks = {row[0]: row[1] for row in cur.fetchall()}
+
+        # RRF merge
+        all_ids = set(vec_ranks) | set(bm25_ranks)
+        scores = {
+            cid: 1.0 / (rrf_k + vec_ranks.get(cid, candidate_limit + rrf_k))
+                 + 1.0 / (rrf_k + bm25_ranks.get(cid, candidate_limit + rrf_k))
+            for cid in all_ids
+        }
+        top_ids = sorted(scores, key=scores.__getitem__, reverse=True)[:limit]
+
+        if not top_ids:
+            return []
+
+        placeholders = ",".join(["%s"] * len(top_ids))
+        with self._pgconn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT chunk_id, document_name, section, chunk_index, content,
+                       breadcrumb, chunk_type, source_offset, source_length,
+                       source_detail, 0.0 AS similarity
+                FROM {t}
+                WHERE chunk_id IN ({placeholders})
+                """,
+                top_ids,
+            )
+            rows_by_id = {row[0]: row for row in cur.fetchall()}
+
+        return [rows_by_id[cid] for cid in top_ids if cid in rows_by_id]
+
     # ------------------------------------------------------------------
     # Delete / clear
     # ------------------------------------------------------------------
@@ -354,7 +682,7 @@ class PgVectorBackend:
         """Delete all chunks for a document. Returns count deleted."""
         self._ensure_connection()
         t = self._table
-        with self._conn.cursor() as cur:
+        with self._pgconn.cursor() as cur:
             cur.execute(
                 f"SELECT COUNT(*) FROM {t} WHERE document_name = %s",
                 [document_name],
@@ -365,15 +693,15 @@ class PgVectorBackend:
                 f"DELETE FROM {t} WHERE document_name = %s",
                 [document_name],
             )
-        self._conn.commit()
+        self._pgconn.commit()
         return count
 
     def clear(self) -> None:
         """Delete all chunks from the table."""
         self._ensure_connection()
-        with self._conn.cursor() as cur:
+        with self._pgconn.cursor() as cur:
             cur.execute(f"DELETE FROM {self._table}")
-        self._conn.commit()
+        self._pgconn.commit()
 
     # ------------------------------------------------------------------
     # Count
@@ -382,7 +710,7 @@ class PgVectorBackend:
     def count(self) -> int:
         """Return total number of stored chunks."""
         self._ensure_connection()
-        with self._conn.cursor() as cur:
+        with self._pgconn.cursor() as cur:
             cur.execute(f"SELECT COUNT(*) FROM {self._table}")
             result = cur.fetchone()
         return result[0] if result else 0
@@ -398,7 +726,7 @@ class PgVectorBackend:
         self._ensure_connection()
         chunks = []
         t = self._table
-        with self._conn.cursor("get_all_chunks") as cur:
+        with self._pgconn.cursor("get_all_chunks") as cur:
             cur.execute(
                 f"""
                 SELECT document_name, content, section, chunk_index,
@@ -435,10 +763,11 @@ class PgVectorBackend:
         chunk_count: int = 0,
     ) -> None:
         self._ensure_connection()
-        with self._conn.cursor() as cur:
+        dt = self._docs_table
+        with self._pgconn.cursor() as cur:
             cur.execute(
-                """
-                INSERT INTO chonk_documents (document_name, content_hash, source_uri, indexed_at, chunk_count)
+                f"""
+                INSERT INTO {dt} (document_name, content_hash, source_uri, indexed_at, chunk_count)
                 VALUES (%s, %s, %s, now(), %s)
                 ON CONFLICT (document_name) DO UPDATE SET
                     content_hash = EXCLUDED.content_hash,
@@ -448,13 +777,14 @@ class PgVectorBackend:
                 """,
                 [document_name, content_hash, source_uri, chunk_count],
             )
-        self._conn.commit()
+        self._pgconn.commit()
 
     def get_document_hash(self, document_name: str) -> str | None:
         self._ensure_connection()
-        with self._conn.cursor() as cur:
+        dt = self._docs_table
+        with self._pgconn.cursor() as cur:
             cur.execute(
-                "SELECT content_hash FROM chonk_documents WHERE document_name = %s",
+                f"SELECT content_hash FROM {dt} WHERE document_name = %s",
                 [document_name],
             )
             row = cur.fetchone()
@@ -462,10 +792,11 @@ class PgVectorBackend:
 
     def list_documents(self) -> list[dict]:
         self._ensure_connection()
-        with self._conn.cursor() as cur:
+        dt = self._docs_table
+        with self._pgconn.cursor() as cur:
             cur.execute(
-                "SELECT document_name, content_hash, source_uri, indexed_at, chunk_count "
-                "FROM chonk_documents ORDER BY document_name"
+                f"SELECT document_name, content_hash, source_uri, indexed_at, chunk_count "
+                f"FROM {dt} ORDER BY document_name"
             )
             rows = cur.fetchall()
         return [
@@ -473,6 +804,69 @@ class PgVectorBackend:
              "indexed_at": r[3], "chunk_count": r[4]}
             for r in rows
         ]
+
+    # ------------------------------------------------------------------
+    # SVO triples
+    # ------------------------------------------------------------------
+
+    def store_svo_triples(self, triples: list, namespace: str | None = None) -> int:
+        """Insert SVO triples into the svo_triples table. Returns count inserted.
+
+        Args:
+            triples: List of :class:`~chonk.graph.SVOTriple` objects.
+            namespace: Override namespace; if None uses the triple's source chunk namespace.
+        """
+        if not triples:
+            return 0
+        self._ensure_connection()
+        rows = []
+        for t in triples:
+            ns = namespace
+            if ns is None and t.source_chunk_id:
+                with self._pgconn.cursor() as cur:
+                    cur.execute(
+                        f"SELECT namespace FROM {self._table} WHERE chunk_id = %s",
+                        [t.source_chunk_id],
+                    )
+                    row = cur.fetchone()
+                    ns = row[0] if row else None
+            rows.append((
+                t.source_chunk_id,
+                t.subject_id,
+                t.verb,
+                t.object_id,
+                float(t.confidence),
+                ns,
+            ))
+        with self._pgconn.cursor() as cur:
+            for row in rows:
+                cur.execute(
+                    """
+                    INSERT INTO svo_triples
+                        (chunk_id, subject_id, verb, object_id, confidence, namespace)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    """,
+                    row,
+                )
+        self._pgconn.commit()
+        return len(rows)
+
+    def get_svo_triples(self, namespace: str | None = None) -> list[tuple]:
+        """Return all svo_triples rows, optionally filtered by namespace."""
+        self._ensure_connection()
+        with self._pgconn.cursor() as cur:
+            if namespace is not None:
+                cur.execute(
+                    "SELECT chunk_id, subject_id, verb, object_id, confidence, namespace "
+                    "FROM svo_triples WHERE namespace = %s ORDER BY subject_id, verb",
+                    [namespace],
+                )
+            else:
+                cur.execute(
+                    "SELECT chunk_id, subject_id, verb, object_id, confidence, namespace "
+                    "FROM svo_triples ORDER BY subject_id, verb"
+                )
+            return cur.fetchall()
 
     # ------------------------------------------------------------------
     # Lifecycle hints (no-ops for PG)
@@ -490,8 +884,8 @@ class PgVectorBackend:
 
     def close(self) -> None:
         """Close the PostgreSQL connection."""
-        if self._conn and not self._conn.closed:
-            self._conn.close()
+        if self._pgconn and not self._pgconn.closed:
+            self._pgconn.close()
 
     def __enter__(self) -> PgVectorBackend:
         return self
