@@ -1,4 +1,4 @@
-# Implicit GraphRAG: Knowledge Graph Signals Without LLM-Based Graph Construction
+# Entity-Aware Retrieval Without LLM-Based Graph Construction
 
 **Kenneth Stott**
 Member of Technical Staff and Senior Advisor, Logick
@@ -112,9 +112,15 @@ A related objection holds that generation has simply migrated to the agent — t
 
 This points to a broader architectural principle that single-shot LLM was always going to force. A monolithic LLM producing prose end-to-end conflates two distinct concerns: *how* an answer is reasoned and *what interface* that answer presents to the next consumer. In a pipeline of specialized components, the interface is a contract — typed, verifiable, routable. The probabilistic nature of LLMs is not a problem to be eliminated; it is an asset in the right layer. Prose generation — synthesis, drafting, explanation — is exactly where probabilistic flexibility is valuable, because the output is consumed by a human who can evaluate and correct. A planner routing on a retrieved value cannot evaluate and correct mid-execution; it needs a deterministic contract at that boundary. Typed answers do not constrain how the LLM reasons internally — they constrain only what it returns. The result is a system that is probabilistic where that is useful and deterministic where that is necessary, rather than uniformly probabilistic throughout.
 
-**Relationship to agentic RAG.** The field has adopted "agentic RAG" (arxiv:2501.09136) to describe a distinct architectural pattern: an LLM-based agent that orchestrates retrieval iteratively — re-querying, routing across tools, and assembling evidence over multiple turns. The agent is the active component; the RAG layer is a passive tool it calls. This paper describes the inverse relationship. Here, the RAG layer is the active, contract-enforcing component; the agent planner above it is the passive consumer of a typed grounded answer. The architectural claim is that agentic orchestration of retrieval is a symptom, not a solution: each re-prompting cycle the agent runs to assemble evidence is evidence that the RAG layer did not complete its contract in a single pass. A RAG layer that retrieves the right evidence, synthesizes a grounded answer, and returns a typed contract-compliant response eliminates the need for iterative orchestration at the planner level — not by constraining what the planner can do, but by making the single-pass case sufficient for the majority of targeted factual sub-queries. The two patterns are not mutually exclusive: a planner that retries on failure is a valid recovery strategy. The point is that retry should be exception handling, not the normal path.
+### 2.4 Scope: Single-Pass Retrieval and Synthesis
 
-### 2.4 Retrieval Augmentation Without Graph Structure
+This paper evaluates a single-pass retrieval-and-synthesis layer: retrieve relevant chunks, synthesize a grounded answer, return it. Let's call it **G' (G prime)** — to distinguish it from **G_agentic** (multi-step orchestration), which is out of scope. This distinction matters because it clarifies what each layer optimizes for: G' optimizes single-shot accuracy; G_agentic optimizes multi-step reasoning. The term "agentic RAG" conflates these concerns and obscures what is being measured.
+
+Different G' implementations optimize for different retrieval strategies: this work prioritizes factual precision in heterogeneous corpora; GraphRAG prioritizes thematic sensemaking. Both are G'. The distinction is not architectural pattern but retrieval strategy and answer type.
+
+Evaluation must match scope: HARE-Bench tests single-shot factual accuracy on cross-domain corpora. GraphRAG-Bench, despite testing factual questions, is where GraphRAG (sensemaking-optimized) performs below its design intent. Yet systems claiming to implement GraphRAG score well on it — a benchmark designed to test what the original system was not designed for — illustrating the broader confusion in the field about what "GraphRAG" means. This paper reports results on both.
+
+### 2.6 Retrieval Augmentation Without Graph Structure
 
 Cross-encoder reranking, RAPTOR (hierarchical summarization), HyDE (hypothetical document embeddings). These improve retrieval without encoding graph structure and serve as our non-graph baselines.
 

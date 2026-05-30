@@ -4,7 +4,6 @@
 \documentclass[
 ]{article}
 \usepackage{xcolor}
-\usepackage[margin=1in]{geometry}
 \usepackage{amsmath,amssymb}
 \setcounter{secnumdepth}{-\maxdimen} % remove section numbering
 \usepackage{iftex}
@@ -20,7 +19,6 @@
 \usepackage{lmodern}
 \ifPDFTeX\else
   % xetex/luatex font selection
-  \setmainfont[]{Times New Roman}
 \fi
 % Use upquote if available, for straight quotes in verbatim environments
 \IfFileExists{upquote.sty}{\usepackage{upquote}}{}
@@ -56,7 +54,6 @@
 \setlength{\emergencystretch}{3em} % prevent overfull lines
 \providecommand{\tightlist}{%
   \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
-\usepackage{longtable}\usepackage{booktabs}
 \usepackage{bookmark}
 \IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
 \urlstyle{same}
@@ -69,9 +66,8 @@
 
 \begin{document}
 
-\section{Implicit GraphRAG: Knowledge Graph Signals Without LLM-Based
-Graph
-Construction}\label{implicit-graphrag-knowledge-graph-signals-without-llm-based-graph-construction}
+\section{Entity-Aware Retrieval Without LLM-Based Graph
+Construction}\label{entity-aware-retrieval-without-llm-based-graph-construction}
 
 \textbf{Kenneth Stott} Member of Technical Staff and Senior Advisor,
 Logick
@@ -617,28 +613,34 @@ The result is a system that is probabilistic where that is useful and
 deterministic where that is necessary, rather than uniformly
 probabilistic throughout.
 
-\textbf{Relationship to agentic RAG.} The field has adopted ``agentic
-RAG'' (arxiv:2501.09136) to describe a distinct architectural pattern:
-an LLM-based agent that orchestrates retrieval iteratively ---
-re-querying, routing across tools, and assembling evidence over multiple
-turns. The agent is the active component; the RAG layer is a passive
-tool it calls. This paper describes the inverse relationship. Here, the
-RAG layer is the active, contract-enforcing component; the agent planner
-above it is the passive consumer of a typed grounded answer. The
-architectural claim is that agentic orchestration of retrieval is a
-symptom, not a solution: each re-prompting cycle the agent runs to
-assemble evidence is evidence that the RAG layer did not complete its
-contract in a single pass. A RAG layer that retrieves the right
-evidence, synthesizes a grounded answer, and returns a typed
-contract-compliant response eliminates the need for iterative
-orchestration at the planner level --- not by constraining what the
-planner can do, but by making the single-pass case sufficient for the
-majority of targeted factual sub-queries. The two patterns are not
-mutually exclusive: a planner that retries on failure is a valid
-recovery strategy. The point is that retry should be exception handling,
-not the normal path.
+\subsubsection{2.4 Scope: Single-Pass Retrieval and
+Synthesis}\label{scope-single-pass-retrieval-and-synthesis}
 
-\subsubsection{2.4 Retrieval Augmentation Without Graph
+This paper evaluates a single-pass retrieval-and-synthesis layer:
+retrieve relevant chunks, synthesize a grounded answer, return it. Let's
+call it \textbf{G' (G prime)} --- to distinguish it from
+\textbf{G\_agentic} (multi-step orchestration), which is out of scope.
+This distinction matters because it clarifies what each layer optimizes
+for: G' optimizes single-shot accuracy; G\_agentic optimizes multi-step
+reasoning. The term ``agentic RAG'' conflates these concerns and
+obscures what is being measured.
+
+Different G' implementations optimize for different retrieval
+strategies: this work prioritizes factual precision in heterogeneous
+corpora; GraphRAG prioritizes thematic sensemaking. Both are G'. The
+distinction is not architectural pattern but retrieval strategy and
+answer type.
+
+Evaluation must match scope: HARE-Bench tests single-shot factual
+accuracy on cross-domain corpora. GraphRAG-Bench, despite testing
+factual questions, is where GraphRAG (sensemaking-optimized) performs
+below its design intent. Yet systems claiming to implement GraphRAG
+score well on it --- a benchmark designed to test what the original
+system was not designed for --- illustrating the broader confusion in
+the field about what ``GraphRAG'' means. This paper reports results on
+both.
+
+\subsubsection{2.6 Retrieval Augmentation Without Graph
 Structure}\label{retrieval-augmentation-without-graph-structure}
 
 Cross-encoder reranking, RAPTOR (hierarchical summarization), HyDE
@@ -2551,16 +2553,18 @@ applying them to a poorly curated corpus will not.
 \subsubsection{9.1 Question Design
 Rationale}\label{question-design-rationale}
 
-What the industry calls agentic AI is, architecturally, a primitive
-dispatch pipeline. A planner decomposes the user's compound question
-into targeted sub-queries and dispatches each to the appropriate
-primitive --- vector retrieval, SQL, summarization, classification,
-extraction --- based on what the sub-query requires and what prior steps
-have already retrieved. The retrieval layer never sees the compound
-question; it sees only the targeted sub-queries the planner has derived,
-already scoped to the primitive that can answer them. This is not a new
-architectural idea --- it is what ``agentic'' means once the label is
-traded for an implementation.
+For the retrieval workload this paper addresses --- targeted factual
+sub-queries issued by a planner against a multi-domain corpus --- what
+the industry calls agentic AI reduces to a primitive dispatch pipeline.
+A planner decomposes the user's compound question into targeted
+sub-queries and dispatches each to the appropriate primitive --- vector
+retrieval, SQL, summarization, classification, extraction --- based on
+what the sub-query requires and what prior steps have already retrieved.
+The retrieval layer never sees the compound question; it sees only the
+targeted sub-queries the planner has derived, already scoped to the
+primitive that can answer them. This is not a new architectural idea ---
+it is what ``agentic'' means once the label is traded for an
+implementation.
 
 This is the design principle behind HARE-Bench questions. Each question
 is written as the kind of targeted, single-fact query a planner would
