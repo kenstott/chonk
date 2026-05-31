@@ -20,9 +20,14 @@ The benchmark isolates the retrieval dimension while holding the planner and out
 
 **The original GraphRAG design intent.** GraphRAG's designers (Microsoft Research) positioned it as optimized for **global sensemaking**: "What are the main themes in this corpus?" This is a legitimate use case, requiring broad thematic coverage and hierarchical summarization.
 
-**The GraphRAG-Bench design intent.** GraphRAG-Bench (GRB) tests **factual retrieval**: "What is the answer to this specific question?" This is the opposite of sensemaking — it requires precise, narrow retrieval of a single fact. Remarkably, GRB was designed to measure something GraphRAG was not designed for. Systems that score well on GRB have essentially optimized away from the original GraphRAG intent and toward enterprise-style fact-grounded answer retrieval.
+**The GraphRAG-Bench design intent — stated vs actual.** GRB claims to test **multi-hop graph reasoning** and complex synthesis. However, empirical analysis reveals a gap between claims and reality:
 
-**The consequence.** A high score on GRB tells you nothing about whether a system achieves "global sensemaking." It tells you whether it can find facts efficiently — a completely different task. The original designers' stated goal and the benchmark's measurement target are orthogonal.
+- **Claimed**: "Simple content retrieval is insufficient; questions require synthesizing multiple reasoning steps and graph traversal"
+- **Actual questions**: "Why is it necessary for the server to use a special initial sequence number in the SYN-ACK?" (from medical/novel textbooks) — textbook comprehension, not graph traversal
+- **Actual results**: RAPTOR (a simple hierarchical tree with no graph traversal) achieves 73.58% accuracy, outperforming GraphRAG (72.50%), HippoRAG2, and all graph neural network methods
+- **What this proves**: Questions are fundamentally textbook passage retrieval + comprehension. A tree hierarchy beats rich knowledge graphs, indicating graph traversal is not the solution. GRB measures something closer to **factual retrieval from a structured corpus** than to "multi-hop graph reasoning"
+
+**The consequence.** GRB's stated measurement target (multi-hop reasoning) does not match its actual measurement (factual retrieval from homogeneous textbooks). A high score on GRB tells you whether a system can retrieve and comprehend facts from a textbook efficiently — not whether it can do multi-hop graph reasoning or global sensemaking. The benchmark's claims and its actual contents are misaligned.
 
 **Enterprise requirements.** Enterprise knowledge bases rarely need global sensemaking from the retrieval layer. They need answers to specific sub-queries in a heterogeneous corpus. When sensemaking is needed at all, it is typically a task delegated by the agentic reasoner as a sub-goal within multi-step reasoning — not the primary retrieval behavior. GRB correctly identified this and built a benchmark around enterprise-grade fact retrieval. But in doing so, it inadvertently created a benchmark that measures systems against a design goal they were not built for.
 
