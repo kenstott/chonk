@@ -18,11 +18,15 @@ The benchmark isolates the retrieval dimension while holding the planner and out
 
 ## Why a Separate Enterprise Benchmark
 
-GraphRAG-Bench (GRB) uses medical and literary textbooks. Those corpora are homogeneous by design: each document comes from the same domain, uses consistent vocabulary, and covers the same subject matter. Retrieval on a homogeneous corpus rewards recall precision — finding the right passage among many similar ones. That is not the dominant failure mode in enterprise AI stacks.
+**The original GraphRAG design intent.** GraphRAG's designers (Microsoft Research) positioned it as optimized for **global sensemaking**: "What are the main themes in this corpus?" This is a legitimate use case, requiring broad thematic coverage and hierarchical summarization.
 
-Enterprise knowledge bases span organizational boundaries: SEC filings, regulatory guidance, security advisories, patent claims, clinical protocols, internal policy. The same entity — a company, a chemical compound, a software package — appears in multiple document types with different terminology, structure, and register. A planner issuing sub-queries against this corpus faces vocabulary collision at every step: the query terms that describe one domain also appear in adjacent domains for different reasons.
+**The GraphRAG-Bench design intent.** GraphRAG-Bench (GRB) tests **factual retrieval**: "What is the answer to this specific question?" This is the opposite of sensemaking — it requires precise, narrow retrieval of a single fact. Remarkably, GRB was designed to measure something GraphRAG was not designed for. Systems that score well on GRB have essentially optimized away from the original GraphRAG intent and toward enterprise-style fact-grounded answer retrieval.
 
-GRB measures whether a retrieval system finds the right passage. HARE-Bench measures whether the retrieval component of an enterprise AI stack assembles the right evidence across document types that do not naturally point at each other — under the query conditions that a real planner would produce.
+**The consequence.** A high score on GRB tells you nothing about whether a system achieves "global sensemaking." It tells you whether it can find facts efficiently — a completely different task. The original designers' stated goal and the benchmark's measurement target are orthogonal.
+
+**Enterprise requirements.** Enterprise knowledge bases do not need global sensemaking. They need answers to specific sub-queries in a heterogeneous corpus. GRB correctly identified this requirement and built a benchmark around it. But in doing so, it inadvertently created a benchmark that measures systems against a design goal they were not built for.
+
+**Two different use cases, two different benchmarks.** GraphRAG-Bench measures whether systems can do what enterprises need (factual precision in a homogeneous corpus). HARE-Bench measures whether systems can do what enterprises actually deploy against (factual precision in a heterogeneous corpus, cross-domain entity resolution, temporal versioning). Neither benchmark measures the original GraphRAG goal of global sensemaking — because that is not what enterprise AI stacks need.
 
 ## The Planner Scenario
 
