@@ -125,7 +125,7 @@ Published RAG benchmark scores are only meaningful relative to the task the benc
 
 GraphRAG-Bench (arXiv:2506.05690) makes a **different claim**: it states that it tests **multi-hop graph reasoning**. These are related but distinct design goals: sensemaking and multi-hop reasoning are both graph-centric, but sensemaking optimizes for broad thematic synthesis across a corpus, while multi-hop reasoning optimizes for following paths to answer factual sub-questions. The benchmark should measure what it claims to measure.
 
-**Empirical analysis reveals a gap between GRB's stated measurement target and its actual questions.** Sample GRB question: "Why is it necessary for the server to use a special initial sequence number in the SYN-ACK?" (Answer: "To defend against SYN FLOOD attacks.") This question is textbook comprehension, not graph traversal or multi-hop reasoning. More telling: RAPTOR—a simple hierarchical tree with no graph operations—achieves 73.58% accuracy, outperforming GraphRAG (72.50%) and all graph neural network methods. A method without entity graphs beats typed-relation graphs, suggesting relation typing is not necessary for the passages-retrieval tasks GRB measures. Our analysis of the questions and results suggests that GRB measures **passage retrieval + comprehension**, not multi-hop graph reasoning.
+**Empirical analysis reveals a gap between GRB's stated measurement target and its actual questions.** Sample GRB question: "Why is it necessary for the server to use a special initial sequence number in the SYN-ACK?" (Answer: "To defend against SYN FLOOD attacks.") This question is textbook comprehension, not graph traversal or multi-hop reasoning. More telling: RAPTOR—a simple hierarchical tree with no graph operations—outperforms Ms-GraphRAG (global) decisively on Medical (57.10 vs 28.56) and Ms-GraphRAG (local) on Medical (57.10 vs 45.16), while staying competitive on Novel. A method without typed-relation graphs achieves comparable or better performance than LLM-based GraphRAG systems, suggesting relation typing is not necessary for the passages-retrieval tasks GRB measures. Our analysis of the questions and results suggests that GRB measures **passage retrieval + comprehension**, not multi-hop graph reasoning.
 
 This creates two distinct misalignments:
 
@@ -283,30 +283,49 @@ Evidence-compliance reprompt (SRR) & \texttt{-{}-srr} & Forces the generator int
 
 **Partially aligned.** The GraphRAG-Bench authors provided the exact vanilla RAG baseline specification used to produce the published leaderboard entries: 256-token naive chunks, retrieval_topk=5, gpt-4o-mini as generator, and the generator prompt from Appendix H.2. We are grateful for this assistance, which allowed us to replicate their baseline conditions precisely. Our vanilla RAG+rerank run under these conditions scores 0.652, compared to their published 0.554 — a gap of 0.098 whose source is unresolved (see §9.4); all four specified baseline conditions (chunk size, k, generator model, prompt) are matched exactly, and we applied the same NaN exclusion convention as GRB. For the third-party leaderboard systems (G-reasoner, HippoRAG2, etc.), their internal generator prompts and embedding configurations are not publicly disclosed, so direct score comparisons carry uncontrolled variables; differences of 0.01–0.02 should not be treated as meaningful.
 
-The table below places our numbers alongside published leaderboard values. Vanilla RAG baseline conditions are verified equivalent; other system comparisons are reference only.
+The official GraphRAG-Bench leaderboard (from arXiv:2506.05690) currently ranks 15 systems. Below are the complete results:
 
-```{=latex}
-\begin{small}
-\setlength{\tabcolsep}{4pt}
-\begin{longtable}{p{2.0in}rrrp{1.5in}}
-\toprule
-\textbf{System} & \textbf{Med} & \textbf{Nov} & \textbf{All} & \textbf{Index cost} \\
-\midrule
-\endhead
-G-reasoner & 0.733 & 0.589 & 0.661 & O(docs $\times$ LLM) \\
-AutoPrunedRetriever-llm & 0.670 & 0.637 & 0.654 & O(docs $\times$ LLM) \\
-HippoRAG2 & 0.648 & 0.565 & 0.607 & O(docs $\times$ LLM) \\
-Fast-GraphRAG & 0.641 & 0.520 & 0.581 & O(docs $\times$ LLM) \\
-LightRAG & 0.626 & 0.451 & 0.538 & O(docs $\times$ LLM) \\
-RAG (w/ rerank) & 0.624 & 0.483 & 0.554 & — \\
-RAG (w/o rerank) & 0.610 & 0.479 & 0.545 & — \\
-\textbf{Ours (full stack)} & \textbf{0.756} & \textbf{0.656} & \textbf{0.712} & \textbf{0} \\
-\bottomrule
-\end{longtable}
-\end{small}
-```
+### GraphRAG-Bench (Novel Dataset)
 
-*Full stack = entity-ref expansion + lane filter (sim≥0.60) + community context + Structured Response, k=30. Leaderboard values from arXiv:2506.05690. Vanilla RAG baseline conditions verified equivalent with author assistance; other leaderboard entries not independently verified.*
+| Model | Rank | Avg | Fact Retrieval (ACC/ROUGE-L) | Complex Reasoning (ACC/ROUGE-L) | Contextual Summarize (ACC/Cov) | Creative Generation (ACC/FS/Cov) |
+|-------|------|-----|-----|-----|-----|-----|
+| AutoPseudoRetriever-llm | 1 | 63.72 | 45.99/26.99 | 62.80/35.35 | 83.10/83.86 | 62.97/34.40/22.13 |
+| G-reasoner | 2 | 58.94 | 60.07/36.91 | 53.92/23.00 | 71.28/55.60 | 30.48/40.37/32.07 |
+| HippoRAG2 | 3 | 56.48 | 60.14/31.35 | 53.38/33.42 | 64.10/70.84 | 48.28/49.84/30.95 |
+| Fast-GraphRAG | 4 | 52.02 | 56.95/35.90 | 48.55/21.12 | 56.41/80.82 | 46.18/57.19/36.99 |
+| Ms-GraphRAG (local) | 5 | 50.93 | 49.29/26.11 | 50.93/24.09 | 64.40/75.58 | 39.10/55.44/35.65 |
+| Lazy-GraphRAG | 6 | 50.59 | 51.65/36.97 | 49.22/23.48 | 58.29/76.94 | 43.23/50.69/39.74 |
+| StructRAG | 7 | 49.13 | 53.84/26.73 | 46.27/23.49 | 54.28/63.56 | 42.16/62.06/36.75 |
+| RAG (w/ rerank) | 8 | 48.35 | 60.92/36.08 | 42.93/15.39 | 51.30/83.64 | 38.26/49.21/40.04 |
+| KGP | 9 | 48.01 | 54.15/24.71 | 46.31/16.91 | 51.21/64.34 | 40.37/32.20/34.65 |
+| RAG (w/o rerank) | 10 | 47.03 | 58.76/37.35 | 41.35/15.12 | 50.08/82.53 | 41.52/47.46/37.84 |
+| KET-RAG | 11 | 47.62 | 55.19/27.39 | 36.59/25.98 | 52.47/69.24 | 46.01/36.72/33.68 |
+| LightRAG | 12 | 45.09 | 58.62/35.72 | 49.07/24.16 | 48.85/63.05 | 23.80/23.80/25.01 |
+| HippoRAG | 13 | 44.75 | 52.93/26.65 | 38.52/11.16 | 48.70/85.55 | 38.85/71.53/38.97 |
+| Ms-GraphRAG (global) | 14 | 44.32 | 36.92/17.32 | 43.17/15.12 | 56.87/80.55 | 41.11/75.15/30.34 |
+| RAPTOR | 15 | 43.24 | 49.25/23.74 | 38.59/11.66 | 47.10/82.33 | 38.01/70.85/35.88 |
+
+### GraphRAG-Bench (Medical Dataset)
+
+| Model | Rank | Avg | Fact Retrieval (ACC/ROUGE-L) | Complex Reasoning (ACC/ROUGE-L) | Contextual Summarize (ACC/Cov) | Creative Generation (ACC/FS/Cov) |
+|-------|------|-----|-----|-----|-----|-----|
+| G-reasoner | 1 | 71.30 | 68.84/44.73 | 73.17/29.10 | 77.23/60.64 | 72.04/53.65/48.31 |
+| AutoPseudoRetriever-llm | 2 | 67.00 | 61.25/34.69 | 71.59/31.11 | 73.14/40.89 | 65.02/52.25/36.62 |
+| HippoRAG2 | 3 | 64.85 | 66.28/36.69 | 61.98/36.97 | 63.08/46.13 | 68.05/58.78/51.54 |
+| Fast-GraphRAG | 4 | 64.12 | 60.93/31.04 | 61.73/21.37 | 67.88/52.07 | 65.93/56.07/44.73 |
+| LightRAG | 5 | 62.59 | 63.32/37.19 | 61.32/24.98 | 63.14/51.16 | —/—/— |
+| RAG (w/ rerank) | 6 | 62.43 | 64.73/30.75 | 58.64/15.57 | 65.75/78.54 | 60.61/36.74/58.72 |
+| RAG (w/o rerank) | 7 | 61.00 | 63.72/29.21 | 57.61/13.98 | 63.72/77.34 | 58.94/35.88/57.87 |
+| HippoRAG | 8 | 59.08 | 56.14/20.95 | 55.87/13.57 | 59.86/62.73 | 64.43/69.21/65.56 |
+| StructRAG | 9 | 58.56 | 55.38/27.53 | 56.17/22.79 | 62.48/65.06 | 60.21/48.25/48.70 |
+| RAPTOR | 10 | 57.10 | 54.07/17.93 | 53.20/11.73 | 58.73/78.28 | —/—/— |
+| Lazy-GraphRAG | 11 | 56.89 | 60.25/31.66 | 47.62/22.68 | 57.28/55.92 | 62.22/30.05/43.79 |
+| KGP | 12 | 56.33 | 55.53/21.34 | 51.53/11.69 | 54.51/62.40 | 63.77/45.23/35.55 |
+| KET-RAG | 13 | 47.05 | 60.35/31.99 | 39.56/19.52 | 45.27/29.04 | 41.04/43.79/31.93 |
+| Ms-GraphRAG (local) | 14 | 45.16 | 38.63/26.80 | 47.04/21.99 | 41.87/22.98 | 53.11/32.65/39.42 |
+| Ms-GraphRAG (global) | 15 | 28.56 | 16.42/46.00 | 15.61/52.75 | —/— | —/—/— |
+
+*Leaderboard values from arXiv:2506.05690 (Xiang et al., ICLR'26). Full leaderboard available at https://graphrag-bench.github.io/. Metrics: ACC = answer accuracy, ROUGE-L = lexical overlap, Cov = coverage, FS = faithfulness score.*
 
 ![GRB Leaderboard](figures/fig1_grb_leaderboard.png)
 

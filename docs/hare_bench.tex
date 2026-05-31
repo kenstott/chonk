@@ -1,71 +1,3 @@
-% Options for packages loaded elsewhere
-\PassOptionsToPackage{unicode}{hyperref}
-\PassOptionsToPackage{hyphens}{url}
-\documentclass[
-]{article}
-\usepackage{xcolor}
-\usepackage{amsmath,amssymb}
-\setcounter{secnumdepth}{-\maxdimen} % remove section numbering
-\usepackage{iftex}
-\ifPDFTeX
-  \usepackage[T1]{fontenc}
-  \usepackage[utf8]{inputenc}
-  \usepackage{textcomp} % provide euro and other symbols
-\else % if luatex or xetex
-  \usepackage{unicode-math} % this also loads fontspec
-  \defaultfontfeatures{Scale=MatchLowercase}
-  \defaultfontfeatures[\rmfamily]{Ligatures=TeX,Scale=1}
-\fi
-\usepackage{lmodern}
-\ifPDFTeX\else
-  % xetex/luatex font selection
-\fi
-% Use upquote if available, for straight quotes in verbatim environments
-\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
-\IfFileExists{microtype.sty}{% use microtype if available
-  \usepackage[]{microtype}
-  \UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
-}{}
-\makeatletter
-\@ifundefined{KOMAClassName}{% if non-KOMA class
-  \IfFileExists{parskip.sty}{%
-    \usepackage{parskip}
-  }{% else
-    \setlength{\parindent}{0pt}
-    \setlength{\parskip}{6pt plus 2pt minus 1pt}}
-}{% if KOMA class
-  \KOMAoptions{parskip=half}}
-\makeatother
-\usepackage{graphicx}
-\makeatletter
-\newsavebox\pandoc@box
-\newcommand*\pandocbounded[1]{% scales image to fit in text height/width
-  \sbox\pandoc@box{#1}%
-  \Gscale@div\@tempa{\textheight}{\dimexpr\ht\pandoc@box+\dp\pandoc@box\relax}%
-  \Gscale@div\@tempb{\linewidth}{\wd\pandoc@box}%
-  \ifdim\@tempb\p@<\@tempa\p@\let\@tempa\@tempb\fi% select the smaller of both
-  \ifdim\@tempa\p@<\p@\scalebox{\@tempa}{\usebox\pandoc@box}%
-  \else\usebox{\pandoc@box}%
-  \fi%
-}
-% Set default figure placement to htbp
-\def\fps@figure{htbp}
-\makeatother
-\setlength{\emergencystretch}{3em} % prevent overfull lines
-\providecommand{\tightlist}{%
-  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
-\usepackage{bookmark}
-\IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
-\urlstyle{same}
-\hypersetup{
-  hidelinks,
-  pdfcreator={LaTeX via pandoc}}
-
-\author{}
-\date{}
-
-\begin{document}
-
 \section{Entity-Aware Retrieval Without LLM-Based Graph
 Construction}\label{entity-aware-retrieval-without-llm-based-graph-construction}
 
@@ -79,29 +11,37 @@ Code: https://github.com/kenstott/chonk (MIT License)
 \subsection{Abstract}\label{abstract}
 
 This paper applies architectural discipline to a layer of the enterprise
-AI stack that the field often treats as a black box. The RAG layer's job
-in a modern agentic stack is narrow and well-defined: retrieve the right
-evidence for a single factual sub-query, synthesize a grounded answer
-from that evidence, and return both in a typed, contract-compliant form
-the next component can act on without re-parsing or re-grounding.
-Retrieval and generation are joint responsibilities of the same layer
---- a retrieval system that returns raw evidence and delegates synthesis
-to the planner has not completed its contract; it has leaked it. When
-that contract is enforced end-to-end --- typed answers, evidence
-citations, delegation boundaries, deterministic interfaces between
-probabilistic components --- the result is a system that is cheaper to
-build, more accurate, and more auditable than the monolithic
-alternative. Not despite the constraints. Because of them.
+AI stack that the field often treats as a black box. Our position on the
+RAG layer's role in a modern agentic stack: it should have a narrow,
+well-defined responsibility --- retrieve the right evidence for a single
+factual sub-query, synthesize a grounded answer from that evidence, and
+return both in a typed, contract-compliant form the next component can
+act on without re-parsing or re-grounding. This design philosophy
+informs this paper's architecture and evaluation approach. This paper's
+design position: retrieval and generation are joint responsibilities of
+the same layer. A retrieval system that returns raw evidence and
+delegates synthesis to the planner, in our view, has not completed its
+contract; it has leaked responsibility to the layer above. Our
+hypothesis: when that contract is enforced end-to-end --- typed answers,
+evidence citations, delegation boundaries, deterministic interfaces
+between probabilistic components --- the result is a system that is
+cheaper to build, more accurate, and more auditable than alternatives
+without these constraints. This paper tests that position empirically.
 
 We demonstrate this on a production retrieval stack for enterprise
-agentic AI. The stack builds a knowledge graph entirely from NLP
-primitives --- entity edges from NER co-occurrence, community structure
-from Louvain clustering --- and fuses it with BM25 lexical search at
-query time. The full stack combines entity-ref-expansion (P1), community
-context injection (P2), lane-gated widened dense retrieval (P3), BM25
-hybrid fusion (P4), Auto Domain Filter (ADF, P5), and Structured
-Response with evidence-compliance reprompting (SRR, P6). Index build
-time is approximately 8 minutes with zero LLM calls.
+agentic AI. The stack builds an \textbf{entity co-occurrence graph}
+entirely from NLP primitives --- entity nodes from spaCy NER,
+undifferentiated co-occurrence edges (entities appearing in the same
+chunk), and community structure from Louvain clustering. Unlike
+LLM-based GraphRAG systems, we do not extract typed semantic relations;
+all edges represent statistical co-occurrence, not domain-specific
+relation types. We show this is sufficient for the factual retrieval
+workloads we measure. The stack fuses this graph with BM25 lexical
+search at query time. The full stack combines entity-ref-expansion (P1),
+community context injection (P2), lane-gated widened dense retrieval
+(P3), BM25 hybrid fusion (P4), Auto Domain Filter (ADF, P5), and
+Structured Response with evidence-compliance reprompting (SRR, P6).
+Index build time is approximately 8 minutes with zero LLM calls.
 
 Against a vanilla RAG+rerank baseline (All=0.652 on GraphRAG-Bench), the
 system delivers \textbf{+0.060} (All=\textbf{0.712}), decomposed by
@@ -136,10 +76,11 @@ eliminates off-domain noise at query time; breadcrumb indexing maintains
 structural context across source types. Without these disambiguation
 components, the heterogeneous penalty is real (0.552--0.720 across
 graph-only configurations). With them, accuracy exceeds the
-single-domain LLM-judge ceiling. Enterprise agentic AI stacks typically
-operate over heterogeneous corpora --- this convergence means
-practitioners do not face an accuracy tradeoff when combining corpus
-types within a shared retrieval layer.
+single-domain LLM-judge ceiling. Based on our work with enterprise
+systems, we observe that agentic AI stacks typically operate over
+heterogeneous corpora --- this convergence suggests that practitioners
+do not necessarily face an accuracy tradeoff when combining corpus types
+within a shared retrieval layer, though individual deployments may vary.
 
 The architecture supports domain composition natively: the Auto Domain
 Filter (ADF) classifies each query into one or more of its corpus's
@@ -232,34 +173,41 @@ They are recoveries of structure the chunker discarded. The cost of
 recovering them via NLP primitives is negligible precisely because the
 structure was always there; we are reading it, not constructing it.
 
-Existing GraphRAG systems (G-reasoner, AutoPrunedRetriever, HippoRAG2)
-encode this structure through LLM-based entity and relation extraction,
-requiring O(docs × LLM-calls) at index time. The cost is the visible
-problem, but it is not the only one. LLM-extracted knowledge graphs are
-difficult to maintain: corpus updates invalidate edges and require
-re-extraction, with no practical path to incremental updates. More
-fundamentally, LLM-based KG construction is an acknowledged poor fit for
-heterogeneous corpora --- incompatible entity vocabularies, inconsistent
-relation schemas across domains, and cross-source disambiguation
-failures are structural weaknesses of the approach, not implementation
-gaps. Heterogeneous corpora are not the edge case; they are the dominant
-pattern in enterprise deployments. And for the workload that matters ---
-multi-step agentic reasoning that issues targeted sub-queries across a
-mixed-domain corpus --- you simply do not need them. What that workload
-requires is focused retrieval from heterogeneous sources. The graph
-structure needed to support it is already present in the documents; it
-does not need to be LLM-extracted.
+Existing GraphRAG systems split into two approaches. LLM-based systems
+(G-reasoner, AutoPrunedRetriever, HippoRAG2) extract typed relations
+through LLM calls at O(docs × LLM-calls) index time. The cost is the
+visible problem, but not the only one: LLM-extracted typed-relation
+graphs are difficult to maintain (corpus updates invalidate edges), and
+LLM-based relation extraction is an acknowledged poor fit for
+heterogeneous corpora (incompatible entity vocabularies, inconsistent
+relation schemas across domains, cross-source disambiguation failures).
+FastGraphRAG demonstrates an alternative: extract entities with NLP
+(spaCy) and use co-occurrence edges without LLM semantic typing. This
+shows that typed-relation extraction may not be necessary for
+retrieval-based tasks.
+
+Based on our experience with enterprise deployments, heterogeneous
+corpora are common. For the workload we observe --- multi-step agentic
+reasoning that issues targeted sub-queries across a mixed-domain corpus
+--- LLM-based typed-relation extraction imposes unacceptable overhead
+without clear benefit. What that workload requires is focused retrieval
+from heterogeneous sources. The entity linkage structure needed to
+support it is already present in the documents via co-occurrence; it
+does not need to be LLM-extracted. FastGraphRAG validates this; we
+extend it with infrastructure for enterprise heterogeneous corpora.
 
 We build the graph differently. At index time, spaCy NER identifies
-entities in each chunk; co-occurrence edges connect entities that appear
-together; Louvain clustering over the co-occurrence matrix partitions
-the graph into communities. The result is a full knowledge graph ---
-nodes, edges, community structure --- built in minutes with no LLM
-calls. At query time, the graph is traversed: entity-ref-expansion
-follows entity edges to retrieve non-adjacent chunks, community context
-injection provides global topic framing, and widened dense retrieval (k
-gated by lane similarity threshold) approximates multi-hop path
-traversal.
+entities in each chunk; undifferentiated co-occurrence edges connect
+entities that appear together; Louvain clustering over the co-occurrence
+matrix partitions the graph into communities. The result is an entity
+co-occurrence graph --- nodes (entities), edges (co-occurrence),
+community structure --- built in minutes with no LLM calls. At query
+time, the graph is traversed: entity-ref-expansion follows entity edges
+to retrieve non-adjacent chunks, community context injection provides
+global topic framing, and widened dense retrieval (k gated by lane
+similarity threshold) approximates multi-hop path traversal. Critically,
+all edges are undifferentiated co-occurrence; we do not type relations
+semantically.
 
 \subsubsection{1.1 Design Principles}\label{design-principles}
 
@@ -440,23 +388,39 @@ occupies the gap: graph structure built entirely from NLP primitives,
 retrieval quality approaching LLM-based systems, index cost approaching
 flat retrieval.
 
-\textbf{LLM-based GraphRAG} systems (Microsoft GraphRAG, LightRAG,
-Fast-GraphRAG, HippoRAG2, G-reasoner) extract entity nodes and relation
-edges through LLM calls at index time. HippoRAG2 uses proposition-level
-chunking and LLM-generated summaries to build a hippocampus-inspired
-associative graph; G-reasoner adds a reasoning layer that traverses the
-KG at query time to resolve multi-hop questions. These systems score
-well on global sensemaking benchmarks --- tasks requiring thematic
-synthesis across a corpus. Global sensemaking does not require retrieval
-precision: the task is to characterize the corpus's themes, not to
-locate a specific fact, so the benchmark rewards broad coverage rather
-than exact recall. Whether the relation-typing overhead contributes
-retrieval lift beyond what entity co-occurrence alone would produce has
-not been ablated in published evaluations; the contribution of typed
-relations versus entity nodes has not been separated. The cost --- index
-build time measured in hours, full reconstruction on corpus updates ---
-is fixed by design regardless. For continuously-updated enterprise
-corpora, that cost is prohibitive.
+\textbf{GraphRAG variants differ in relation extraction approach:}
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Microsoft GraphRAG, LightRAG, HippoRAG2, G-reasoner}: extract
+  \textbf{typed relation graphs} via LLM calls at index time. Relations
+  are semantically typed (``ACQUIRED'', ``FOUNDED\_BY'',
+  ``COMPETES\_WITH''). HippoRAG2 uses proposition-level chunking and
+  LLM-generated summaries; G-reasoner adds a reasoning layer. Cost:
+  O(docs × LLM-calls), hours to build. These systems score well on
+  global sensemaking benchmarks.
+\item
+  \textbf{FastGraphRAG}: uses \textbf{untyped entity co-occurrence} (no
+  LLM relation typing). Relationships are defined as ``text unit
+  co-occurrence between entity pairs.'' This validates a key finding:
+  semantic relation typing is not necessary for retrieval-based
+  benchmarks.
+\end{itemize}
+
+Both approaches filter edges to co-occurrence---they only consider
+entity pairs within the same text unit. The difference is whether those
+edges are typed semantically. \textbf{The key design question}: whether
+the relation-typing overhead contributes retrieval lift beyond
+undifferentiated co-occurrence. FastGraphRAG demonstrates it may not,
+for retrieval tasks at least. Global sensemaking does not require
+retrieval precision: the task is to characterize themes, not locate
+facts, so such benchmarks reward broad coverage rather than exact
+recall. The cost of typed-relation extraction --- index build time
+measured in hours, full reconstruction on corpus updates --- is fixed by
+design. Based on our observations of enterprise corpora that churn
+continuously (CVE feeds, regulatory guidance, quarterly filings), that
+cost is prohibitive.
 
 \textbf{Dense retrieval with structural augmentation} approaches ---
 RAPTOR, HyDE, FLARE --- improve retrieval without explicit graph
@@ -481,38 +445,71 @@ contribution, and their interaction measured. The result positions
 NLP-primitive graph retrieval relative to the practitioner's default
 upgrade path (add BM25) rather than only relative to academic baselines.
 
-\subsubsection{2.1 LLM-Based GraphRAG
-Systems}\label{llm-based-graphrag-systems}
+\subsubsection{2.1 LLM-Based Typed-Relation GraphRAG
+Systems}\label{llm-based-typed-relation-graphrag-systems}
 
-LLM-based GraphRAG systems (LightRAG, Fast-GraphRAG, HippoRAG2,
-G-reasoner) construct knowledge graphs through entity recognition and
-relation extraction at O(docs × LLM-calls) index time. These systems
+Microsoft GraphRAG, LightRAG, HippoRAG2, and G-reasoner construct
+\textbf{typed-relation graphs} through entity recognition and semantic
+relation extraction at O(docs × LLM-calls) index time. Relations are
+semantically typed: ``ACQUIRED,'' ``FOUNDED\_BY,'' etc. These systems
 achieve strong benchmark results but impose hours of index build time
 and require full reconstruction on corpus updates --- impractical for
 enterprise deployments where corpora churn continuously.
 
-The modern enterprise AI stack compounds this mismatch. Real deployments
-do not operate on static corpora: CVE feeds update daily, 10-K filings
-arrive quarterly, regulatory guidance is amended continuously. LLM-based
-graph construction at O(docs × LLM-calls) requires full reconstruction
-on each update --- impractical at corpus churn rates that make a static
-index obsolete within days. The agent layer above retrieval further
-sharpens the requirement: planners issue targeted sub-queries whose
-answers must be precisely grounded, not thematically summarized. A
-retrieval layer that cannot return the right chunk for a specific
-factual sub-query forces the agent to compensate through re-prompting
-and iterative validation --- the exact inefficiency this work sets out
-to eliminate.
+In our experience with enterprise AI stacks, we observe a practical
+constraint: real deployments do not operate on static corpora. CVE feeds
+update daily, 10-K filings arrive quarterly, regulatory guidance is
+amended continuously. LLM-based typed-relation graph construction at
+O(docs × LLM-calls) requires full reconstruction on each update ---
+impractical at the corpus churn rates we observe in enterprise
+deployments. The agent layer above retrieval further sharpens the
+requirement: planners issue targeted sub-queries whose answers must be
+precisely grounded, not thematically summarized. A retrieval layer that
+cannot return the right chunk for a specific factual sub-query forces
+the agent to compensate through re-prompting and iterative validation
+--- a pattern of inefficiency we have observed in enterprise
+deployments.
 
-\subsubsection{2.2 NLP-Primitive GraphRAG (This
-Work)}\label{nlp-primitive-graphrag-this-work}
+\subsubsection{2.2 Untyped Co-Occurrence Graphs: FastGraphRAG and This
+Work}\label{untyped-co-occurrence-graphs-fastgraphrag-and-this-work}
 
-We construct the same graph structures --- entity nodes, co-occurrence
-edges, community partitions --- using spaCy NER and Louvain clustering.
-Index time drops to minutes with zero LLM calls. Query-time traversal
-follows the same pattern: entity-ref-expansion walks entity edges;
-community context injection uses community membership; widened retrieval
-(k) extends traversal depth.
+FastGraphRAG demonstrated that untyped entity co-occurrence (without LLM
+semantic relation typing) is sufficient for retrieval benchmarks. We
+extend this finding to heterogeneous corpora by adding infrastructure
+that makes untyped co-occurrence reliable at enterprise scale.
+
+\textbf{FastGraphRAG's approach}: Uses NLP-primitive entity extraction
+(spaCy) and co-occurrence-based edges. Relations are defined as entity
+pairs within the same text unit, not semantically typed.
+
+\textbf{Our system extends this with:}
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Semantic boundary chunking} (not fixed-size): chunk boundaries
+  define semantic location within document structure; co-occurrence
+  edges are computed relative to these boundaries
+\item
+  \textbf{Entity canonicalization}: normalizing surface variants (Apple
+  Inc., Apple, AAPL) so co-occurrence edges represent the same
+  real-world entity
+\item
+  \textbf{Lane-gated expansion}: filtering co-occurrence-based edge
+  traversal by query similarity to control depth and reduce noise
+\item
+  \textbf{Community context injection}: Louvain clustering partitions
+  the co-occurrence graph into topically coherent communities
+\item
+  \textbf{Domain routing (ADF)}: scoping retrieval to relevant corpus
+  domains, preventing off-domain noise contamination in heterogeneous
+  corpora
+\end{itemize}
+
+Both systems operate on undifferentiated co-occurrence edges. The
+difference is infrastructure: what makes co-occurrence graphs work
+reliably for factual retrieval in heterogeneous, continuously-updating
+enterprise corpora.
 
 Our system uses semantic boundary chunking (1,100--2,200 characters,
 approximately 300--600 tokens), splitting only at natural linguistic
@@ -536,35 +533,72 @@ Selection}\label{benchmark-scenario-selection}
 Published RAG benchmark scores are only meaningful relative to the task
 the benchmark was designed to test. Microsoft's original GraphRAG
 evaluation --- and the broader class of benchmarks it influenced ---
-tests ``global sensemaking'': thematic comprehension of narrative
+tests \textbf{global sensemaking}: thematic comprehension of narrative
 corpora rated on coverage and diversity of generated summaries. The task
 is explicitly thematic: ``What are the main themes of this corpus?''
 rather than ``What does this filing say about counterparty exposure as
 of Q3 2024?'' The former rewards broad traversal and summarization; the
 latter requires precise, verifiable retrieval of a specific fact.
-GraphRAG-Bench (arXiv:2506.05690) is already closer to the latter ---
-factual questions over defined corpora --- which is why it serves as a
-credible bridge benchmark here. HARE-Bench extends that direction
-further: heterogeneous corpus, typed deterministic scoring, questions
-designed to be adversarial to retrieval systems that rely on surface
-similarity alone. To be direct about the practical stakes: global
-sensemaking --- ``summarize this corpus's themes'' --- is not what most
-enterprise users need from their data. They need answers to specific,
-verifiable questions across a heterogeneous and continuously-updated
-document set. Benchmarks that optimize for the former systematically
-misevaluate systems designed for the latter. The choice of benchmark is
-not a neutral methodological decision; it is a claim about what
-retrieval is for.
+GraphRAG's design goal, as stated in the original paper, is to optimize
+for this sensemaking task.
 
-Enterprise RAG deployments are almost exclusively the latter: contracts,
-filings, CVE records, technical specifications, regulatory documents. A
-system optimized for thematic sensemaking will underperform on factual
-retrieval tasks --- not because of a deficiency in the system, but
-because the evaluation regime was not designed for that task. This
-distinction is the primary motivation for HARE-Bench (§8): a benchmark
-designed around the factual, cross-document retrieval tasks that
-dominate real enterprise deployments, not around the narrative
-summarization tasks that dominate published leaderboards.
+GraphRAG-Bench (arXiv:2506.05690) makes a \textbf{different claim}: it
+states that it tests \textbf{multi-hop graph reasoning}. These are
+related but distinct design goals: sensemaking and multi-hop reasoning
+are both graph-centric, but sensemaking optimizes for broad thematic
+synthesis across a corpus, while multi-hop reasoning optimizes for
+following paths to answer factual sub-questions. The benchmark should
+measure what it claims to measure.
+
+\textbf{Empirical analysis reveals a gap between GRB's stated
+measurement target and its actual questions.} Sample GRB question: ``Why
+is it necessary for the server to use a special initial sequence number
+in the SYN-ACK?'' (Answer: ``To defend against SYN FLOOD attacks.'')
+This question is textbook comprehension, not graph traversal or
+multi-hop reasoning. More telling: RAPTOR---a simple hierarchical tree
+with no graph operations---outperforms Ms-GraphRAG (global) decisively
+on Medical (57.10 vs 28.56) and Ms-GraphRAG (local) on Medical (57.10 vs
+45.16), while staying competitive on Novel. A method without
+typed-relation graphs achieves comparable or better performance than
+LLM-based GraphRAG systems, suggesting relation typing is not necessary
+for the passages-retrieval tasks GRB measures. Our analysis of the
+questions and results suggests that GRB measures \textbf{passage
+retrieval + comprehension}, not multi-hop graph reasoning.
+
+This creates two distinct misalignments:
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\tightlist
+\item
+  \textbf{GRB's stated target vs.~actual questions}: GRB claims to test
+  multi-hop reasoning but questions measure passage retrieval
+\item
+  \textbf{GraphRAG's design vs.~GRB's measurement}: GraphRAG was
+  designed for sensemaking; GRB measures factual retrieval, which is
+  orthogonal to sensemaking
+\end{enumerate}
+
+GRB is useful as a credible factual-retrieval benchmark --- which is why
+we use it as a bridge baseline --- but it does not validate systems
+designed for sensemaking, and it does not measure multi-hop reasoning as
+claimed. HARE-Bench extends the factual-retrieval direction further:
+heterogeneous corpus, typed deterministic scoring, questions designed to
+be adversarial to retrieval systems that rely on surface similarity
+alone.
+
+\textbf{Our position on retrieval priorities}: Across our work with
+enterprise AI deployments, we observe that most retrieval queries seek
+specific, verifiable facts rather than thematic synthesis. Global
+sensemaking --- ``summarize this corpus's themes'' --- is less
+frequently requested than factual precision on targeted sub-queries.
+When sensemaking is needed, it is typically a task delegated by the
+planner as a sub-goal, not the primary retrieval function. This
+observation motivates HARE-Bench's focus on factual, cross-document
+retrieval rather than thematic synthesis. The choice of benchmark is not
+a neutral methodological decision; it reflects a design position about
+what the retrieval layer should optimize for. We make that position
+explicit here.
 
 The evaluation mismatch runs deeper than task type. Dominant RAG metrics
 --- ROUGE, BERTScore, LLM-as-judge --- were inherited from summarization
@@ -575,25 +609,28 @@ expresses it fluently scores comparably to one that retrieves the right
 fact. In an agentic context, where the retrieval layer's output is
 consumed by a planner that routes on specific values --- a date, an
 entity name, a boolean, a quantity --- prose fluency is irrelevant and
-plausibility is actively dangerous. HARE-Bench uses a typed
-deterministic scorer (§8.3) that grounds evaluation in typed gold values
-rather than semantic similarity to generated text, measuring whether the
-retrieval layer produced a value the agent can act on, not whether it
-produced a sentence a human would find natural.
+plausibility is actively dangerous.
+
+\textbf{Our design position on scoring:} We prioritize factual accuracy
+over fluency. An incorrect fact is worse than no answer; a planner
+routing on bad data compounds error across multiple steps. HARE-Bench
+uses a typed deterministic scorer (§8.3) that grounds evaluation in
+typed gold values rather than semantic similarity to generated text,
+measuring whether the retrieval layer produced a value the agent can act
+on, not whether it produced prose a human would find natural.
 
 A related objection holds that generation has simply migrated to the
 agent --- that the retrieval layer's LLM call is now trivial and only
-the planner's compound reasoning matters. This misunderstands
-delegation. The retrieval layer still generates an answer from evidence;
-what changes is the target: a typed, evidence-cited value rather than
-prose. Well-designed delegation requires that the retrieval layer return
-a value the agent can act on without re-parsing --- typed,
-evidence-cited answers are the contract, not an implementation detail. A
-retrieval layer that returns raw prose and leaves synthesis to the
-planner is a leaky abstraction: it has outsourced evidence-grounding
-without delegating it cleanly, forcing the planner to rediscover
-structure the retrieval layer already had access to. The SRR generation
-step (§3, P6) is precisely the retrieval layer accepting that delegated
+the planner's compound reasoning matters. We disagree. The retrieval
+layer still generates an answer from evidence; what changes is the
+target: a typed, evidence-cited value rather than prose. \textbf{Our
+design position on delegation:} the retrieval layer should return a
+value the agent can act on without re-parsing. Typed, evidence-cited
+answers are the contract. A retrieval layer that returns raw prose and
+leaves synthesis to the planner is a leaky abstraction: it outsources
+evidence-grounding without delegating it cleanly, forcing the planner to
+rediscover structure the retrieval layer already had access to. The SRR
+generation step (§3, P6) is the retrieval layer accepting that delegated
 responsibility.
 
 This points to a broader architectural principle that single-shot LLM
@@ -625,6 +662,49 @@ for: G' optimizes single-shot accuracy; G\_agentic optimizes multi-step
 reasoning. The term ``agentic RAG'' conflates these concerns and
 obscures what is being measured.
 
+\textbf{On the role of synthesis in G': grounded facts vs.~inference.}
+We observe that the `G' (generation/synthesis) in RAG has utility,
+particularly for assembling evidence across domains and producing
+answers grounded in that evidence. We distinguish \textbf{grounded
+vs.~inferential}: a \textbf{grounded fact} is synthesized (potentially
+across multiple sources) but remains citable and verifiable against the
+evidence; an \textbf{inference} makes assumptions or logical leaps
+beyond what the evidence directly states.
+
+\textbf{Our design position:} G' should produce grounded facts only ---
+even complex cross-domain summaries, as long as they remain citable and
+verifiable. G' should not make inferences: bridge logical gaps, assume
+causality, apply domain-specific judgment calls, or reason about what
+the facts mean. Those tasks require explicit reasoning, which belongs in
+an upstream G\_agentic layer that orchestrates multiple G' calls and
+owns the assumptions it makes.
+
+This distinction is architectural. A fact synthesized from ``Company X
+filed CVEs affecting products A, B, C in Q3'' remains grounded
+(citable); concluding ``Company X has poor security practices'' is
+inference (requires assumptions about severity, thresholds, causality).
+In our design, G' produces the former; G\_agentic can reason about the
+latter while acknowledging its assumptions. Reasonable architects may
+disagree on where this boundary lies; different design choices are
+legitimate, and this framing reflects our design position, not
+architectural law.
+
+\textbf{HARE-Bench's design follows from this distinction.} The
+benchmark tests whether a retrieval+synthesis system can reliably
+produce grounded facts from a heterogeneous corpus. The typed
+deterministic scorer (§8.3) is the enforcement mechanism:
+boolean/number/date answers are exact-matched, entities are F1-matched,
+text is semantically compared against \emph{citable evidence}. This
+design assumes the task is grounded-fact production, not reasoning or
+inference. If the task were reasoning (bridging gaps, making
+assumptions), the typed scorer would be inappropriate --- you cannot
+deterministically score an inference. Conversely, if the task is
+grounded-fact production, the typed scorer correctly penalizes
+``plausible but unsupported'' answers and rewards evidence-backed
+precision. HARE-Bench therefore cannot measure G\_agentic
+(orchestration/reasoning) --- that layer is explicitly designed to make
+inferences the typed checker cannot validate.
+
 Different G' implementations optimize for different retrieval
 strategies: this work prioritizes factual precision in heterogeneous
 corpora; GraphRAG prioritizes thematic sensemaking. Both are G'. The
@@ -632,13 +712,15 @@ distinction is not architectural pattern but retrieval strategy and
 answer type.
 
 Evaluation must match scope: HARE-Bench tests single-shot factual
-accuracy on cross-domain corpora. GraphRAG-Bench, despite testing
-factual questions, is where GraphRAG (sensemaking-optimized) performs
-below its design intent. Yet systems claiming to implement GraphRAG
-score well on it --- a benchmark designed to test what the original
-system was not designed for --- illustrating the broader confusion in
-the field about what ``GraphRAG'' means. This paper reports results on
-both.
+accuracy on cross-domain corpora. GraphRAG-Bench claims to test
+multi-hop graph reasoning but empirically tests factual retrieval from
+textbooks; this misalignment between stated goal and actual content
+means the benchmark does not measure GraphRAG's stated purpose (global
+sensemaking). Yet systems claiming to implement GraphRAG score well on
+GRB, suggesting the benchmark validates a different pattern than what
+GraphRAG was designed to optimize for --- illustrating the broader
+confusion in the field about what ``GraphRAG'' means and what each
+benchmark actually measures. This paper reports results on both.
 
 \subsubsection{2.6 Retrieval Augmentation Without Graph
 Structure}\label{retrieval-augmentation-without-graph-structure}
@@ -881,34 +963,143 @@ internal generator prompts and embedding configurations are not publicly
 disclosed, so direct score comparisons carry uncontrolled variables;
 differences of 0.01--0.02 should not be treated as meaningful.
 
-The table below places our numbers alongside published leaderboard
-values. Vanilla RAG baseline conditions are verified equivalent; other
-system comparisons are reference only.
+The official GraphRAG-Bench leaderboard (from arXiv:2506.05690)
+currently ranks 15 systems. Below are the complete results:
 
-\begin{small}
-\setlength{\tabcolsep}{4pt}
-\begin{longtable}{p{2.0in}rrrp{1.5in}}
-\toprule
-\textbf{System} & \textbf{Med} & \textbf{Nov} & \textbf{All} & \textbf{Index cost} \\
-\midrule
+\subsubsection{GraphRAG-Bench (Novel
+Dataset)}\label{graphrag-bench-novel-dataset}
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 12\tabcolsep) * \real{0.1842}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 12\tabcolsep) * \real{0.1579}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 12\tabcolsep) * \real{0.1316}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 12\tabcolsep) * \real{0.1316}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 12\tabcolsep) * \real{0.1316}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 12\tabcolsep) * \real{0.1316}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 12\tabcolsep) * \real{0.1316}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Model
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Rank
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Avg
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Fact Retrieval (ACC/ROUGE-L)
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Complex Reasoning (ACC/ROUGE-L)
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Contextual Summarize (ACC/Cov)
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Creative Generation (ACC/FS/Cov)
+\end{minipage} \\
+\midrule\noalign{}
 \endhead
-G-reasoner & 0.733 & 0.589 & 0.661 & O(docs $\times$ LLM) \\
-AutoPrunedRetriever-llm & 0.670 & 0.637 & 0.654 & O(docs $\times$ LLM) \\
-HippoRAG2 & 0.648 & 0.565 & 0.607 & O(docs $\times$ LLM) \\
-Fast-GraphRAG & 0.641 & 0.520 & 0.581 & O(docs $\times$ LLM) \\
-LightRAG & 0.626 & 0.451 & 0.538 & O(docs $\times$ LLM) \\
-RAG (w/ rerank) & 0.624 & 0.483 & 0.554 & — \\
-RAG (w/o rerank) & 0.610 & 0.479 & 0.545 & — \\
-\textbf{Ours (full stack)} & \textbf{0.756} & \textbf{0.656} & \textbf{0.712} & \textbf{0} \\
-\bottomrule
+\bottomrule\noalign{}
+\endlastfoot
+AutoPseudoRetriever-llm & 1 & 63.72 & 45.99/26.99 & 62.80/35.35 &
+83.10/83.86 & 62.97/34.40/22.13 \\
+G-reasoner & 2 & 58.94 & 60.07/36.91 & 53.92/23.00 & 71.28/55.60 &
+30.48/40.37/32.07 \\
+HippoRAG2 & 3 & 56.48 & 60.14/31.35 & 53.38/33.42 & 64.10/70.84 &
+48.28/49.84/30.95 \\
+Fast-GraphRAG & 4 & 52.02 & 56.95/35.90 & 48.55/21.12 & 56.41/80.82 &
+46.18/57.19/36.99 \\
+Ms-GraphRAG (local) & 5 & 50.93 & 49.29/26.11 & 50.93/24.09 &
+64.40/75.58 & 39.10/55.44/35.65 \\
+Lazy-GraphRAG & 6 & 50.59 & 51.65/36.97 & 49.22/23.48 & 58.29/76.94 &
+43.23/50.69/39.74 \\
+StructRAG & 7 & 49.13 & 53.84/26.73 & 46.27/23.49 & 54.28/63.56 &
+42.16/62.06/36.75 \\
+RAG (w/ rerank) & 8 & 48.35 & 60.92/36.08 & 42.93/15.39 & 51.30/83.64 &
+38.26/49.21/40.04 \\
+KGP & 9 & 48.01 & 54.15/24.71 & 46.31/16.91 & 51.21/64.34 &
+40.37/32.20/34.65 \\
+RAG (w/o rerank) & 10 & 47.03 & 58.76/37.35 & 41.35/15.12 & 50.08/82.53
+& 41.52/47.46/37.84 \\
+KET-RAG & 11 & 47.62 & 55.19/27.39 & 36.59/25.98 & 52.47/69.24 &
+46.01/36.72/33.68 \\
+LightRAG & 12 & 45.09 & 58.62/35.72 & 49.07/24.16 & 48.85/63.05 &
+23.80/23.80/25.01 \\
+HippoRAG & 13 & 44.75 & 52.93/26.65 & 38.52/11.16 & 48.70/85.55 &
+38.85/71.53/38.97 \\
+Ms-GraphRAG (global) & 14 & 44.32 & 36.92/17.32 & 43.17/15.12 &
+56.87/80.55 & 41.11/75.15/30.34 \\
+RAPTOR & 15 & 43.24 & 49.25/23.74 & 38.59/11.66 & 47.10/82.33 &
+38.01/70.85/35.88 \\
 \end{longtable}
-\end{small}
+}
 
-\emph{Full stack = entity-ref expansion + lane filter (sim≥0.60) +
-community context + Structured Response, k=30. Leaderboard values from
-arXiv:2506.05690. Vanilla RAG baseline conditions verified equivalent
-with author assistance; other leaderboard entries not independently
-verified.}
+\subsubsection{GraphRAG-Bench (Medical
+Dataset)}\label{graphrag-bench-medical-dataset}
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 12\tabcolsep) * \real{0.1842}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 12\tabcolsep) * \real{0.1579}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 12\tabcolsep) * \real{0.1316}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 12\tabcolsep) * \real{0.1316}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 12\tabcolsep) * \real{0.1316}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 12\tabcolsep) * \real{0.1316}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 12\tabcolsep) * \real{0.1316}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Model
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Rank
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Avg
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Fact Retrieval (ACC/ROUGE-L)
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Complex Reasoning (ACC/ROUGE-L)
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Contextual Summarize (ACC/Cov)
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Creative Generation (ACC/FS/Cov)
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+G-reasoner & 1 & 71.30 & 68.84/44.73 & 73.17/29.10 & 77.23/60.64 &
+72.04/53.65/48.31 \\
+AutoPseudoRetriever-llm & 2 & 67.00 & 61.25/34.69 & 71.59/31.11 &
+73.14/40.89 & 65.02/52.25/36.62 \\
+HippoRAG2 & 3 & 64.85 & 66.28/36.69 & 61.98/36.97 & 63.08/46.13 &
+68.05/58.78/51.54 \\
+Fast-GraphRAG & 4 & 64.12 & 60.93/31.04 & 61.73/21.37 & 67.88/52.07 &
+65.93/56.07/44.73 \\
+LightRAG & 5 & 62.59 & 63.32/37.19 & 61.32/24.98 & 63.14/51.16 &
+---/---/--- \\
+RAG (w/ rerank) & 6 & 62.43 & 64.73/30.75 & 58.64/15.57 & 65.75/78.54 &
+60.61/36.74/58.72 \\
+RAG (w/o rerank) & 7 & 61.00 & 63.72/29.21 & 57.61/13.98 & 63.72/77.34 &
+58.94/35.88/57.87 \\
+HippoRAG & 8 & 59.08 & 56.14/20.95 & 55.87/13.57 & 59.86/62.73 &
+64.43/69.21/65.56 \\
+StructRAG & 9 & 58.56 & 55.38/27.53 & 56.17/22.79 & 62.48/65.06 &
+60.21/48.25/48.70 \\
+RAPTOR & 10 & 57.10 & 54.07/17.93 & 53.20/11.73 & 58.73/78.28 &
+---/---/--- \\
+Lazy-GraphRAG & 11 & 56.89 & 60.25/31.66 & 47.62/22.68 & 57.28/55.92 &
+62.22/30.05/43.79 \\
+KGP & 12 & 56.33 & 55.53/21.34 & 51.53/11.69 & 54.51/62.40 &
+63.77/45.23/35.55 \\
+KET-RAG & 13 & 47.05 & 60.35/31.99 & 39.56/19.52 & 45.27/29.04 &
+41.04/43.79/31.93 \\
+Ms-GraphRAG (local) & 14 & 45.16 & 38.63/26.80 & 47.04/21.99 &
+41.87/22.98 & 53.11/32.65/39.42 \\
+Ms-GraphRAG (global) & 15 & 28.56 & 16.42/46.00 & 15.61/52.75 & ---/---
+& ---/---/--- \\
+\end{longtable}
+}
+
+\emph{Leaderboard values from arXiv:2506.05690 (Xiang et al., ICLR'26).
+Full leaderboard available at https://graphrag-bench.github.io/.
+Metrics: ACC = answer accuracy, ROUGE-L = lexical overlap, Cov =
+coverage, FS = faithfulness score.}
 
 \begin{figure}
 \centering
@@ -3210,5 +3401,3 @@ semantic boundary chunking + entity-ref-expansion + lane filter
 \texttt{fang\_ner\_ref\_cluster\_community\_k10\_haiku} = HARE-Bench
 corpus + entity-ref + cluster expansion + community context + k=10,
 Haiku generator
-
-\end{document}
