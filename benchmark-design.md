@@ -1,14 +1,14 @@
-# Enterprise Cross-Domain Retrieval Benchmark (ECDR-Bench)
+# HARE-Bench: Heterogeneous Agentic Retrieval Evaluation
 
-*Working title. The benchmark is implemented under the `fang2026` directory.*
+*The benchmark is implemented under the `fang2026` directory.*
 
 ## What This Benchmark Tests
 
-ECDR-Bench benchmarks the **modern enterprise AI stack**: an LLM planner issuing atomic sub-queries against a heterogeneous document corpus, with structured output constraints (SRR/DSL) governing generation quality at each step. It is not a retrieval benchmark in isolation — it is a benchmark of whether the stack as a whole produces correct answers in conditions that match how large enterprises actually deploy AI systems.
+HARE-Bench benchmarks the **modern enterprise AI stack**: an LLM planner issuing atomic sub-queries against a heterogeneous document corpus, with structured output constraints (SRR/DSL) governing generation quality at each step. It is not a retrieval benchmark in isolation — it is a benchmark of whether the stack as a whole produces correct answers in conditions that match how large enterprises actually deploy AI systems.
 
 The three components under evaluation:
 
-| Component | Role | What ECDR-Bench varies |
+| Component | Role | What HARE-Bench varies |
 |-----------|------|------------------------|
 | Retrieval configuration | Assembles evidence from a heterogeneous corpus per planner sub-query | 4 configurations (vanilla rerank, laned community, cluster community, graph-first) |
 | Planner query design | Atomic sub-queries, one fact per call, consistent with planner decomposition | Fixed (enforced in question generation) |
@@ -22,23 +22,23 @@ GraphRAG-Bench (GRB) uses medical and literary textbooks. Those corpora are homo
 
 Enterprise knowledge bases span organizational boundaries: SEC filings, regulatory guidance, security advisories, patent claims, clinical protocols, internal policy. The same entity — a company, a chemical compound, a software package — appears in multiple document types with different terminology, structure, and register. A planner issuing sub-queries against this corpus faces vocabulary collision at every step: the query terms that describe one domain also appear in adjacent domains for different reasons.
 
-GRB measures whether a retrieval system finds the right passage. ECDR-Bench measures whether the retrieval component of an enterprise AI stack assembles the right evidence across document types that do not naturally point at each other — under the query conditions that a real planner would produce.
+GRB measures whether a retrieval system finds the right passage. HARE-Bench measures whether the retrieval component of an enterprise AI stack assembles the right evidence across document types that do not naturally point at each other — under the query conditions that a real planner would produce.
 
 ## The Planner Scenario
 
-ECDR-Bench is designed around the retrieval calls issued by a well-designed LLM planner executing multi-step reasoning against an enterprise knowledge base. In this architecture, a planner decomposes a user query into a sequence of atomic sub-queries, issues each as a separate retrieval call, receives the results, and synthesizes a final answer. The retrieval system is what each individual step depends on.
+HARE-Bench is designed around the retrieval calls issued by a well-designed LLM planner executing multi-step reasoning against an enterprise knowledge base. In this architecture, a planner decomposes a user query into a sequence of atomic sub-queries, issues each as a separate retrieval call, receives the results, and synthesizes a final answer. The retrieval system is what each individual step depends on.
 
-**Atomic query constraint.** A well-designed planner never issues compound questions. It does not ask "which company has the most patents, and does that company also have the highest R&D spend?" — it asks "which company has the most patents?", receives an answer, then asks "what was [answer]'s R&D expenditure?" as a separate call. Each call seeks exactly one retrievable fact or yes/no determination. Benchmark questions that embed two questions in one test a retrieval behavior no planner would produce; they were excluded during question generation. All MDJ and QS questions in ECDR-Bench are single-fact atomic queries.
+**Atomic query constraint.** A well-designed planner never issues compound questions. It does not ask "which company has the most patents, and does that company also have the highest R&D spend?" — it asks "which company has the most patents?", receives an answer, then asks "what was [answer]'s R&D expenditure?" as a separate call. Each call seeks exactly one retrievable fact or yes/no determination. Benchmark questions that embed two questions in one test a retrieval behavior no planner would produce; they were excluded during question generation. All MDJ and QS questions in HARE-Bench are single-fact atomic queries.
 
 **The heterogeneous corpus problem.** When a planner issues an atomic query against a heterogeneous enterprise corpus, a failure mode emerges that has no analogue in single-domain benchmarks: the query vocabulary may match documents from the wrong domain.
 
 A query like "how many Apple patents were granted in 2025?" is precise in intent. But the corpus also contains Apple CVE records, Apple's 10-K (which discusses patent strategy and R&D), and Federal Register notices that reference intellectual property. All of these documents mention "Apple" and "patents." The retrieval system must surface patent grant records specifically — not financial disclosures or security advisories that happen to contain the same terms.
 
-This cross-domain vocabulary collision is the central challenge ECDR-Bench measures. On a homogeneous corpus, retrieval precision means finding the right passage among many similar ones. In a heterogeneous corpus, it means finding the right passage in the right domain — and the planner's query may not carry enough signal to disambiguate, because the language of a natural sub-question is drawn from the user's intent, not from the document type's vocabulary.
+This cross-domain vocabulary collision is the central challenge HARE-Bench measures. On a homogeneous corpus, retrieval precision means finding the right passage among many similar ones. In a heterogeneous corpus, it means finding the right passage in the right domain — and the planner's query may not carry enough signal to disambiguate, because the language of a natural sub-question is drawn from the user's intent, not from the document type's vocabulary.
 
-The practical consequence: a retrieval configuration that performs well on GRB may fail on ECDR-Bench not because it cannot find relevant text, but because it surfaces plausible text from the wrong domain. The planner then synthesizes an answer from contaminated evidence. The error is silent — there is no retrieval failure signal, only a wrong final answer.
+The practical consequence: a retrieval configuration that performs well on GRB may fail on HARE-Bench not because it cannot find relevant text, but because it surfaces plausible text from the wrong domain. The planner then synthesizes an answer from contaminated evidence. The error is silent — there is no retrieval failure signal, only a wrong final answer.
 
-**Why the benchmark still uses single-shot evaluation.** The planner scenario motivates the question design (atomic sub-queries) but the benchmark measures retrieval quality per call in isolation. This is intentional: it isolates the retrieval variable. A planner that issues correctly formulated atomic sub-queries against a well-performing retrieval system produces good results; the same planner against a poorly-performing retrieval system compounds errors across steps. ECDR-Bench measures the retrieval layer so that configuration choices are made on evidence rather than assumption.
+**Why the benchmark still uses single-shot evaluation.** The planner scenario motivates the question design (atomic sub-queries) but the benchmark measures retrieval quality per call in isolation. This is intentional: it isolates the retrieval variable. A planner that issues correctly formulated atomic sub-queries against a well-performing retrieval system produces good results; the same planner against a poorly-performing retrieval system compounds errors across steps. HARE-Bench measures the retrieval layer so that configuration choices are made on evidence rather than assumption.
 
 ## Corpus
 
@@ -80,7 +80,7 @@ The cross-domain join still occurs — the answer requires evidence from two dom
 
 ### Why these five
 
-Standard RAG benchmarks test whether the system finds the right document. These five types test whether the system assembles the right evidence across documents that do not share vocabulary or structure. On GRB — a homogeneous corpus — retrieval configurations that differ in design produce nearly identical scores. On ECDR-Bench, the same configurations separate by up to 0.114 points, because corpus heterogeneity makes cross-document joins the deciding factor for a substantial fraction of questions.
+Standard RAG benchmarks test whether the system finds the right document. These five types test whether the system assembles the right evidence across documents that do not share vocabulary or structure. On GRB — a homogeneous corpus — retrieval configurations that differ in design produce nearly identical scores. On HARE-Bench, the same configurations separate by up to 0.114 points, because corpus heterogeneity makes cross-document joins the deciding factor for a substantial fraction of questions.
 
 ## Evaluation
 
@@ -105,7 +105,7 @@ Scores are reported per question type and as an unweighted mean across the five 
 
 **Key finding:** The laned60 configuration — highest-scoring on GRB — collapses on MDJ (0.156). The 0.60 entity similarity threshold discards cross-domain links: a CVE record and a 10-K filing may reference the same vendor without being embedding-similar, because they use different vocabulary and structure. Lane filtering treats that dissimilarity as noise and discards it. MDJ questions require exactly those discarded chunks.
 
-**Contrast with GRB:** On GRB, configurations that differ in lane threshold cluster within 0.003 of each other — below measurement noise. On ECDR-Bench, the same choice produces a 0.114-point gap. Corpus heterogeneity is the discriminating condition.
+**Contrast with GRB:** On GRB, configurations that differ in lane threshold cluster within 0.003 of each other — below measurement noise. On HARE-Bench, the same choice produces a 0.114-point gap. Corpus heterogeneity is the discriminating condition.
 
 ## Running the Benchmark
 
@@ -136,7 +136,7 @@ The full 16-run matrix is driven by `work/run_parallel.py --fang-only`.
 
 ## Comparison with GRB
 
-| Property | GRB | ECDR-Bench |
+| Property | GRB | HARE-Bench |
 |----------|-----|------------|
 | Corpus | Medical + literary textbooks | SEC + CVE + FedReg + Patents |
 | Homogeneity | High | Low (by design) |
@@ -146,7 +146,7 @@ The full 16-run matrix is driven by `work/run_parallel.py --fang-only`.
 | Executed | Yes | Partially (16-run matrix in progress) |
 | Discriminates retrieval configs | Weakly | Strongly |
 
-ECDR-Bench does not replace GRB. GRB provides comparability to published systems. ECDR-Bench tests whether a configuration that wins on GRB also wins on the document type mix that large enterprises actually deploy. The two benchmarks together answer different questions.
+HARE-Bench does not replace GRB. GRB provides comparability to published systems. HARE-Bench tests whether a configuration that wins on GRB also wins on the document type mix that large enterprises actually deploy. The two benchmarks together answer different questions.
 
 ## Scope and Known Limitations
 
@@ -154,10 +154,10 @@ ECDR-Bench does not replace GRB. GRB provides comparability to published systems
 
 **What it does not measure.** Scale (500 questions; significance requires bootstrap CIs at the 0.02-point level). Domain coverage (four public document types; internal enterprise documents differ in register and structure). Indexing freshness (all documents are 2024–2026 snapshots; document currency is not tested). End-to-end planner quality (the benchmark isolates the retrieval step; it does not measure whether a planner correctly decomposes queries or synthesizes multi-step results). Constrained-DSL retrieval (the benchmark assumes natural-language queries against the full corpus with no structured query layer).
 
-**Expected score range.** Absolute scores on ECDR-Bench will be lower than on GRB. The benchmark targets the retrieval calls issued during multi-step reasoning over a heterogeneous corpus — tasks that require locating domain-specific evidence amid cross-domain vocabulary noise. No single-pass retrieval fully satisfies these questions. This is expected and not a defect.
+**Expected score range.** Absolute scores on HARE-Bench will be lower than on GRB. The benchmark targets the retrieval calls issued during multi-step reasoning over a heterogeneous corpus — tasks that require locating domain-specific evidence amid cross-domain vocabulary noise. No single-pass retrieval fully satisfies these questions. This is expected and not a defect.
 
-**Why retrieval choice still matters.** A multi-step reasoning architecture does not remove the need to choose a retrieval configuration — it makes the choice more consequential. Every step in the reasoning chain issues a retrieval call; retrieval quality determines what evidence the planner has available at each step, and errors compound across steps. ECDR-Bench is the mechanism for making that choice empirically rather than by assumption. Without a benchmark that exercises cross-domain joins under vocabulary collision conditions, there is no principled basis for selecting a retrieval configuration in enterprise deployments.
+**Why retrieval choice still matters.** A multi-step reasoning architecture does not remove the need to choose a retrieval configuration — it makes the choice more consequential. Every step in the reasoning chain issues a retrieval call; retrieval quality determines what evidence the planner has available at each step, and errors compound across steps. HARE-Bench is the mechanism for making that choice empirically rather than by assumption. Without a benchmark that exercises cross-domain joins under vocabulary collision conditions, there is no principled basis for selecting a retrieval configuration in enterprise deployments.
 
-**Relationship to constrained DSL planners.** A well-engineered planner can emit structured retrieval instructions — filter by document type, date range, entity, or score threshold — that bypass the vocabulary collision problem at the architectural level. When `retrieve(domain="patent", assignee="Apple", year=2025)` is possible, retrieval configuration matters less and planner query-formulation quality matters more. ECDR-Bench tests the harder case: natural-language sub-queries against the full heterogeneous corpus, with no structured query layer. This represents either the realistic state of many enterprise deployments, or a measurement of how much work the constrained DSL is doing — the gap between constrained and unconstrained retrieval scores quantifies the value of adding that layer.
+**Relationship to constrained DSL planners.** A well-engineered planner can emit structured retrieval instructions — filter by document type, date range, entity, or score threshold — that bypass the vocabulary collision problem at the architectural level. When `retrieve(domain="patent", assignee="Apple", year=2025)` is possible, retrieval configuration matters less and planner query-formulation quality matters more. HARE-Bench tests the harder case: natural-language sub-queries against the full heterogeneous corpus, with no structured query layer. This represents either the realistic state of many enterprise deployments, or a measurement of how much work the constrained DSL is doing — the gap between constrained and unconstrained retrieval scores quantifies the value of adding that layer.
 
-Structured output constraints are not limited to query formulation — they apply to every LLM invocation in the pipeline. Any call to an LLM (query formulation, retrieval reranking, answer generation, evaluation) can be constrained to a typed schema, reducing the output space and the corresponding failure modes. The SRR (structured response + reprompting) configuration tested in ECDR-Bench is one instance of this general pattern, applied at the answer generation step. SRR forces the model to decompose its answer into structured fields rather than free-form prose, which prevents fluent-sounding hallucination past weak retrieved evidence — the schema requires a specific field that the evidence must support. Applied instead at the query formulation step, the same pattern produces the retrieval DSL effect: a schema-constrained query that filters by document type, date, or entity before retrieval. The ±SRR dimension in the benchmark matrix measures the contribution of output-side constraints at the generation step, holding the retrieval configuration constant.
+Structured output constraints are not limited to query formulation — they apply to every LLM invocation in the pipeline. Any call to an LLM (query formulation, retrieval reranking, answer generation, evaluation) can be constrained to a typed schema, reducing the output space and the corresponding failure modes. The SRR (structured response + reprompting) configuration tested in HARE-Bench is one instance of this general pattern, applied at the answer generation step. SRR forces the model to decompose its answer into structured fields rather than free-form prose, which prevents fluent-sounding hallucination past weak retrieved evidence — the schema requires a specific field that the evidence must support. Applied instead at the query formulation step, the same pattern produces the retrieval DSL effect: a schema-constrained query that filters by document type, date, or entity before retrieval. The ±SRR dimension in the benchmark matrix measures the contribution of output-side constraints at the generation step, holding the retrieval configuration constant.
