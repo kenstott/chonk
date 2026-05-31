@@ -1,0 +1,13 @@
+https://arxiv.org/abs/2602.04926
+https://github.com/circlemind-ai/fast-graphrag
+https://arxiv.org/pdf/2509.24276
+https://arxiv.org/abs/2405.14831
+https://arxiv.org/abs/2502.14802
+https://arxiv.org/abs/2502.09304
+https://arxiv.org/abs/2308.11730
+https://www.microsoft.com/en-us/research/blog/lazygraphrag-setting-a-new-standard-for-quality-and-cost/
+https://arxiv.org/abs/2404.16130
+https://arxiv.org/abs/2410.05779
+https://arxiv.org/abs/2404.16130
+https://arxiv.org/abs/2401.18059
+https://arxiv.org/abs/2410.08815
