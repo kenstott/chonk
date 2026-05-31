@@ -130,7 +130,7 @@ This distinction is architectural, not stylistic. A fact synthesized from "Compa
 
 Different G' implementations optimize for different retrieval strategies: this work prioritizes factual precision in heterogeneous corpora; GraphRAG prioritizes thematic sensemaking. Both are G'. The distinction is not architectural pattern but retrieval strategy and answer type.
 
-Evaluation must match scope: HARE-Bench tests single-shot factual accuracy on cross-domain corpora. GraphRAG-Bench, despite testing factual questions, is where GraphRAG (sensemaking-optimized) performs below its design intent. Yet systems claiming to implement GraphRAG score well on it — a benchmark designed to test what the original system was not designed for — illustrating the broader confusion in the field about what "GraphRAG" means. This paper reports results on both.
+Evaluation must match scope: HARE-Bench tests single-shot factual accuracy on cross-domain corpora. GraphRAG-Bench claims to test multi-hop graph reasoning but empirically tests factual retrieval from textbooks; this misalignment between stated goal and actual content means the benchmark does not measure GraphRAG's stated purpose (global sensemaking). Yet systems claiming to implement GraphRAG score well on GRB, suggesting the benchmark validates a different pattern than what GraphRAG was designed to optimize for — illustrating the broader confusion in the field about what "GraphRAG" means and what each benchmark actually measures. This paper reports results on both.
 
 ### 2.6 Retrieval Augmentation Without Graph Structure
 
