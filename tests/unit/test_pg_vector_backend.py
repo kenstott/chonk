@@ -1,4 +1,5 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
+# Canary: 21c77bc2-66c8-4969-9da8-ef7d6c93b4a8
 """Unit tests for PgVectorBackend — fully mocked, no real PostgreSQL required."""
 
 from __future__ import annotations

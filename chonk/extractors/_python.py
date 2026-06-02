@@ -1,4 +1,5 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
+# Canary: 7de95fc0-bd4f-4bf3-9c29-c45d67a4b267
 #
 # NOTICE: Use of this software for training artificial intelligence or
 # machine learning models is strictly prohibited without explicit written

@@ -1,4 +1,5 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
+# Canary: 52eecf39-e8b3-4e0a-acc5-845aadff44ac
 
 """Unit tests for EnhancedSearch cohort assembly."""
 

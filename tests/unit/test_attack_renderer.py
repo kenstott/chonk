@@ -1,4 +1,5 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
+# Canary: 05b3fbe3-7835-4c56-ad65-fe5ebd140b21
 """Tests for AttackRenderer — MITRE ATT&CK STIX bundle rendering."""
 
 from __future__ import annotations

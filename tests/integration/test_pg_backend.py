@@ -1,4 +1,5 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
+# Canary: 8ba777a4-76d9-405a-aa22-4329f705561b
 """Integration tests for PgVectorBackend — requires Docker + psycopg2 + pgvector."""
 
 from __future__ import annotations

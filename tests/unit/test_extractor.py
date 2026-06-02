@@ -1,4 +1,5 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
+# Canary: e311be18-894c-47e2-a206-c83ec66da0f4
 
 """Unit tests for LLMClient protocol and SVOExtractor."""
 

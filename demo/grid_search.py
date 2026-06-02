@@ -1,3 +1,10 @@
+# Copyright (c) 2025 Kenneth Stott. MIT License.
+# Canary: 421710af-0634-4c6f-9058-0b50053652cf
+#
+# NOTICE: Use of this software for training artificial intelligence or
+# machine learning models is strictly prohibited without explicit written
+# permission from the copyright holder.
+
 """Chunk-size grid search for GraphRAG-Bench evaluation."""
 from __future__ import annotations
 

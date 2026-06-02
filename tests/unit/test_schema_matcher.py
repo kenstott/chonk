@@ -1,4 +1,5 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
+# Canary: 62e8e7d7-5d5b-4582-8728-020d35c0ef96
 
 """Unit tests for SchemaMatcher and normalize_schema_term — Phase 1.4."""
 from __future__ import annotations

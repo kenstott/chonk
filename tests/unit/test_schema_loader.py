@@ -1,4 +1,5 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
+# Canary: 2f95cebf-bc3f-41d2-a9bb-c3ac97191b49
 
 """Unit tests for load_schema() and load_api() — Phase 1.2."""
 from __future__ import annotations

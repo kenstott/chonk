@@ -1,3 +1,10 @@
+# Copyright (c) 2025 Kenneth Stott. MIT License.
+# Canary: 86556eeb-674d-464d-a494-abc97b7a2cad
+#
+# NOTICE: Use of this software for training artificial intelligence or
+# machine learning models is strictly prohibited without explicit written
+# permission from the copyright holder.
+
 """Unit and integration tests for graphrag_bench TOML config capabilities.
 
 Covers:

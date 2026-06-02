@@ -1,4 +1,5 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
+# Canary: cd208a4d-6a62-40e6-9bd1-c26fe93a184f
 
 """Unit tests for SVOTriple and RelationshipIndex (Phase 4.1)."""
 

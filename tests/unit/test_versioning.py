@@ -1,4 +1,5 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
+# Canary: 56be0467-4847-467a-9ef6-d7d7fa14e224
 
 """Unit tests for VersionedRef, CommunityIndexBuilder, RelationshipIndexBuilder."""
 

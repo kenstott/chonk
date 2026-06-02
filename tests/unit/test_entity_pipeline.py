@@ -1,4 +1,5 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
+# Canary: ae9a3ac0-9863-4a6b-a83d-ff9c7b145768
 """Unit tests for EntityGraphPipeline."""
 
 from __future__ import annotations

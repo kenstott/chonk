@@ -1,4 +1,5 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
+# Canary: c4094ce1-c0a4-4d01-a98c-c10e937c81ef
 """Tests for CweRenderer, NistRenderer, ClinicalTrialRenderer, FdaLabelRenderer, FhirRenderer."""
 
 from __future__ import annotations

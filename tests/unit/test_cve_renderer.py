@@ -1,4 +1,5 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
+# Canary: 4f3056b7-c777-4138-9cc3-8bf05d806a26
 """Tests for CveRenderer and the Renderer plug-in pattern on JsonExtractor."""
 
 from __future__ import annotations

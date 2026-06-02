@@ -1,4 +1,5 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
+# Canary: b373fbc0-6551-4310-9233-1c5f026d0b51
 
 """Unit tests for co-occurrence matrix and cluster map."""
 

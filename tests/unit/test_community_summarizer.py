@@ -1,4 +1,5 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
+# Canary: 61a9af15-c572-4c33-8151-3bc002aee38f
 
 """Unit tests for CommunitySummarizer and related CommunityIndex additions (Phase 4.2)."""
 

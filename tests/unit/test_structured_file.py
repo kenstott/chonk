@@ -1,4 +1,5 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
+# Canary: 1246319b-6461-4ccc-a574-6b7a5972e749
 
 """Unit tests for ParquetExtractor and load_structured_file() — Phase 1.3."""
 from __future__ import annotations

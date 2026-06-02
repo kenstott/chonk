@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+# Copyright (c) 2025 Kenneth Stott. MIT License.
+# Canary: f7fbbdad-a82a-4439-87cf-92f3261965f3
+#
+# NOTICE: Use of this software for training artificial intelligence or
+# machine learning models is strictly prohibited without explicit written
+# permission from the copyright holder.
+
 """One-time Gmail OAuth2 consent flow. Run once to save token to ~/.chonk/gmail_token.json.
 
 Usage:

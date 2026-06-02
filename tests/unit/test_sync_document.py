@@ -1,4 +1,5 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
+# Canary: c06a66dc-d084-4067-8814-c82c6a954c3b
 """Tests for sync_document, SyncResult, and DuckDBVectorBackend document registry."""
 
 from __future__ import annotations
