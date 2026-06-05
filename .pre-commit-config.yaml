@@ -1,0 +1,26 @@
+# Pre-commit gates for chonk. Mirrors the CI checks so failures surface locally
+# before a commit lands. Install with: uv run pre-commit install
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.16
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.9.4
+    hooks:
+      - id: bandit
+        args: ["-r", "chonk", "-ll", "-s", "B608"]
+        pass_filenames: false
+
+  - repo: local
+    hooks:
+      - id: pyright
+        name: pyright
+        language: system
+        entry: uv run pyright
+        args: ["chonk"]
+        pass_filenames: false
+        types: [python]

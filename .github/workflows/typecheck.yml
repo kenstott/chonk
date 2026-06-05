@@ -1,0 +1,31 @@
+name: Type Check
+
+# Runs pyright (standard mode) over the chonk package on every push/PR.
+# Config lives in pyproject.toml [tool.pyright]; this gate fails the build on
+# any type error so untyped or mistyped code cannot land on main.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pyright:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      # Install the project with all extras so pyright resolves the optional
+      # backends (duckdb, numpy, spacy, …) referenced across the package.
+      - name: Sync environment
+        run: uv sync --all-extras --group dev
+
+      - name: Run pyright
+        run: uv run pyright

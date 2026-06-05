@@ -71,6 +71,7 @@ dev = [
     "pytest-docker>=3.2.5",
     "respx>=0.23.1",
     "langsmith>=0.8.9",
+    "pyright>=1.1.390",
 ]
 
 [tool.pytest.ini_options]
@@ -101,4 +102,14 @@ select = ["E", "F", "I", "B", "UP"]
 
 [tool.black]
 line-length = 100
+
+[tool.pyright]
+pythonVersion = "3.11"
+typeCheckingMode = "standard"
+include = ["chonk"]
+exclude = ["**/__pycache__", "demo", "work", "tests"]
+# Optional backends (duckdb, numpy, spacy, igraph, …) ship no type stubs; their
+# absence is expected and not actionable in this repo's type gate.
+reportMissingImports = "warning"
+reportMissingModuleSource = "none"
 target-version = ["py311"]
