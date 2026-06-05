@@ -23,8 +23,8 @@ from __future__ import annotations
 
 import imaplib
 import logging
-from typing import Iterator
-from urllib.parse import urlparse, parse_qs, unquote
+from collections.abc import Iterator
+from urllib.parse import parse_qs, unquote, urlparse
 
 from ._protocol import FetchResult
 
@@ -96,11 +96,13 @@ class ImapTransport:
 
             for msg_id in msg_ids:
                 try:
-                    typ2, msg_data = conn.fetch(msg_id, "(RFC822)")
+                    # imaplib accepts bytes message IDs at runtime (stub types it str).
+                    typ2, msg_data = conn.fetch(msg_id, "(RFC822)")  # type: ignore[arg-type]
                     if typ2 != "OK" or not msg_data or msg_data[0] is None:
                         continue
                     raw: bytes = msg_data[0][1]  # type: ignore[index]
-                    source = f"imap://{host}/{mailbox}/{msg_id.decode()}"
+                    mid = msg_id.decode() if isinstance(msg_id, bytes) else msg_id
+                    source = f"imap://{host}/{mailbox}/{mid}"
                     yield FetchResult(
                         data=raw,
                         detected_mime="message/rfc822",

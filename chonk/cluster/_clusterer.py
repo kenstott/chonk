@@ -18,9 +18,6 @@ Singleton entities (no co-occurrence neighbours) get their own cluster.
 
 from __future__ import annotations
 
-import uuid
-from collections import defaultdict
-
 
 def cluster_entities(
     cooccurrence: dict[tuple[str, str], float],
@@ -95,7 +92,7 @@ def _agglomerative(
         dist[idx[b], idx[a]] = d
 
     model = AgglomerativeClustering(
-        n_clusters=None,
+        n_clusters=None,  # type: ignore[arg-type]  # sklearn stub incorrect: None valid when distance_threshold is set
         metric="precomputed",
         linkage="average",
         distance_threshold=distance_threshold,

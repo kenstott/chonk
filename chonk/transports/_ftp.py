@@ -30,6 +30,8 @@ class FtpTransport:
         username = kwargs.get("username") or parsed.username or "anonymous"
         password = kwargs.get("password") or parsed.password or ""
 
+        if host is None:
+            raise ValueError(f"FtpTransport: could not parse host from URI: {uri!r}")
         ftp = FTP()
         ftp.connect(host, port)
         ftp.login(username, password)

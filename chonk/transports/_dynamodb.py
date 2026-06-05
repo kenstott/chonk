@@ -48,11 +48,11 @@ from decimal import Decimal
 from typing import Any
 
 from ._protocol import FetchResult
-from ._schema_infer import collect_field_paths, infer_schema_text
+from ._schema_infer import DEFAULT_SCHEMA_SAMPLE_SIZE, collect_field_paths, infer_schema_text
 
 _log = logging.getLogger(__name__)
 
-_SCHEMA_SAMPLE_SIZE = 500
+_SCHEMA_SAMPLE_SIZE = DEFAULT_SCHEMA_SAMPLE_SIZE
 
 
 def _default(obj: Any) -> Any:
@@ -147,7 +147,7 @@ class DynamoDBCrawler:
             kwargs["endpoint_url"] = self._endpoint
 
         ddb = boto3.resource("dynamodb", **kwargs)
-        table = ddb.Table(self._table)
+        table = ddb.Table(self._table)  # type: ignore[attr-defined]  # boto3 stub gap
 
         scan_kwargs: dict = {"Limit": self._page_size}
         if self._filter_expr is not None:

@@ -245,6 +245,8 @@ class SharePointCrawler:
         result = app.acquire_token_for_client(
             scopes=["https://graph.microsoft.com/.default"]
         )
+        if result is None:
+            raise RuntimeError("SharePointCrawler: MSAL acquire_token_for_client returned None")
         if "access_token" not in result:
             raise RuntimeError(f"SharePointCrawler: MSAL auth failed: {result.get('error_description')}")
         session = requests_mod.Session()

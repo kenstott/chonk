@@ -238,7 +238,9 @@ class GmailCrawler:
                 "# required for GmailCrawler"
             )
 
-        creds: Credentials | None = None
+        from google.auth.credentials import Credentials as _BaseCredentials
+
+        creds: _BaseCredentials | None = None
         if self._token_path.exists():
             creds = Credentials.from_authorized_user_file(str(self._token_path), _SCOPES)
 
@@ -258,6 +260,8 @@ class GmailCrawler:
                 flow = InstalledAppFlow.from_client_config(client_config, _SCOPES)
                 creds = flow.run_local_server(port=self._redirect_port)
 
+            if creds is None:
+                raise RuntimeError("GmailCrawler: OAuth flow produced no credentials")
             self._token_path.parent.mkdir(parents=True, exist_ok=True)
             self._token_path.write_text(creds.to_json())
             _log.info("GmailCrawler: token saved to %s", self._token_path)

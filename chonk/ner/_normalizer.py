@@ -62,7 +62,7 @@ def _singularize(word: str) -> str:
     try:
         import inflect as _inflect_mod
         _engine = _get_engine()
-        result = _engine.singular_noun(word)
+        result = _engine.singular_noun(word)  # type: ignore[arg-type]  # inflect stub uses Word, runtime accepts str
         if result is False:
             return word
         # Preserve original casing style on the singular form
@@ -173,7 +173,7 @@ class EntityNormalizer:
         last = tokens[-1]
         if not _is_acronym(last) and last.lower() not in self._exceptions:
             try:
-                result = _get_engine().singular_noun(last)
+                result = _get_engine().singular_noun(last)  # type: ignore[arg-type]  # inflect stub uses Word, runtime accepts str
                 if result is not False:
                     tokens[-1] = result.capitalize() if last[0].isupper() and not _is_acronym(last) else result
             except ImportError:

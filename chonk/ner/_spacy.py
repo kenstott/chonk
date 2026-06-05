@@ -54,8 +54,9 @@ class SpacyMatcher:
 
         self._nlp = _spacy.load(model)
         # Default to all standard labels; accept None as alias for same.
+        # isinstance narrows SpacyLabel from str in union; .value gives e.g. "ORG" not "SpacyLabel.ORG"
         self._types: set[str] = {
-            t.value if hasattr(t, "value") else str(t)
+            t.value if isinstance(t, SpacyLabel) else t
             for t in (entity_types if entity_types is not None else ALL_SPACY_LABELS)
         }
         self._strip_numeric = strip_numeric

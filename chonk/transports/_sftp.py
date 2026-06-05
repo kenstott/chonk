@@ -16,8 +16,10 @@ from ._protocol import FetchResult
 
 try:
     import paramiko as _paramiko
+
     _PARAMIKO_AVAILABLE = True
 except ImportError:
+    _paramiko = None  # type: ignore[assignment]
     _PARAMIKO_AVAILABLE = False
 
 
@@ -36,6 +38,7 @@ class SftpTransport:
         port = kwargs.get("port") or parsed.port or 22
         remote_path = parsed.path
 
+        assert _paramiko is not None  # guarded by _PARAMIKO_AVAILABLE check above
         client = _paramiko.SSHClient()
         client.set_missing_host_key_policy(_paramiko.AutoAddPolicy())
 

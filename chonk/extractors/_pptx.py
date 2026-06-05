@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 from io import BytesIO
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from chonk.models import DocumentChunk
@@ -20,6 +20,7 @@ try:
 
     _PPTX_AVAILABLE = True
 except ImportError:
+    _pptx_module = None  # type: ignore[assignment]
     _PPTX_AVAILABLE = False
 
 
@@ -31,8 +32,9 @@ def _extract_pptx_content(prs) -> str:
         slide_text = []
 
         for shape in slide.shapes:
-            if hasattr(shape, "text") and shape.text.strip():
-                slide_text.append(shape.text.strip())
+            shape_text_val: Any = getattr(shape, "text", None)
+            if shape_text_val and str(shape_text_val).strip():
+                slide_text.append(str(shape_text_val).strip())
 
             if shape.has_table:
                 table_rows = []
@@ -57,6 +59,7 @@ class PptxExtractor:
     def extract(self, data: bytes, source_path: str | None = None) -> str:
         if not _PPTX_AVAILABLE:
             raise ImportError("pip install chonk[pptx]")
+        assert _pptx_module is not None
 
         prs = _pptx_module.Presentation(BytesIO(data))
         return _extract_pptx_content(prs)
@@ -69,6 +72,7 @@ class PptxExtractor:
     ) -> list[DocumentChunk]:
         if not _PPTX_AVAILABLE:
             raise ImportError("pip install chonk[pptx]")
+        assert _pptx_module is not None
 
         prs = _pptx_module.Presentation(BytesIO(data))
 
@@ -77,8 +81,9 @@ class PptxExtractor:
         for slide_num, slide in enumerate(prs.slides, 1):
             for shape_idx, shape in enumerate(slide.shapes):
                 shape_label = shape.name if shape.name else str(shape_idx)
-                if hasattr(shape, "text") and shape.text.strip():
-                    slide_shapes.append((slide_num, shape_label, shape.text.strip()))
+                shape_text_val: Any = getattr(shape, "text", None)
+                if shape_text_val and str(shape_text_val).strip():
+                    slide_shapes.append((slide_num, shape_label, str(shape_text_val).strip()))
 
         for chunk in chunks:
             content = chunk.content

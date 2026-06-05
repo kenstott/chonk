@@ -42,6 +42,7 @@ def _decode_header_value(value: str | None) -> str:
     if not value:
         return ""
     from email.header import decode_header as _dh
+
     parts = []
     for raw, charset in _dh(value):
         if isinstance(raw, bytes):
@@ -62,21 +63,23 @@ def _get_body(msg: Message) -> str:
                 if "attachment" in part.get("Content-Disposition", ""):
                     continue
                 payload = part.get_payload(decode=True)
-                if not payload:
+                if not payload or not isinstance(payload, bytes):
                     continue
                 charset = part.get_content_charset() or "utf-8"
                 text = payload.decode(charset, errors="replace")
                 if preferred_type == "text/html":
                     from ._html import HtmlExtractor
+
                     return HtmlExtractor().extract(payload)
                 return text
     else:
         payload = msg.get_payload(decode=True)
-        if payload:
+        if payload and isinstance(payload, bytes):
             charset = msg.get_content_charset() or "utf-8"
             text = payload.decode(charset, errors="replace")
             if msg.get_content_type() == "text/html":
                 from ._html import HtmlExtractor
+
                 return HtmlExtractor().extract(payload)
             return text
     return ""
@@ -84,8 +87,8 @@ def _get_body(msg: Message) -> str:
 
 def _extract_attachments(msg: Message) -> list[str]:
     """Return extracted text blocks from each attachment."""
-    from ._mime import detect_type_from_source
     from . import detect_extractor
+    from ._mime import detect_type_from_source
 
     blocks: list[str] = []
     for part in msg.walk():
@@ -96,7 +99,7 @@ def _extract_attachments(msg: Message) -> list[str]:
         if not filename and "attachment" not in disposition:
             continue
         payload = part.get_payload(decode=True)
-        if not payload:
+        if not payload or not isinstance(payload, bytes):
             continue
         filename = filename or "attachment"
         content_type = part.get_content_type()
@@ -153,7 +156,6 @@ class EmailExtractor:
         parts.extend(attachment_blocks)
 
         return "\n\n".join(parts)
-
 
     def annotate(self, chunks: list, data: bytes, source_path: str | None = None) -> list:
         return chunks

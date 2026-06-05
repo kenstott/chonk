@@ -16,10 +16,11 @@ if TYPE_CHECKING:
     from chonk.models import DocumentChunk
 
 try:
-    import pypdf
+    import pypdf as pypdf
 
     _PYPDF_AVAILABLE = True
 except ImportError:
+    pypdf = None  # type: ignore[assignment]
     _PYPDF_AVAILABLE = False
 
 

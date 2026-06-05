@@ -9,13 +9,18 @@
 
 Uses SQLAlchemy Core (not ORM) for compatibility with any SQLAlchemy-supported database.
 """
+
 from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING
 
-try:
+if TYPE_CHECKING:
     from sqlalchemy import create_engine, text
+
+try:
+    from sqlalchemy import create_engine, text  # noqa: F811
+
     _SA_AVAILABLE = True
 except ImportError:
     _SA_AVAILABLE = False
@@ -23,8 +28,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 _MISSING_SA_MSG = (
-    "sqlalchemy is required for relational storage. "
-    "Install it with: pip install chonk[storage]"
+    "sqlalchemy is required for relational storage. Install it with: pip install chonk[storage]"
 )
 
 _ENTITIES_DDL = """
@@ -52,8 +56,8 @@ class RelationalStore:
 
     def __init__(self, connection_string: str):
         """Args:
-            connection_string: Any SQLAlchemy connection string,
-                e.g. 'duckdb:///index.duckdb' or 'sqlite:///index.db'.
+        connection_string: Any SQLAlchemy connection string,
+            e.g. 'duckdb:///index.duckdb' or 'sqlite:///index.db'.
         """
         if not _SA_AVAILABLE:
             raise ImportError(_MISSING_SA_MSG)

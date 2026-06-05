@@ -135,7 +135,7 @@ class DatabaseSchemaCrawler:
             raise KeyError(f"DatabaseSchemaCrawler: unknown URI {uri!r} — call crawl() first")
         return self._cache[uri]
 
-    def crawl(self, _uri: str = "", **__) -> list[str]:
+    def crawl(self, uri: str = "", **__) -> list[str]:  # noqa: ARG002  # uri ignored; connection set in constructor
         """Connect to the database and index all schema objects.
 
         Args:

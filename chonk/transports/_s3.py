@@ -18,6 +18,7 @@ try:
 
     _BOTO3_AVAILABLE = True
 except ImportError:
+    _boto3 = None  # type: ignore[assignment]
     _BOTO3_AVAILABLE = False
 
 
@@ -48,6 +49,7 @@ class S3Transport:
             if region:
                 session_kwargs["region_name"] = region
 
+        assert _boto3 is not None  # guarded by _BOTO3_AVAILABLE check above
         session = _boto3.Session(**session_kwargs)
         client_kwargs: dict = {}
         endpoint = kwargs.get("endpoint_url") or os.environ.get("AWS_ENDPOINT_OVERRIDE")

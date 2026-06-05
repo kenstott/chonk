@@ -9,26 +9,34 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from ._protocol import FetchResult
+
+if TYPE_CHECKING:
+    import requests
 
 try:
     import requests as _requests
+
     _REQUESTS_AVAILABLE = True
 except ImportError:
+    _requests = None  # type: ignore[assignment]
     _REQUESTS_AVAILABLE = False
 
 _USER_AGENT = "chonk/0.1"
 
 # Module-level session for cookie persistence across requests
-_http_session: "_requests.Session | None" = None
+_http_session: requests.Session | None = None
 
 
-def _get_http_session() -> "_requests.Session":
+def _get_http_session() -> requests.Session:
     """Get or create a module-level requests session with cookie persistence."""
     if not _REQUESTS_AVAILABLE:
         raise ImportError("pip install chonk[http]")
 
     global _http_session
+    assert _requests is not None  # guarded by _REQUESTS_AVAILABLE check above
     if _http_session is None:
         _http_session = _requests.Session()
         _http_session.headers["User-Agent"] = _USER_AGENT

@@ -8,7 +8,7 @@
 """VectorBackend protocol — implemented by DuckDBVectorBackend and PgVectorBackend."""
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 
 @runtime_checkable
@@ -23,6 +23,13 @@ class VectorBackend(Protocol):
     ``chunk_id`` is the idempotency key — ``add_chunks`` must silently ignore
     duplicate chunk_ids (``ON CONFLICT DO NOTHING`` semantics).
     """
+
+    # Raw backend connection handle and FTS-dirty flag. The graph/search/ingest
+    # layers reach into these for DuckDB-specific maintenance; they are part of
+    # the implemented contract even though they are private by name. Typed as Any
+    # because the underlying handle (a DuckDB connection) ships no type stubs.
+    _conn: Any
+    _fts_dirty: bool
 
     # ------------------------------------------------------------------
     # Ingestion
