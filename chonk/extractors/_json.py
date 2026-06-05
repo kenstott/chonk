@@ -131,8 +131,8 @@ class JsonExtractor:
 
         try:
             obj = json.loads(text)
-        except json.JSONDecodeError:
-            return text
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"JSON parse error in {source_path or '<unknown>'}: {exc}") from exc
 
         renderer = self._find_renderer(source_path, obj)
         if renderer:

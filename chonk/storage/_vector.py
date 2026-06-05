@@ -91,6 +91,7 @@ class DuckDBVectorBackend:
         self._db = db
         self._embedding_dim = embedding_dim
         self._fts_dirty = True
+        self._global_attached: bool = False
         self._np_embeddings = None   # preloaded (n, dim) float32
         self._np_chunk_rows = None   # preloaded metadata rows
         self._init_schema()
@@ -108,6 +109,7 @@ class DuckDBVectorBackend:
         if not rows:
             return
         self._np_chunk_rows = rows
+        assert _np is not None, "numpy required for preload_embeddings"
         self._np_embeddings = _np.array(
             [r[13] for r in rows], dtype="float32"
         )
@@ -127,28 +129,35 @@ class DuckDBVectorBackend:
     def _init_schema(self) -> None:
         from ._schema import VSS_INDEX_DDL, get_ddl
 
-        # Load extensions (best-effort — may already be loaded)
+        # Load extensions — INSTALL may fail when already installed or on read-only
+        # filesystems; attempt LOAD regardless. If LOAD fails, vss/fts is unavailable
+        # and callers must know — log WARNING and re-raise.
         for ext in ("vss", "fts"):
             try:
                 self._conn.execute(f"INSTALL {ext}").fetchall()
+            except Exception as e:
+                logger.debug(f"Extension {ext} install skipped (may already be installed): {e}")
+            try:
                 self._conn.execute(f"LOAD {ext}").fetchall()
             except Exception as e:
-                logger.debug(f"Extension {ext} load skipped: {e}")
+                logger.warning(f"Extension {ext} LOAD failed — {ext} features unavailable: {e}")
+                raise
 
         for ddl in get_ddl(self._embedding_dim):
-            try:
-                self._conn.execute(ddl).fetchall()
-            except Exception as e:
-                logger.debug(f"DDL skipped: {e}")
+            # All DDL uses IF NOT EXISTS — failure is not idempotent; re-raise.
+            self._conn.execute(ddl).fetchall()
 
-        # Always drop and recreate HNSW index to ensure cosine metric
+        # Always drop and recreate HNSW index to ensure cosine metric.
+        # In file-backed databases, HNSW requires hnsw_enable_experimental_persistence;
+        # log at WARNING (not silent) but do not raise — vector search falls back to
+        # sequential scan, which is functionally correct though slower.
         from ._schema import VSS_DROP_INDEX_DDL
         try:
             self._conn.execute(VSS_DROP_INDEX_DDL).fetchall()
             self._conn.execute(VSS_INDEX_DDL).fetchall()
             logger.debug("VSS HNSW cosine index ready")
         except Exception as e:
-            logger.debug(f"VSS index creation skipped: {e}")
+            logger.warning(f"VSS HNSW index creation skipped (vector search uses sequential scan): {e}")
 
     # ------------------------------------------------------------------
     # Chunk ID
@@ -260,12 +269,14 @@ class DuckDBVectorBackend:
             ).fetchall()
             self._fts_dirty = False
         except Exception as e:
-            logger.debug(f"FTS index rebuild failed (vector-only mode): {e}")
-            self._fts_dirty = False
+            # Keep _fts_dirty=True so the next call retries.
+            # Attempt ROLLBACK but do not suppress the original error.
+            logger.warning(f"FTS index rebuild failed: {e}")
             try:
-                self._conn.execute("ROLLBACK")
+                self._conn.execute("ROLLBACK").fetchall()
             except Exception:
                 pass
+            raise
 
     def _bm25_search(
         self,
@@ -305,8 +316,8 @@ class DuckDBVectorBackend:
                 results.append((chunk_id, float(score), chunk))
             return results
         except Exception as e:
-            logger.debug(f"BM25 search failed (vector-only mode): {e}")
-            return []
+            logger.warning(f"BM25 search failed: {e}")
+            raise
 
     @staticmethod
     def _rrf_merge(
@@ -376,6 +387,7 @@ class DuckDBVectorBackend:
         fetch_limit = limit * 3 if query_text else limit
 
         if self._np_embeddings is not None and _np is not None:
+            assert self._np_chunk_rows is not None  # set together with _np_embeddings in preload_embeddings
             # Fast numpy path: single matmul, no DuckDB round-trip
             sims = self._np_embeddings @ query_vec  # (n,)
             ns_set = set(namespaces) if namespaces is not None else None

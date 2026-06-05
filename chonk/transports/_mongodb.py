@@ -51,11 +51,11 @@ import logging
 from typing import Any
 
 from ._protocol import FetchResult
-from ._schema_infer import collect_field_paths, infer_schema_text
+from ._schema_infer import DEFAULT_SCHEMA_SAMPLE_SIZE, collect_field_paths, infer_schema_text
 
 _log = logging.getLogger(__name__)
 
-_SCHEMA_SAMPLE_SIZE = 500
+_SCHEMA_SAMPLE_SIZE = DEFAULT_SCHEMA_SAMPLE_SIZE
 
 
 def _to_json(doc: dict) -> bytes:

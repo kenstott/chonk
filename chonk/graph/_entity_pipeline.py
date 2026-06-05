@@ -15,8 +15,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
+import duckdb  # type: ignore[import-untyped]  # optional dep; stubs not published
+
 from ._extractor import SVOExtractor
 from ._index import RelationshipIndex
+
+# Minimum number of entities a chunk must have to be eligible for extraction
+_MIN_ENTITY_CO_OCCURRENCE = 2
 
 
 @dataclass
@@ -126,7 +131,8 @@ class EntityGraphPipeline:
                 if n > 0:
                     _prog(PHASE_LOAD, 1, 1)
                     return stats
-            except Exception:
+            except duckdb.CatalogException:
+                # svo_triples table not yet created — proceed with build
                 pass
 
         rows = conn.execute(
@@ -231,6 +237,7 @@ class EntityGraphPipeline:
 
         from ..models import DocumentChunk
 
+        assert self._embed_model is not None, "_embed_entities called without embed_model"
         conn = store._db.conn
         entity_rows = conn.execute("""
             SELECT e.id, e.name,
@@ -273,11 +280,12 @@ class EntityGraphPipeline:
             ))
 
         prog(PHASE_EMBED_ENTITIES, 0, len(chunks))
-        vecs = self._embed_model.encode(
+        raw = self._embed_model.encode(
             texts, normalize_embeddings=True, show_progress_bar=False, batch_size=512
-        ).astype("float32")
+        )
+        vecs = np.array(raw, dtype="float32")  # encode() typed as object; cast via np.array
 
-        db.execute("DELETE FROM embeddings WHERE chunk_type = 'entity'")
-        store.add_document(chunks, np.array(vecs))
+        conn.execute("DELETE FROM embeddings WHERE chunk_type = 'entity'")
+        store.add_document(chunks, vecs)
         prog(PHASE_EMBED_ENTITIES, len(chunks), len(chunks))
         return len(chunks)

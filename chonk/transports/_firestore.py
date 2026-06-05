@@ -44,11 +44,11 @@ import logging
 from typing import Any
 
 from ._protocol import FetchResult
-from ._schema_infer import collect_field_paths, infer_schema_text
+from ._schema_infer import DEFAULT_SCHEMA_SAMPLE_SIZE, collect_field_paths, infer_schema_text
 
 _log = logging.getLogger(__name__)
 
-_SCHEMA_SAMPLE_SIZE = 500
+_SCHEMA_SAMPLE_SIZE = DEFAULT_SCHEMA_SAMPLE_SIZE
 
 
 def _default(obj: Any) -> Any:
@@ -57,7 +57,7 @@ def _default(obj: Any) -> Any:
         return obj.isoformat()
     try:
         return str(obj)
-    except Exception:
+    except TypeError:
         return repr(obj)
 
 
@@ -114,7 +114,9 @@ class FirestoreCrawler:
             by one schema URI per collection.
         """
         try:
-            from google.cloud import firestore as _fs
+            from google.cloud import (
+                firestore as _fs,  # type: ignore[attr-defined]  # google-cloud-firestore stub gap
+            )
         except ImportError:
             raise ImportError(
                 "google-cloud-firestore is required for FirestoreCrawler. "

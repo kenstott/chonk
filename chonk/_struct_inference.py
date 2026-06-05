@@ -6,14 +6,15 @@
 # permission from the copyright holder.
 
 """Schema inference helpers for load_structured_file()."""
+
 from __future__ import annotations
 
 from .schema import ColumnMeta, TableMeta
 
-
 # ---------------------------------------------------------------------------
 # Type normalisation helpers
 # ---------------------------------------------------------------------------
+
 
 def _pandas_dtype_to_str(dtype) -> str:
     name = str(dtype)
@@ -42,6 +43,7 @@ def _python_type_to_str(value) -> str:
 
 def _arrow_type_to_str(pa_type) -> str:
     import pyarrow as pa
+
     if pa.types.is_integer(pa_type):
         return "INTEGER"
     if pa.types.is_floating(pa_type):
@@ -65,18 +67,19 @@ def _arrow_type_to_str(pa_type) -> str:
 # Per-format inference
 # ---------------------------------------------------------------------------
 
+
 def infer_csv(data: bytes, name: str) -> TableMeta:
     try:
-        import pandas as pd
         import io
+
+        import pandas as pd
     except ImportError as exc:
         raise ImportError("pandas is required for CSV schema inference.") from exc
 
     df = pd.read_csv(io.BytesIO(data), nrows=100)
     row_count = sum(1 for _ in io.BytesIO(data)) - 1  # subtract header
     columns = [
-        ColumnMeta(name=col, data_type=_pandas_dtype_to_str(df[col].dtype))
-        for col in df.columns
+        ColumnMeta(name=col, data_type=_pandas_dtype_to_str(df[col].dtype)) for col in df.columns
     ]
     return TableMeta(name=name, columns=columns, row_count=max(row_count, 0))
 
@@ -86,8 +89,8 @@ def infer_json(data: bytes, name: str) -> TableMeta:
 
     try:
         obj = json.loads(data)
-    except json.JSONDecodeError:
-        return TableMeta(name=name)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Cannot parse JSON for {name!r}: {exc}") from exc
 
     if isinstance(obj, list):
         key_types: dict[str, str] = {}
@@ -101,8 +104,7 @@ def infer_json(data: bytes, name: str) -> TableMeta:
 
     if isinstance(obj, dict):
         columns = [
-            ColumnMeta(name=k, data_type=_python_type_to_str(v))
-            for k, v in list(obj.items())[:100]
+            ColumnMeta(name=k, data_type=_python_type_to_str(v)) for k, v in list(obj.items())[:100]
         ]
         return TableMeta(name=name, columns=columns, row_count=1)
 
@@ -110,12 +112,13 @@ def infer_json(data: bytes, name: str) -> TableMeta:
 
 
 def infer_jsonl(data: bytes, name: str) -> TableMeta:
-    import json
     import io
+    import json
 
     key_types: dict[str, str] = {}
     count = 0
     total = 0
+    parse_failures = 0
     for raw in io.BytesIO(data):
         line = raw.strip()
         if not line:
@@ -130,7 +133,10 @@ def infer_jsonl(data: bytes, name: str) -> TableMeta:
                             key_types[k] = _python_type_to_str(v)
                 count += 1
             except json.JSONDecodeError:
-                pass
+                parse_failures += 1
+
+    if total > 0 and count == 0:
+        raise ValueError(f"All {parse_failures} non-empty lines in {name!r} failed JSON parsing")
 
     columns = [ColumnMeta(name=k, data_type=v) for k, v in key_types.items()]
     return TableMeta(name=name, columns=columns, row_count=total)
@@ -164,7 +170,6 @@ def infer_parquet(data: bytes, ext: str, name: str) -> TableMeta:
         row_count = pf.metadata.num_rows
 
     columns = [
-        ColumnMeta(name=field.name, data_type=_arrow_type_to_str(field.type))
-        for field in schema
+        ColumnMeta(name=field.name, data_type=_arrow_type_to_str(field.type)) for field in schema
     ]
     return TableMeta(name=name, columns=columns, row_count=row_count)

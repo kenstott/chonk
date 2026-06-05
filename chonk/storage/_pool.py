@@ -14,12 +14,11 @@ import logging
 import os
 import threading
 import weakref
-from contextlib import contextmanager
 from pathlib import Path
-from typing import Optional, Generator
 
 try:
     import duckdb
+
     _DUCKDB_AVAILABLE = True
 except ImportError:
     _DUCKDB_AVAILABLE = False
@@ -35,8 +34,8 @@ def _close_all_pools() -> None:
     for pool in list(_all_pools):
         try:
             pool.close()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Error closing pool during atexit: {e}")
 
 
 atexit.register(_close_all_pools)
@@ -59,13 +58,16 @@ def _try_kill_orphan_lock_holder(error_msg: str) -> None:
         return
 
     try:
-        with open(f"/proc/{pid}/cmdline", "r") as f:
+        with open(f"/proc/{pid}/cmdline") as f:
             cmdline = f.read()
     except FileNotFoundError:
         import subprocess
+
         result = subprocess.run(
             ["ps", "-p", str(pid), "-o", "command="],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         cmdline = result.stdout.strip()
 
@@ -74,6 +76,7 @@ def _try_kill_orphan_lock_holder(error_msg: str) -> None:
         try:
             os.kill(pid, signal.SIGKILL)
             import time
+
             time.sleep(0.5)
         except OSError:
             pass
@@ -174,14 +177,14 @@ class ThreadLocalDuckDB:
         self,
         db_path: str | Path,
         read_only: bool = False,
-        config: Optional[dict] = None,
-        init_sql: Optional[list[str]] = None,
+        config: dict | None = None,
+        init_sql: list[str] | None = None,
     ):
         if not _DUCKDB_AVAILABLE:
             raise ImportError(
-                "duckdb is required for storage. "
-                "Install it with: pip install chonk[storage]"
+                "duckdb is required for storage. Install it with: pip install chonk[storage]"
             )
+        assert duckdb is not None  # guaranteed by _DUCKDB_AVAILABLE check above
         self._db_path = str(db_path)
         self._read_only = read_only
         self._config = config or {}
@@ -191,6 +194,7 @@ class ThreadLocalDuckDB:
         self._init_lock = threading.Lock()
 
         import time
+
         last_err = None
         for attempt in range(5):
             try:
@@ -222,7 +226,7 @@ class ThreadLocalDuckDB:
                 logger.debug(f"Init SQL failed (may be expected): {e}")
 
     @property
-    def conn(self) -> "_LockedConnection":
+    def conn(self) -> _LockedConnection:
         """Get the shared connection wrapped in a locking proxy."""
         if self._closed:
             raise RuntimeError("ThreadLocalDuckDB has been closed")
@@ -242,7 +246,7 @@ class ThreadLocalDuckDB:
         """Alias for close() — closes the shared connection."""
         self.close()
 
-    def __enter__(self) -> "ThreadLocalDuckDB":
+    def __enter__(self) -> ThreadLocalDuckDB:
         return self
 
     def __exit__(self, *_) -> None:

@@ -9,11 +9,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ._pool import ThreadLocalDuckDB
 from ._protocol import VectorBackend  # noqa: F401 — runtime isinstance check
 from ._relational import RelationalStore
 from ._vector import DuckDBVectorBackend
+
+if TYPE_CHECKING:
+    from ..graph._context_graph import ContextEdge, ContextGraphStats
 
 GLOBAL_NAMESPACE = "global"
 
@@ -56,7 +60,7 @@ class Store:
         if dsn is not None:
             from ._pg import PgVectorBackend
             self._db: ThreadLocalDuckDB | None = None
-            self.vector: VectorBackend = PgVectorBackend(dsn, embedding_dim=embedding_dim)
+            self.vector: VectorBackend = PgVectorBackend(dsn, embedding_dim=embedding_dim)  # type: ignore[assignment]  # property satisfies bool protocol at runtime
             assert isinstance(self.vector, VectorBackend)
             self.relational = None  # type: ignore
             return
@@ -74,13 +78,26 @@ class Store:
         try:
             self.relational = RelationalStore(relational_url)
             self.relational.init_schema()
-        except Exception as e:
-            # duckdb-engine may not be installed; relational features are optional.
+        except ImportError as e:
+            # duckdb-engine or sqlalchemy is not installed; relational features are optional.
             # Install with: pip install duckdb-engine
             import logging
             logging.getLogger(__name__).warning(
-                f"RelationalStore init failed (entity features unavailable): {e}. "
+                f"RelationalStore unavailable (duckdb-engine not installed): {e}. "
                 "Install duckdb-engine for full SQLAlchemy+DuckDB support."
+            )
+            self.relational = None  # type: ignore
+        except Exception as e:
+            # DuckDB allows only one connection per file with the same config; duckdb_engine
+            # opens a second connection which may fail with ConnectionException.  This is an
+            # expected RelationalStore limitation, not a data-loss failure.  Any other error
+            # is unexpected and must surface.
+            if "different configuration" not in str(e):
+                raise
+            import logging
+            logging.getLogger(__name__).warning(
+                f"RelationalStore unavailable (DuckDB connection conflict — relational "
+                f"features disabled): {e}"
             )
             self.relational = None  # type: ignore
 
@@ -362,21 +379,24 @@ class Store:
         ]
 
         if chunk_ids:
+            import logging as _logging
             placeholders = ", ".join("?" * len(chunk_ids))
             try:
                 conn.execute(
                     f"DELETE FROM chunk_entities WHERE chunk_id IN ({placeholders})",
                     chunk_ids,
                 ).fetchall()
-            except Exception:
-                pass
+            except Exception as e:
+                _logging.getLogger(__name__).warning(f"DELETE chunk_entities failed: {e}")
+                raise
             try:
                 conn.execute(
                     f"DELETE FROM svo_triples WHERE chunk_id IN ({placeholders})",
                     chunk_ids,
                 ).fetchall()
-            except Exception:
-                pass
+            except Exception as e:
+                _logging.getLogger(__name__).warning(f"DELETE svo_triples failed: {e}")
+                raise
 
         conn.execute(
             "DELETE FROM embeddings WHERE domain_id = ?",
@@ -428,7 +448,7 @@ class Store:
                     if mtime > last_crawled.timestamp():
                         return False
                 except OSError:
-                    pass
+                    return False
 
         chunk_count = conn.execute(
             "SELECT COUNT(*) FROM embeddings WHERE namespace = ?",
@@ -692,6 +712,7 @@ class Store:
                 FROM namespaces
             """)
 
+        assert isinstance(self.vector, DuckDBVectorBackend)  # guaranteed by _db is not None guard above
         self.vector._global_attached = True
 
     def detach_global(self) -> None:
@@ -701,6 +722,7 @@ class Store:
         """
         if self._db is None:
             raise NotImplementedError("detach_global is not supported for the PG backend.")
+        assert isinstance(self.vector, DuckDBVectorBackend)  # guaranteed by _db is not None guard above
         conn = self.vector._conn
         for view in ("all_embeddings", "all_chunk_entities", "all_svo_triples",
                      "all_domains", "all_sources", "all_namespaces"):

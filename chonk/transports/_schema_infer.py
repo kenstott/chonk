@@ -8,6 +8,8 @@
 """Shared schema inference utilities for NoSQL crawlers."""
 from __future__ import annotations
 
+DEFAULT_SCHEMA_SAMPLE_SIZE = 500
+
 from collections import defaultdict
 from typing import Any
 

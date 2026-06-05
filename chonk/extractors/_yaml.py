@@ -29,8 +29,7 @@ class YamlExtractor:
             import yaml
         except ImportError as exc:
             raise ImportError(
-                "pyyaml is required for YAML extraction. "
-                "Install it with: pip install pyyaml"
+                "pyyaml is required for YAML extraction. Install it with: pip install pyyaml"
             ) from exc
 
         try:
@@ -40,8 +39,8 @@ class YamlExtractor:
 
         try:
             docs = list(yaml.safe_load_all(text))
-        except yaml.YAMLError:
-            return text
+        except yaml.YAMLError as exc:
+            raise ValueError(f"YAML parse error in {source_path or '<unknown>'}: {exc}") from exc
 
         doc_blocks: list[str] = []
         for doc in docs:

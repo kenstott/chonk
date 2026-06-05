@@ -129,6 +129,7 @@ def build_namespace_async(
                     _on_progress("ner", 1, 1)
                 except Exception as exc:
                     _on_error("ner", exc)
+                    raise
 
             # ── Phase: community ──────────────────────────────────────────────
             if run_community:
@@ -146,6 +147,7 @@ def build_namespace_async(
                     _on_progress("community", 1, 1)
                 except Exception as exc:
                     _on_error("community", exc)
+                    raise
 
             # ── Phase: FTS ────────────────────────────────────────────────────
             try:
@@ -154,6 +156,7 @@ def build_namespace_async(
                 _on_progress("fts", 1, 1)
             except Exception as exc:
                 _on_error("fts", exc)
+                raise
 
             _on_complete(total_chunks)
 

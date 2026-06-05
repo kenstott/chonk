@@ -287,10 +287,12 @@ class TestYamlExtractor:
         assert "Doc2" in result
         assert "---" in result
 
-    def test_invalid_yaml_returns_raw(self):
+    def test_invalid_yaml_raises(self):
+        import pytest
+
         data = b"key: [unclosed"
-        result = YamlExtractor().extract(data)
-        assert isinstance(result, str)
+        with pytest.raises(ValueError):
+            YamlExtractor().extract(data)
 
     def test_can_handle_yaml(self):
         assert YamlExtractor().can_handle("yaml")
