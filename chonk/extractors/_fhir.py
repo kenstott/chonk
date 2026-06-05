@@ -100,19 +100,15 @@ def _render_patient(res: dict) -> str:
     return "\n".join(lines)
 
 
-def _render_generic(res: dict) -> str:
-    rtype = res.get("resourceType", "Resource")
-    rid = res.get("id", "UNKNOWN")
-
-    code = _code_text(res.get("code") or res.get("medicationCodeableConcept"))
-    subject = _reference_display(res.get("subject") or res.get("patient"))
-
+def _extract_status(res: dict) -> str:
     status = res.get("status") or res.get("clinicalStatus", {})
     if isinstance(status, dict):
         status = _code_text(status)
-    status = str(status) if status else ""
+    return str(status) if status else ""
 
-    date = (
+
+def _extract_date(res: dict) -> str:
+    return (
         res.get("recordedDate")
         or res.get("effectiveDateTime")
         or res.get("occurrenceDateTime")
@@ -123,15 +119,16 @@ def _render_generic(res: dict) -> str:
         or ""
     )
 
+
+def _extract_category(res: dict) -> str:
     category_list = res.get("category", [])
-    category = ""
-    if category_list:
-        c = category_list[0] if isinstance(category_list, list) else category_list
-        category = _code_text(c) if isinstance(c, dict) else str(c)
+    if not category_list:
+        return ""
+    c = category_list[0] if isinstance(category_list, list) else category_list
+    return _code_text(c) if isinstance(c, dict) else str(c)
 
-    title = code or rid
-    lines: list[str] = [f"# {rtype}/{rid} {title}", ""]
 
+def _render_meta_lines(status: str, subject: str, date: str, category: str) -> list[str]:
     meta: list[str] = []
     if status:
         meta.append(f"**Status:** {status}")
@@ -141,45 +138,76 @@ def _render_generic(res: dict) -> str:
         meta.append(f"**Date:** {date[:10]}")
     if category:
         meta.append(f"**Category:** {category}")
-    lines.extend(meta)
+    return meta
 
-    # Observations: value
-    if rtype == "Observation":
-        val = res.get("valueQuantity")
-        if val:
-            v = val.get("value")
-            unit = val.get("unit") or val.get("code", "")
-            if v is not None:
-                lines += ["", f"**Value:** {v} {unit}".strip()]
-        val_str = res.get("valueString")
-        if val_str:
-            lines += ["", f"**Value:** {val_str}"]
-        # Components (vital panel, etc.)
-        components = res.get("component", [])
-        if components:
-            lines += ["", "## Components", ""]
-            for comp in components[:20]:
-                comp_code = _code_text(comp.get("code"))
-                comp_val = comp.get("valueQuantity", {})
-                comp_v = comp_val.get("value")
-                comp_u = comp_val.get("unit") or comp_val.get("code", "")
-                if comp_code and comp_v is not None:
-                    lines.append(f"- {comp_code}: {comp_v} {comp_u}".strip())
 
-    # Diagnostic report: result references
-    if rtype == "DiagnosticReport":
-        results = res.get("result", [])
-        if results:
-            lines += ["", "## Results", ""]
-            for r in results[:20]:
-                lines.append(f"- {_reference_display(r)}")
+def _render_observation_lines(res: dict) -> list[str]:
+    lines: list[str] = []
+    val = res.get("valueQuantity")
+    if val:
+        v = val.get("value")
+        unit = val.get("unit") or val.get("code", "")
+        if v is not None:
+            lines += ["", f"**Value:** {v} {unit}".strip()]
+    val_str = res.get("valueString")
+    if val_str:
+        lines += ["", f"**Value:** {val_str}"]
+    components = res.get("component", [])
+    if components:
+        lines += ["", "## Components", ""]
+        for comp in components[:20]:
+            comp_code = _code_text(comp.get("code"))
+            comp_val = comp.get("valueQuantity", {})
+            comp_v = comp_val.get("value")
+            comp_u = comp_val.get("unit") or comp_val.get("code", "")
+            if comp_code and comp_v is not None:
+                lines.append(f"- {comp_code}: {comp_v} {comp_u}".strip())
+    return lines
 
-    # Note / text
+
+def _render_diagnostic_report_lines(res: dict) -> list[str]:
+    results = res.get("result", [])
+    if not results:
+        return []
+    lines: list[str] = ["", "## Results", ""]
+    for r in results[:20]:
+        lines.append(f"- {_reference_display(r)}")
+    return lines
+
+
+def _render_note_lines(res: dict) -> list[str]:
     note_list = res.get("note", [])
     notes = [n.get("text", "") for n in note_list if n.get("text")]
-    if notes:
-        lines += ["", "## Notes", ""] + [n[:500] for n in notes[:3]]
+    if not notes:
+        return []
+    return ["", "## Notes", ""] + [n[:500] for n in notes[:3]]
 
+
+_RTYPE_EXTRA_RENDERERS: dict[str, object] = {
+    "Observation": _render_observation_lines,
+    "DiagnosticReport": _render_diagnostic_report_lines,
+}
+
+
+def _render_generic(res: dict) -> str:
+    rtype = res.get("resourceType", "Resource")
+    rid = res.get("id", "UNKNOWN")
+
+    code = _code_text(res.get("code") or res.get("medicationCodeableConcept"))
+    subject = _reference_display(res.get("subject") or res.get("patient"))
+    status = _extract_status(res)
+    date = _extract_date(res)
+    category = _extract_category(res)
+
+    title = code or rid
+    lines: list[str] = [f"# {rtype}/{rid} {title}", ""]
+    lines.extend(_render_meta_lines(status, subject, date, category))
+
+    extra_renderer = _RTYPE_EXTRA_RENDERERS.get(rtype)
+    if extra_renderer is not None:
+        lines.extend(extra_renderer(res))  # type: ignore[operator]
+
+    lines.extend(_render_note_lines(res))
     return "\n".join(lines)
 
 

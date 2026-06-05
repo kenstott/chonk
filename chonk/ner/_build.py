@@ -54,40 +54,12 @@ def _ner_config_fingerprint(
     return hashlib.md5(payload.encode()).hexdigest()
 
 
-def build_ner(
-    store,
-    *,
-    spacy_model: str = _SPACY_MODEL,
-    use_schema_vocab: bool = False,
-    vocab_entities: list[dict] | None = None,
-    force: bool = False,
-    build_context_graph: bool = False,
-    namespace: str = "global",
-) -> int:
-    """Run NER on all chunks in *store* and persist results to ``chunk_entities``.
+def _check_cache(con, fingerprint: str, force: bool) -> tuple[bool, bool, set[str]]:
+    """Determine incremental mode and skip set.
 
-    Incremental by default: skips chunks already processed under the same config
-    fingerprint.  Pass ``force=True`` to rebuild from scratch regardless.
-
-    Args:
-        store: A ``Store`` instance (open context manager).
-        spacy_model: spaCy model name.
-        use_schema_vocab: Build schema vocabulary from db_schema/api chunks.
-        vocab_entities: Extra entity vocab entries — each dict has keys
-            ``type`` ("static" or "db_query"), ``entity_type``, and either
-            ``names`` (static) or ``connection`` + ``sql`` (db_query).
-        force: If True, ignore cache and rebuild all chunks.
-
-    Returns:
-        Number of ``chunk_entities`` associations written.
+    Returns (should_return_early, incremental, skip_ids).
+    should_return_early=True means caller should return the current chunk_entities count.
     """
-    from chonk.storage._vector import DuckDBVectorBackend
-
-    con = store.vector._conn
-    con.execute(_NER_CACHE_DDL)
-
-    fingerprint = _ner_config_fingerprint(spacy_model, use_schema_vocab, vocab_entities)
-
     all_chunk_ids: set[str] = {
         row[0] for row in con.execute("SELECT chunk_id FROM embeddings").fetchall()
     }
@@ -102,55 +74,67 @@ def build_ner(
     new_chunk_ids = all_chunk_ids - processed_ids
 
     if force:
-        skip_ids: set[str] | None = None
-        incremental = False
-    elif config_match and not new_chunk_ids:
-        return con.execute("SELECT COUNT(*) FROM chunk_entities").fetchone()[0]
-    elif config_match and new_chunk_ids:
-        skip_ids = processed_ids
-        incremental = True
-    else:
-        skip_ids = None
-        incremental = False
+        return False, False, set()
+    if config_match and not new_chunk_ids:
+        return True, False, set()
+    if config_match and new_chunk_ids:
+        return False, True, processed_ids
+    return False, False, set()
 
-    label_types = [t for t in SpacyLabel if t not in _NUMERIC_TYPES]
-    matcher = SpacyMatcher(model=spacy_model, strip_numeric=True, entity_types=label_types)
-    entity_index = EntityIndex()
 
-    all_chunks = store.vector.get_all_chunks()
+def _all_chunk_id_count(con) -> int:
+    return con.execute("SELECT COUNT(*) FROM embeddings").fetchone()[0]
 
-    schema_matcher = None
-    data_matcher = None
-    if use_schema_vocab or vocab_entities:
-        from ._schema_vocab import SchemaVocabBuilder
-        builder = SchemaVocabBuilder()
-        if use_schema_vocab:
-            builder.add_chunks(all_chunks)
-        for entry in (vocab_entities or []):
-            etype = entry.get("entity_type", "term")
-            if entry.get("type") == "static":
-                builder.add_entities(entry.get("names", []), entity_type=etype)
-            elif entry.get("type") == "db_query":
-                builder.add_from_db(entry["connection"], {etype: entry["sql"]})
-        schema_matcher = builder.build()
-        data_matcher = builder.build_data_matcher() if builder.data_term_count() > 0 else None
 
-    skip = skip_ids or set()
-    chunks_to_process = []
+def _build_vocab_matchers(all_chunks, use_schema_vocab: bool, vocab_entities: list[dict] | None):
+    """Build schema and data matchers when vocabulary sources are configured.
+
+    Returns (schema_matcher, data_matcher) — either may be None.
+    """
+    if not use_schema_vocab and not vocab_entities:
+        return None, None
+
+    from ._schema_vocab import SchemaVocabBuilder
+    builder = SchemaVocabBuilder()
+    if use_schema_vocab:
+        builder.add_chunks(all_chunks)
+    for entry in (vocab_entities or []):
+        etype = entry.get("entity_type", "term")
+        if entry.get("type") == "static":
+            builder.add_entities(entry.get("names", []), entity_type=etype)
+        elif entry.get("type") == "db_query":
+            builder.add_from_db(entry["connection"], {etype: entry["sql"]})
+    schema_matcher = builder.build()
+    data_matcher = builder.build_data_matcher() if builder.data_term_count() > 0 else None
+    return schema_matcher, data_matcher
+
+
+def _collect_chunks_to_process(all_chunks, skip_ids: set[str]):
+    """Filter all_chunks to those not in skip_ids, returning (chunk_id, chunk) pairs."""
+    from chonk.storage._vector import DuckDBVectorBackend
+
+    result = []
     for c in all_chunks:
         embed_content = c.embedding_content if c.embedding_content else c.content
         cid = DuckDBVectorBackend._generate_chunk_id(c.document_name, c.chunk_index, embed_content)
-        if cid not in skip:
-            chunks_to_process.append((cid, c))
+        if cid not in skip_ids:
+            result.append((cid, c))
+    return result
 
-    # entity_id -> (name, display_name, entity_type) — populated from matches
-    entity_meta: dict[str, tuple[str, str, str]] = {}
 
+def _run_ner_on_chunks(
+    chunks_to_process,
+    matcher: SpacyMatcher,
+    schema_matcher,
+    data_matcher,
+) -> tuple[EntityIndex, dict[str, tuple[str, str, str]]]:
+    """Run NER over chunks_to_process, return (entity_index, entity_meta)."""
     from ._merge import merge_matches
 
-    for chunk_id, chunk in chunks_to_process:
-        ner_text = chunk.content
+    entity_index = EntityIndex()
+    entity_meta: dict[str, tuple[str, str, str]] = {}
 
+    for chunk_id, chunk in chunks_to_process:
         if schema_matcher is not None or data_matcher is not None:
             vocab_hits: list = []
             if schema_matcher is not None:
@@ -163,21 +147,24 @@ def build_ner(
                     data_matcher.match(chunk.content), vocab_hits,
                     source_text=chunk.content,
                 )
-            combined = merge_matches(vocab_hits, matcher.match(ner_text), source_text=ner_text)
+            combined = merge_matches(vocab_hits, matcher.match(chunk.content), source_text=chunk.content)
             for m in combined:
                 if m.entity_id not in entity_meta:
                     entity_meta[m.entity_id] = (m.name, m.display_name, m.entity_type or "concept")
             entity_index.index_chunk(chunk_id, chunk.content, combined)
         else:
-            matches = matcher.match(ner_text)
+            matches = matcher.match(chunk.content)
             for m in matches:
                 if m.entity_id not in entity_meta:
                     entity_meta[m.entity_id] = (m.name, m.display_name, m.entity_type or "concept")
             entity_index.index_chunk(chunk_id, chunk.content, matches)
 
     entity_index.recompute_scores()
+    return entity_index, entity_meta
 
-    data = entity_index.to_dict()
+
+def _persist_associations(con, data: dict, entity_meta: dict, incremental: bool) -> None:
+    """Write associations and entities to the DB, clearing first unless incremental."""
     if not incremental:
         con.execute("DELETE FROM chunk_entities")
         con.execute("DELETE FROM entities")
@@ -207,9 +194,59 @@ def build_ner(
                 [alias, a["entity_id"], "strip_suffix"],
             )
 
+
+def build_ner(
+    store,
+    *,
+    spacy_model: str = _SPACY_MODEL,
+    use_schema_vocab: bool = False,
+    vocab_entities: list[dict] | None = None,
+    force: bool = False,
+    build_context_graph: bool = False,
+    namespace: str = "global",
+) -> int:
+    """Run NER on all chunks in *store* and persist results to ``chunk_entities``.
+
+    Incremental by default: skips chunks already processed under the same config
+    fingerprint.  Pass ``force=True`` to rebuild from scratch regardless.
+
+    Args:
+        store: A ``Store`` instance (open context manager).
+        spacy_model: spaCy model name.
+        use_schema_vocab: Build schema vocabulary from db_schema/api chunks.
+        vocab_entities: Extra entity vocab entries — each dict has keys
+            ``type`` ("static" or "db_query"), ``entity_type``, and either
+            ``names`` (static) or ``connection`` + ``sql`` (db_query).
+        force: If True, ignore cache and rebuild all chunks.
+
+    Returns:
+        Number of ``chunk_entities`` associations written.
+    """
+    con = store.vector._conn
+    con.execute(_NER_CACHE_DDL)
+
+    fingerprint = _ner_config_fingerprint(spacy_model, use_schema_vocab, vocab_entities)
+
+    should_return_early, incremental, skip_ids = _check_cache(con, fingerprint, force)
+    if should_return_early:
+        return con.execute("SELECT COUNT(*) FROM chunk_entities").fetchone()[0]
+
+    label_types = [t for t in SpacyLabel if t not in _NUMERIC_TYPES]
+    matcher = SpacyMatcher(model=spacy_model, strip_numeric=True, entity_types=label_types)
+
+    all_chunks = store.vector.get_all_chunks()
+    schema_matcher, data_matcher = _build_vocab_matchers(all_chunks, use_schema_vocab, vocab_entities)
+    chunks_to_process = _collect_chunks_to_process(all_chunks, skip_ids)
+
+    entity_index, entity_meta = _run_ner_on_chunks(chunks_to_process, matcher, schema_matcher, data_matcher)
+
+    data = entity_index.to_dict()
+    _persist_associations(con, data, entity_meta, incremental)
+
+    all_chunk_count = _all_chunk_id_count(con)
     con.execute(
         "INSERT OR REPLACE INTO ner_cache(config_fingerprint, chunk_count) VALUES (?, ?)",
-        [fingerprint, len(all_chunk_ids)],
+        [fingerprint, all_chunk_count],
     )
 
     if build_context_graph:
