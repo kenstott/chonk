@@ -63,6 +63,7 @@ Usage::
         password="...",
     )
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -108,8 +109,17 @@ def _item_to_text(fields: dict, list_title: str, item_type: str = "List item") -
 def _event_to_text(fields: dict, list_title: str) -> str:
     """Serialize a SharePoint calendar event to plain text."""
     lines = [f"Calendar: {list_title}"]
-    priority = ["Title", "EventDate", "EndDate", "Location", "Description",
-                "fAllDayEvent", "fRecurrence", "RecurrenceData", "Category"]
+    priority = [
+        "Title",
+        "EventDate",
+        "EndDate",
+        "Location",
+        "Description",
+        "fAllDayEvent",
+        "fRecurrence",
+        "RecurrenceData",
+        "Category",
+    ]
     seen: set[str] = set()
     for key in priority:
         if key in fields and fields[key] is not None:
@@ -165,7 +175,7 @@ class SharePointCrawler:
         self._password = password
         self._artifacts = set(artifacts or ["documents", "lists", "calendars", "pages"])
         self._max_items = max_items
-        self._url_key = hashlib.md5(site_url.encode()).hexdigest()[:8]
+        self._url_key = hashlib.md5(site_url.encode(), usedforsecurity=False).hexdigest()[:8]
 
         # Pre-fetched structured content (list items, events, pages)
         self._cache: dict[str, FetchResult] = {}
@@ -207,7 +217,9 @@ class SharePointCrawler:
         try:
             import requests as _requests
         except ImportError:
-            raise ImportError("pip install chonk[http]  # requests required for SharePointCrawler")
+            raise ImportError(
+                "pip install chonk[http]  # requests required for SharePointCrawler"
+            ) from None
 
         self._cache.clear()
         self._pending.clear()
@@ -236,19 +248,19 @@ class SharePointCrawler:
         except ImportError:
             raise ImportError(
                 "pip install msal  # required for SharePointCrawler auth_mode='azure_ad'"
-            )
+            ) from None
         app = msal.ConfidentialClientApplication(
             self._client_id,
             authority=f"https://login.microsoftonline.com/{self._tenant_id}",
             client_credential=self._client_secret,
         )
-        result = app.acquire_token_for_client(
-            scopes=["https://graph.microsoft.com/.default"]
-        )
+        result = app.acquire_token_for_client(scopes=["https://graph.microsoft.com/.default"])
         if result is None:
             raise RuntimeError("SharePointCrawler: MSAL acquire_token_for_client returned None")
         if "access_token" not in result:
-            raise RuntimeError(f"SharePointCrawler: MSAL auth failed: {result.get('error_description')}")
+            raise RuntimeError(
+                f"SharePointCrawler: MSAL auth failed: {result.get('error_description')}"
+            )
         session = requests_mod.Session()
         session.headers["Authorization"] = f"Bearer {result['access_token']}"
         session.headers["Accept"] = "application/json"
@@ -259,12 +271,16 @@ class SharePointCrawler:
         realm = self._get_realm(requests_mod)
         resource = f"00000003-0000-0ff1-ce00-000000000000/{self._site_url.split('/')[2]}@{realm}"
         token_url = f"https://accounts.accesscontrol.windows.net/{realm}/tokens/OAuth/2"
-        resp = requests_mod.post(token_url, data={
-            "grant_type": "client_credentials",
-            "client_id": f"{self._client_id}@{realm}",
-            "client_secret": self._client_secret,
-            "resource": resource,
-        }, timeout=30)
+        resp = requests_mod.post(
+            token_url,
+            data={
+                "grant_type": "client_credentials",
+                "client_id": f"{self._client_id}@{realm}",
+                "client_secret": self._client_secret,
+                "resource": resource,
+            },
+            timeout=30,
+        )
         resp.raise_for_status()
         token = resp.json()["access_token"]
         session = requests_mod.Session()
@@ -293,7 +309,7 @@ class SharePointCrawler:
         except ImportError:
             raise ImportError(
                 "pip install requests-ntlm  # required for SharePointCrawler auth_mode='ntlm'"
-            )
+            ) from None
         session = requests_mod.Session()
         session.auth = HttpNtlmAuth(self._username, self._password)
         session.headers["Accept"] = "application/json;odata=verbose"
@@ -357,8 +373,10 @@ class SharePointCrawler:
                     self._graph_walk_drive(drive_id, child_url)
                 elif "file" in item:
                     uri = f"spitem://{self._url_key}/documents/{item['id']}"
-                    download_url = item.get("@microsoft.graph.downloadUrl") or \
-                        f"{_GRAPH_BASE}/drives/{drive_id}/items/{item['id']}/content"
+                    download_url = (
+                        item.get("@microsoft.graph.downloadUrl")
+                        or f"{_GRAPH_BASE}/drives/{drive_id}/items/{item['id']}/content"
+                    )
                     mime = item.get("file", {}).get("mimeType")
                     self._pending[uri] = (download_url, mime)
             url = data.get("@odata.nextLink")
@@ -372,8 +390,11 @@ class SharePointCrawler:
             data = resp.json()
             for item in data.get("value", []):
                 fields = item.get("fields", {})
-                text = _event_to_text(fields, title) if item_type == "Calendar event" \
+                text = (
+                    _event_to_text(fields, title)
+                    if item_type == "Calendar event"
                     else _item_to_text(fields, title, item_type)
+                )
                 uri = f"spitem://{self._url_key}/lists/{list_id}/{item['id']}"
                 self._cache[uri] = FetchResult(
                     data=text.encode("utf-8"),
@@ -401,7 +422,8 @@ class SharePointCrawler:
                     if detail.ok:
                         parts = detail.json().get("value", [])
                         html = "\n".join(
-                            p.get("innerHtml", "") for p in parts
+                            p.get("innerHtml", "")
+                            for p in parts
                             if p.get("@odata.type") == "#microsoft.graph.textWebPart"
                         )
                 uri = f"spitem://{self._url_key}/pages/{page_id}"
@@ -434,7 +456,7 @@ class SharePointCrawler:
             f"{self._site_url}/_api/web/lists",
             params={
                 "$filter": f"Hidden eq false and BaseTemplate in ({_TEMPLATE_DOCUMENT_LIBRARY},"
-                           f"{_TEMPLATE_CALENDAR},{_TEMPLATE_SITE_PAGES},{_TEMPLATE_GENERIC_LIST})",
+                f"{_TEMPLATE_CALENDAR},{_TEMPLATE_SITE_PAGES},{_TEMPLATE_GENERIC_LIST})",
                 "$select": "Id,Title,BaseTemplate",
                 "$top": 500,
             },
@@ -460,16 +482,16 @@ class SharePointCrawler:
                 item_id = item.get("Id", "")
                 if not file_ref:
                     continue
-                download_url = f"{self._site_url}/_api/web/GetFileByServerRelativeUrl('{file_ref}')/$value"
+                download_url = (
+                    f"{self._site_url}/_api/web/GetFileByServerRelativeUrl('{file_ref}')/$value"
+                )
                 uri = f"spitem://{self._url_key}/documents/{list_id}/{item_id}"
                 self._pending[uri] = (download_url, None)
                 count += 1
             url = self._rest_next(data)
 
     def _rest_list_items(self, list_id: str, title: str, item_type: str) -> None:
-        url: str | None = (
-            f"{self._site_url}/_api/web/lists(guid'{list_id}')/items?$top=200"
-        )
+        url: str | None = f"{self._site_url}/_api/web/lists(guid'{list_id}')/items?$top=200"
         count = 0
         while url and count < self._max_items:
             resp = self._session.get(url, timeout=30)
@@ -477,8 +499,11 @@ class SharePointCrawler:
             data = resp.json()
             for item in self._rest_results_raw(data):
                 item_id = item.get("Id", "")
-                text = _event_to_text(item, title) if item_type == "Calendar event" \
+                text = (
+                    _event_to_text(item, title)
+                    if item_type == "Calendar event"
                     else _item_to_text(item, title, item_type)
+                )
                 uri = f"spitem://{self._url_key}/lists/{list_id}/{item_id}"
                 self._cache[uri] = FetchResult(
                     data=text.encode("utf-8"),

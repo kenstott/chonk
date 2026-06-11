@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from ftplib import FTP
+from ftplib import FTP  # nosec B402 — FTP transport intentionally implements FTP protocol
 from io import BytesIO
 from urllib.parse import urlparse
 
@@ -32,7 +32,7 @@ class FtpTransport:
 
         if host is None:
             raise ValueError(f"FtpTransport: could not parse host from URI: {uri!r}")
-        ftp = FTP()
+        ftp = FTP()  # nosec B321
         ftp.connect(host, port)
         ftp.login(username, password)
 

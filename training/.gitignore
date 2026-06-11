@@ -1,0 +1,21 @@
+# Generated training datasets — do not commit
+training_data_*.csv
+training_data_*.jsonl
+annotated_dataset_*.csv
+
+# Review queues and judge reports
+review_queue_*.md
+judge_report_*.md
+
+# Manifest and audit backups
+modernization_manifest_*_backup_*.md
+skill_audit_backup_*.md
+
+# Commit these (version these as source of truth):
+# skill_audit.md
+# modernization_manifest_A.md (and _B _C _D _E)
+# manifest_delta_A.md (and _B _C _D _E)
+# methodology.md
+# skill_clusters.md
+
+.claude/

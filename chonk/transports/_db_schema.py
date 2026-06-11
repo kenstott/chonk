@@ -31,6 +31,7 @@ Filter to specific object types::
         schemas=["dbo", "reporting"],
     )
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -45,7 +46,8 @@ _log = logging.getLogger(__name__)
 
 _PG_ROUTINES = """
 SELECT n.nspname AS schema_name, p.proname AS routine_name,
-       CASE p.prokind WHEN 'f' THEN 'FUNCTION' WHEN 'p' THEN 'PROCEDURE' ELSE 'FUNCTION' END AS routine_type,
+       CASE p.prokind WHEN 'f' THEN 'FUNCTION'
+            WHEN 'p' THEN 'PROCEDURE' ELSE 'FUNCTION' END AS routine_type,
        pg_get_functiondef(p.oid) AS definition
 FROM pg_proc p
 JOIN pg_namespace n ON n.oid = p.pronamespace
@@ -120,14 +122,13 @@ class DatabaseSchemaCrawler:
         self.include_triggers = include_triggers
         self._schemas = set(schemas) if schemas else None
         self._cache: dict[str, FetchResult] = {}
-        self._url_key = hashlib.md5(connection_url.encode()).hexdigest()[:8]
+        self._url_key = hashlib.md5(connection_url.encode(), usedforsecurity=False).hexdigest()[:8]
 
     # ── Transport + Crawler Protocol ─────────────────────────────────────────
 
     def can_handle(self, uri: str) -> bool:
-        return (
-            uri.startswith(f"dbschema://{self._url_key}/")
-            or self._looks_like_connection_url(uri)
+        return uri.startswith(f"dbschema://{self._url_key}/") or self._looks_like_connection_url(
+            uri
         )
 
     def fetch(self, uri: str, **__) -> FetchResult:
@@ -151,7 +152,7 @@ class DatabaseSchemaCrawler:
             raise ImportError(
                 "sqlalchemy is required for DatabaseSchemaCrawler. "
                 "Install with: pip install sqlalchemy"
-            )
+            ) from None
 
         engine = sa.create_engine(self._url)
         dialect = engine.dialect.name  # 'postgresql', 'mysql', 'mssql', 'sqlite', ...
@@ -161,7 +162,14 @@ class DatabaseSchemaCrawler:
             if self.include_views:
                 self._index_views(conn, engine, sa)
             if dialect == "postgresql":
-                self._run_query(conn, sa, _PG_ROUTINES, "routine_name", "routine_type", skip_procs=not self.include_procs)
+                self._run_query(
+                    conn,
+                    sa,
+                    _PG_ROUTINES,
+                    "routine_name",
+                    "routine_type",
+                    skip_procs=not self.include_procs,
+                )
                 if self.include_triggers:
                     self._run_query(conn, sa, _PG_TRIGGERS, "trigger_name", "TRIGGER")
             elif dialect in ("mysql", "mariadb"):
@@ -174,7 +182,9 @@ class DatabaseSchemaCrawler:
             elif dialect == "sqlite":
                 self._run_sqlite(conn, sa)
             else:
-                _log.warning("DatabaseSchemaCrawler: dialect %r not supported — views only", dialect)
+                _log.warning(
+                    "DatabaseSchemaCrawler: dialect %r not supported — views only", dialect
+                )
 
         _log.info("DatabaseSchemaCrawler: indexed %d object(s)", len(self._cache))
         return list(self._cache.keys())
@@ -198,7 +208,7 @@ class DatabaseSchemaCrawler:
 
     def _index_views(self, _conn, engine, sa) -> None:
         insp = sa.inspect(engine)
-        for schema in (self._schemas or [None]):  # type: ignore[list-item]
+        for schema in self._schemas or [None]:  # type: ignore[list-item]
             try:
                 names = insp.get_view_names(schema=schema)
             except Exception as exc:
@@ -269,16 +279,32 @@ class DatabaseSchemaCrawler:
         rows_v = rows_t = []
         if self.include_views:
             try:
-                rows_v = conn.execute(
-                    sa.text("SELECT 'main' schema_name, name object_name, 'VIEW' object_type, sql definition FROM sqlite_master WHERE type='view' AND sql IS NOT NULL")
-                ).mappings().all()
+                rows_v = (
+                    conn.execute(
+                        sa.text(
+                            "SELECT 'main' schema_name, name object_name,"
+                            " 'VIEW' object_type, sql definition"
+                            " FROM sqlite_master WHERE type='view' AND sql IS NOT NULL"
+                        )
+                    )
+                    .mappings()
+                    .all()
+                )
             except Exception as exc:
                 _log.warning("DatabaseSchemaCrawler sqlite views failed: %s", exc)
         if self.include_triggers:
             try:
-                rows_t = conn.execute(
-                    sa.text("SELECT 'main' schema_name, name object_name, 'TRIGGER' object_type, sql definition FROM sqlite_master WHERE type='trigger' AND sql IS NOT NULL")
-                ).mappings().all()
+                rows_t = (
+                    conn.execute(
+                        sa.text(
+                            "SELECT 'main' schema_name, name object_name,"
+                            " 'TRIGGER' object_type, sql definition"
+                            " FROM sqlite_master WHERE type='trigger' AND sql IS NOT NULL"
+                        )
+                    )
+                    .mappings()
+                    .all()
+                )
             except Exception as exc:
                 _log.warning("DatabaseSchemaCrawler sqlite triggers failed: %s", exc)
         for row in list(rows_v) + list(rows_t):
@@ -293,5 +319,12 @@ class DatabaseSchemaCrawler:
     def _looks_like_connection_url(uri: str) -> bool:
         return any(
             uri.startswith(p)
-            for p in ("postgresql://", "postgres://", "mysql://", "mssql://", "sqlite://", "mariadb://")
+            for p in (
+                "postgresql://",
+                "postgres://",
+                "mysql://",
+                "mssql://",
+                "sqlite://",
+                "mariadb://",
+            )
         )

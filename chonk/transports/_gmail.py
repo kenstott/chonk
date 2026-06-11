@@ -40,6 +40,7 @@ Usage::
         limit=100,
     )
 """
+
 from __future__ import annotations
 
 import base64
@@ -157,7 +158,7 @@ class GmailCrawler:
         self._redirect_port = redirect_port
         self._service: Any = None
         self._cache: dict[str, FetchResult] = {}
-        self._url_key = hashlib.md5(self._client_id.encode()).hexdigest()[:8]
+        self._url_key = hashlib.md5(self._client_id.encode(), usedforsecurity=False).hexdigest()[:8]
 
     # ── Transport + Crawler Protocol ─────────────────────────────────────────
 
@@ -236,7 +237,7 @@ class GmailCrawler:
             raise ImportError(
                 "pip install google-api-python-client google-auth-oauthlib  "
                 "# required for GmailCrawler"
-            )
+            ) from None
 
         from google.auth.credentials import Credentials as _BaseCredentials
 
@@ -271,9 +272,7 @@ class GmailCrawler:
 
     def _fetch_message(self, msg_id: str, uri: str) -> FetchResult:
         svc = self._get_service()
-        msg = svc.users().messages().get(
-            userId=self._user_id, id=msg_id, format="full"
-        ).execute()
+        msg = svc.users().messages().get(userId=self._user_id, id=msg_id, format="full").execute()
         text = _message_to_text(msg)
         headers = {h["name"]: h["value"] for h in msg.get("payload", {}).get("headers", [])}
         result = FetchResult(

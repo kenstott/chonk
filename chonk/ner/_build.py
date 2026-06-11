@@ -18,10 +18,22 @@ from ._spacy_labels import SpacyLabel
 
 _SPACY_MODEL = "en_core_web_sm"
 _NUMERIC_TYPES = {
-    SpacyLabel.ORDINAL, SpacyLabel.MONEY,
-    SpacyLabel.PERCENT, SpacyLabel.QUANTITY,
+    SpacyLabel.ORDINAL,
+    SpacyLabel.MONEY,
+    SpacyLabel.PERCENT,
+    SpacyLabel.QUANTITY,
 }
-_ID_SUFFIXES = ("_identifier", "_reference", "_number", "_num", "_code", "_key", "_id", "_ref", "_no")
+_ID_SUFFIXES = (
+    "_identifier",
+    "_reference",
+    "_number",
+    "_num",
+    "_code",
+    "_key",
+    "_id",
+    "_ref",
+    "_no",
+)
 
 
 def _strip_id_alias(entity_id: str) -> str | None:
@@ -44,14 +56,17 @@ def _ner_config_fingerprint(
     use_schema_vocab: bool,
     vocab_entities: list[dict] | None,
 ) -> str:
-    payload = json.dumps({
-        "spacy_model": spacy_model,
-        "use_schema_vocab": use_schema_vocab,
-        "vocab_entities": sorted(
-            [json.dumps(e, sort_keys=True) for e in (vocab_entities or [])]
-        ),
-    }, sort_keys=True)
-    return hashlib.md5(payload.encode()).hexdigest()
+    payload = json.dumps(
+        {
+            "spacy_model": spacy_model,
+            "use_schema_vocab": use_schema_vocab,
+            "vocab_entities": sorted(
+                [json.dumps(e, sort_keys=True) for e in (vocab_entities or [])]
+            ),
+        },
+        sort_keys=True,
+    )
+    return hashlib.md5(payload.encode(), usedforsecurity=False).hexdigest()
 
 
 def _check_cache(con, fingerprint: str, force: bool) -> tuple[bool, bool, set[str]]:
@@ -95,10 +110,11 @@ def _build_vocab_matchers(all_chunks, use_schema_vocab: bool, vocab_entities: li
         return None, None
 
     from ._schema_vocab import SchemaVocabBuilder
+
     builder = SchemaVocabBuilder()
     if use_schema_vocab:
         builder.add_chunks(all_chunks)
-    for entry in (vocab_entities or []):
+    for entry in vocab_entities or []:
         etype = entry.get("entity_type", "term")
         if entry.get("type") == "static":
             builder.add_entities(entry.get("names", []), entity_type=etype)
@@ -139,15 +155,19 @@ def _run_ner_on_chunks(
             vocab_hits: list = []
             if schema_matcher is not None:
                 vocab_hits = merge_matches(
-                    schema_matcher.match(chunk.content), vocab_hits,
+                    schema_matcher.match(chunk.content),
+                    vocab_hits,
                     source_text=chunk.content,
                 )
             if data_matcher is not None:
                 vocab_hits = merge_matches(
-                    data_matcher.match(chunk.content), vocab_hits,
+                    data_matcher.match(chunk.content),
+                    vocab_hits,
                     source_text=chunk.content,
                 )
-            combined = merge_matches(vocab_hits, matcher.match(chunk.content), source_text=chunk.content)
+            combined = merge_matches(
+                vocab_hits, matcher.match(chunk.content), source_text=chunk.content
+            )
             for m in combined:
                 if m.entity_id not in entity_meta:
                     entity_meta[m.entity_id] = (m.name, m.display_name, m.entity_type or "concept")
@@ -177,8 +197,14 @@ def _persist_associations(con, data: dict, entity_meta: dict, incremental: bool)
             "INSERT OR REPLACE INTO chunk_entities"
             "(chunk_id, entity_id, frequency, positions_json, score, namespace)"
             " VALUES (?,?,?,?,?,?)",
-            [a["chunk_id"], a["entity_id"], a["frequency"],
-             json.dumps(a["positions"]), a["score"], chunk_namespace],
+            [
+                a["chunk_id"],
+                a["entity_id"],
+                a["frequency"],
+                json.dumps(a["positions"]),
+                a["score"],
+                chunk_namespace,
+            ],
         )
         name, display_name, entity_type = entity_meta.get(
             a["entity_id"], (a["entity_id"], a["entity_id"], "concept")
@@ -235,10 +261,14 @@ def build_ner(
     matcher = SpacyMatcher(model=spacy_model, strip_numeric=True, entity_types=label_types)
 
     all_chunks = store.vector.get_all_chunks()
-    schema_matcher, data_matcher = _build_vocab_matchers(all_chunks, use_schema_vocab, vocab_entities)
+    schema_matcher, data_matcher = _build_vocab_matchers(
+        all_chunks, use_schema_vocab, vocab_entities
+    )
     chunks_to_process = _collect_chunks_to_process(all_chunks, skip_ids)
 
-    entity_index, entity_meta = _run_ner_on_chunks(chunks_to_process, matcher, schema_matcher, data_matcher)
+    entity_index, entity_meta = _run_ner_on_chunks(
+        chunks_to_process, matcher, schema_matcher, data_matcher
+    )
 
     data = entity_index.to_dict()
     _persist_associations(con, data, entity_meta, incremental)
@@ -251,6 +281,7 @@ def build_ner(
 
     if build_context_graph:
         from ..graph._context_graph import build_context_graph_edges
+
         build_context_graph_edges(con, namespace=namespace, force=True)
 
     return len(data["associations"])

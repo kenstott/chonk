@@ -79,7 +79,7 @@ class XmlExtractor:
 
     def _parse(self, data: bytes, source_path: str | None = None) -> ET.Element:
         try:
-            return ET.fromstring(data)
+            return ET.fromstring(data)  # nosec B314 — input is caller-supplied document data
         except ET.ParseError as exc:
             raise ValueError(f"XML parse error in {source_path or '<unknown>'}: {exc}") from exc
 

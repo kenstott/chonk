@@ -14,6 +14,7 @@ page/depth budget.
 Extend for authenticated services (SharePoint, Confluence, …) by implementing
 the ``Crawler`` protocol — you do **not** need to subclass ``WebCrawler``.
 """
+
 from __future__ import annotations
 
 import logging
@@ -29,9 +30,8 @@ from urllib.request import Request, urlopen
 # Falls back to the default SSL context, which works on most Linux/Windows installs.
 try:
     import certifi as _certifi
-    _SSL_CONTEXT: ssl.SSLContext | None = ssl.create_default_context(
-        cafile=_certifi.where()
-    )
+
+    _SSL_CONTEXT: ssl.SSLContext | None = ssl.create_default_context(cafile=_certifi.where())
 except ImportError:
     _SSL_CONTEXT = None  # use urllib default
 
@@ -41,42 +41,86 @@ logger = logging.getLogger(__name__)
 
 _BINARY_EXTENSIONS: frozenset[str] = frozenset(
     {
-        ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".ico", ".bmp",
-        ".mp4", ".mp3", ".wav", ".ogg", ".avi", ".mov", ".mkv",
-        ".zip", ".tar", ".gz", ".bz2", ".7z", ".rar",
-        ".exe", ".dmg", ".pkg", ".deb", ".rpm",
-        ".woff", ".woff2", ".ttf", ".eot",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".svg",
+        ".webp",
+        ".ico",
+        ".bmp",
+        ".mp4",
+        ".mp3",
+        ".wav",
+        ".ogg",
+        ".avi",
+        ".mov",
+        ".mkv",
+        ".zip",
+        ".tar",
+        ".gz",
+        ".bz2",
+        ".7z",
+        ".rar",
+        ".exe",
+        ".dmg",
+        ".pkg",
+        ".deb",
+        ".rpm",
+        ".woff",
+        ".woff2",
+        ".ttf",
+        ".eot",
         ".css",  # rarely useful for RAG
     }
 )
 
 _SKIP_PATH_PREFIXES: tuple[str, ...] = (
-    "/cdn-cgi/", "/wp-json/", "/api/", "/static/", "/assets/",
-    "/media/", "/uploads/", "/fonts/",
+    "/cdn-cgi/",
+    "/wp-json/",
+    "/api/",
+    "/static/",
+    "/assets/",
+    "/media/",
+    "/uploads/",
+    "/fonts/",
 )
 
 # Wiki sites generate hundreds of non-content pages under these path patterns.
 # When wiki_mode=True (the default for detected wikis), these are filtered out.
 _WIKI_SKIP_PREFIXES: tuple[str, ...] = (
-    "/wiki/Special:", "/wiki/Help:", "/wiki/Talk:", "/wiki/File:",
-    "/wiki/Category:", "/wiki/Template:", "/wiki/Wikipedia:",
-    "/wiki/User:", "/wiki/User_talk:", "/wiki/Project:",
-    "/wiki/Portal:", "/wiki/Module:",
-    "/w/index.php",   # MediaWiki action URLs (?action=edit etc.)
+    "/wiki/Special:",
+    "/wiki/Help:",
+    "/wiki/Talk:",
+    "/wiki/File:",
+    "/wiki/Category:",
+    "/wiki/Template:",
+    "/wiki/Wikipedia:",
+    "/wiki/User:",
+    "/wiki/User_talk:",
+    "/wiki/Project:",
+    "/wiki/Portal:",
+    "/wiki/Module:",
+    "/w/index.php",  # MediaWiki action URLs (?action=edit etc.)
 )
 
 _WIKI_SKIP_PARAMS: tuple[str, ...] = (
-    "action=edit", "action=history", "action=raw",
-    "action=info", "printable=yes", "diff=",
+    "action=edit",
+    "action=history",
+    "action=raw",
+    "action=info",
+    "printable=yes",
+    "diff=",
 )
 
 _HREF_RE = re.compile(r'href=["\']([^"\'#?][^"\']*)["\']', re.IGNORECASE)
-_MD_LINK_RE = re.compile(r'\[(?:[^\]]+)\]\((https?://[^)]+)\)')
+_MD_LINK_RE = re.compile(r"\[(?:[^\]]+)\]\((https?://[^)]+)\)")
 
 _USER_AGENT = "chonk/0.1 (+https://github.com/chonk/chonk)"
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
+
 
 def _normalize_url(url: str) -> str:
     """Strip fragment and trailing slash for deduplication."""
@@ -98,7 +142,11 @@ def _extract_links(html: str, base_url: str) -> list[str]:
         parsed = urlparse(resolved)
         if parsed.scheme not in ("http", "https"):
             continue
-        ext = "." + parsed.path.rsplit(".", 1)[-1].lower() if "." in parsed.path.rsplit("/", 1)[-1] else ""
+        ext = (
+            "." + parsed.path.rsplit(".", 1)[-1].lower()
+            if "." in parsed.path.rsplit("/", 1)[-1]
+            else ""
+        )
         if ext in _BINARY_EXTENSIONS:
             continue
         if any(parsed.path.startswith(p) for p in _SKIP_PATH_PREFIXES):
@@ -113,12 +161,13 @@ def _extract_links(html: str, base_url: str) -> list[str]:
 def _http_get(url: str, timeout: int) -> tuple[bytes, str | None]:
     """Fetch *url* with stdlib urllib.  Returns (body, content_type)."""
     req = Request(url, headers={"User-Agent": _USER_AGENT})
-    with urlopen(req, context=_SSL_CONTEXT, timeout=timeout) as resp:
+    with urlopen(req, context=_SSL_CONTEXT, timeout=timeout) as resp:  # nosec B310
         content_type: str | None = resp.headers.get("Content-Type")
         return resp.read(), content_type
 
 
 # ── WebCrawler ───────────────────────────────────────────────────────────────
+
 
 class WebCrawler:
     """BFS HTTP/HTTPS site crawler.
@@ -240,8 +289,7 @@ class WebCrawler:
 
             with ThreadPoolExecutor(max_workers=workers) as pool:
                 futures = {
-                    pool.submit(_http_get, url, self.timeout): (url, depth)
-                    for url, depth in wave
+                    pool.submit(_http_get, url, self.timeout): (url, depth) for url, depth in wave
                 }
                 for future in as_completed(futures):
                     url, depth = futures[future]
@@ -255,7 +303,12 @@ class WebCrawler:
 
                     # Skip non-HTML responses (PDFs etc. go to their own extractor)
                     ct = (content_type or "").lower()
-                    if ct and "html" not in ct and "text/" not in ct and not ct.startswith("application/xhtml"):
+                    if (
+                        ct
+                        and "html" not in ct
+                        and "text/" not in ct
+                        and not ct.startswith("application/xhtml")
+                    ):
                         results.append(url)  # still include as document
                         continue
 

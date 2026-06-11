@@ -40,7 +40,7 @@ class SftpTransport:
 
         assert _paramiko is not None  # guarded by _PARAMIKO_AVAILABLE check above
         client = _paramiko.SSHClient()
-        client.set_missing_host_key_policy(_paramiko.AutoAddPolicy())
+        client.set_missing_host_key_policy(_paramiko.AutoAddPolicy())  # nosec B507
 
         connect_kwargs: dict = {
             "hostname": host,
