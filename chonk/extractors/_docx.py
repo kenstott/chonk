@@ -10,6 +10,10 @@
 from __future__ import annotations
 
 from io import BytesIO
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from chonk.models import DocumentChunk
 
 try:
     import docx  # noqa: F401
@@ -63,7 +67,7 @@ class DocxExtractor:
         doc = _docx.Document(BytesIO(data))
         return _extract_docx_content(doc)
 
-    def annotate(self, chunks: list, data: bytes, source_path: str | None = None) -> list:
+    def annotate(self, chunks: list[DocumentChunk], data: bytes, source_path: str | None = None) -> list[DocumentChunk]:
         if not _DOCX_AVAILABLE:
             raise ImportError(f"pip install chonk[docx] (loading {source_path or 'unknown'})")
         import docx as _docx
