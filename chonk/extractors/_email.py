@@ -31,6 +31,10 @@ import email
 import email.policy
 import logging
 from email.message import Message
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from chonk.models import DocumentChunk
 
 logger = logging.getLogger(__name__)
 
@@ -157,5 +161,5 @@ class EmailExtractor:
 
         return "\n\n".join(parts)
 
-    def annotate(self, chunks: list, data: bytes, source_path: str | None = None) -> list:
+    def annotate(self, chunks: list[DocumentChunk], data: bytes, source_path: str | None = None) -> list[DocumentChunk]:
         return chunks
