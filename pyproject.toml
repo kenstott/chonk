@@ -10,8 +10,8 @@ dependencies = [
 
 [project.optional-dependencies]
 http    = ["requests>=2.34.2,<3", "certifi>=2026.5.20"]
-s3      = ["boto3>=1.43.23,<1.50"]
-sftp    = ["paramiko>=3.5.1,<4"]
+s3      = ["boto3>=1.43.23,<2"]
+sftp    = ["paramiko>=3.5.1,<6"]
 pdf     = ["pypdf>=6.12.2,<7"]
 docx    = ["python-docx>=1.2,<2"]
 xlsx    = ["openpyxl>=3.1.5,<4"]
@@ -21,7 +21,7 @@ odf     = ["odfpy>=1.4.1,<2"]
 storage  = ["duckdb>=1.5.3,<2", "numpy>=2.4.6,<3", "sqlalchemy>=2.0.50,<3", "duckdb-engine>=0.17,<1"]
 pgvector = ["psycopg2-binary>=2.9.12,<3", "pgvector>=0.4.2,<1"]
 cluster = ["scikit-learn>=1.9,<2", "numpy>=2.4.6,<3"]
-leiden  = ["igraph>=0.11.9,<1", "leidenalg>=0.10.2,<1"]
+leiden  = ["igraph>=1.0.0,<2", "leidenalg>=0.12.0,<2"]
 parquet = ["pyarrow>=24.0,<30"]
 code       = []  # Python/TS/JS/Java via stdlib ast + regex; no additional packages required
 ner        = ["inflect>=7.5,<8"]
@@ -31,7 +31,7 @@ gmail      = ["google-api-python-client>=2.197,<3", "google-auth-oauthlib>=1.4,<
 sharepoint = ["office365-rest-python-client>=2.6.2,<3"]
 full    = [
     # http, s3, sftp
-    "requests>=2.34.2,<3", "certifi>=2026.5.20", "boto3>=1.43.23,<1.50", "paramiko>=3.5.1,<4",
+    "requests>=2.34.2,<3", "certifi>=2026.5.20", "boto3>=1.43.23,<2", "paramiko>=3.5.1,<6",
     # pdf, docx, xlsx, pptx, yaml, odf
     "pypdf>=6.12.2,<7", "python-docx>=1.2,<2", "openpyxl>=3.1.5,<4", "python-pptx>=1.0.2,<2", "pyyaml>=6.0.3,<7", "odfpy>=1.4.1,<2",
     # storage
@@ -57,12 +57,12 @@ packages = ["chonk"]
 
 [dependency-groups]
 dev = [
-    "pytest>=9.0.3",
+    "pytest>=9.0.3,<10",
     "pytest-cov>=7.1",
     "pytest-timeout>=2.4",
-    "bandit>=1.9.4",
-    "ruff>=0.15.16",
-    "black>=26.5.1",
+    "bandit>=1.9.4,<2",
+    "ruff>=0.15.16,<1",
+    "black>=26.5.1,<27",
     "json5>=0.14",
     "json-repair>=0.60.1",
     "rouge-score>=0.1.2",
@@ -70,8 +70,11 @@ dev = [
     "pytest-asyncio>=1.4",
     "pytest-docker>=3.2.5",
     "respx>=0.23.1",
-    "langsmith>=0.8.9",
-    "pyright>=1.1.390",
+    "langsmith>=0.8.9,<1",
+    "pyright>=1.1.390,<2",
+    "pip-audit>=2.9",
+    "docker>=7,<8",
+    "reportlab>=4,<5",
 ]
 
 [tool.pytest.ini_options]
