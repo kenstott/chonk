@@ -71,7 +71,7 @@ _LABEL_MAP = {
 }
 
 
-def _decode_body(part: dict) -> str:
+def _decode_body(part: dict[str, Any]) -> str:
     """Decode a base64url-encoded message body part to text."""
     data = part.get("body", {}).get("data", "")
     if not data:
@@ -82,7 +82,7 @@ def _decode_body(part: dict) -> str:
         return ""
 
 
-def _extract_text(payload: dict) -> str:
+def _extract_text(payload: dict[str, Any]) -> str:
     """Recursively extract text/plain (preferred) or text/html from payload."""
     mime = payload.get("mimeType", "")
     parts = payload.get("parts", [])
@@ -108,7 +108,7 @@ def _extract_text(payload: dict) -> str:
     return ""
 
 
-def _message_to_text(msg: dict) -> str:
+def _message_to_text(msg: dict[str, Any]) -> str:
     """Serialize a Gmail message to plain text for chunking."""
     headers = {h["name"]: h["value"] for h in msg.get("payload", {}).get("headers", [])}
     lines = []
@@ -150,7 +150,7 @@ class GmailCrawler:
         token_path: str | Path | None = None,
         user_id: str = "me",
         redirect_port: int = 8000,
-    ):
+    ) -> None:
         self._client_id = client_id or os.environ.get("GOOGLE_EMAIL_CLIENT_ID", "")
         self._client_secret = client_secret or os.environ.get("GOOGLE_EMAIL_CLIENT_SECRET", "")
         self._token_path = Path(token_path) if token_path else _DEFAULT_TOKEN_PATH
@@ -165,7 +165,7 @@ class GmailCrawler:
     def can_handle(self, uri: str) -> bool:
         return uri.startswith("gmail://") or uri.startswith(f"gmsg://{self._url_key}/")
 
-    def fetch(self, uri: str, **__) -> FetchResult:
+    def fetch(self, uri: str, **__: object) -> FetchResult:
         if uri in self._cache:
             return self._cache[uri]
         # Lazy fetch by message ID
@@ -179,7 +179,7 @@ class GmailCrawler:
         _uri: str = "",
         query: str = "",
         limit: int = 100,
-        **__,
+        **__: object,
     ) -> list[str]:
         """List Gmail messages and return their ``gmsg://`` URIs.
 
@@ -225,7 +225,7 @@ class GmailCrawler:
 
     # ── Internal ─────────────────────────────────────────────────────────────
 
-    def _get_service(self) -> Any:
+    def _get_service(self) -> Any:  # noqa: ANN401
         if self._service is not None:
             return self._service
         try:
@@ -289,5 +289,5 @@ class GmailCrawler:
         if not uri.startswith("gmail://"):
             return "INBOX"
         path = uri.split("/", 3)
-        label_name = path[3].upper() if len(path) > 3 else "INBOX"
-        return label_name  # Gmail API accepts label names like INBOX, SENT, etc.
+        # Gmail API accepts label names like INBOX, SENT, etc.
+        return path[3].upper() if len(path) > 3 else "INBOX"

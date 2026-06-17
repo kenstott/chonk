@@ -53,6 +53,7 @@ def cluster_entities(
 # Agglomerative
 # ------------------------------------------------------------------
 
+
 def _agglomerative(
     cooccurrence: dict[tuple[str, str], float],
     entities: list[str],
@@ -106,6 +107,7 @@ def _agglomerative(
 # DBSCAN
 # ------------------------------------------------------------------
 
+
 def _dbscan(
     cooccurrence: dict[tuple[str, str], float],
     entities: list[str],
@@ -145,7 +147,7 @@ def _dbscan(
     labels = model.fit_predict(dist)
 
     # DBSCAN labels -1 as noise — give each noise entity its own singleton cluster
-    cluster_counter = max((l for l in labels if l >= 0), default=-1) + 1
+    cluster_counter = max((ln for ln in labels if ln >= 0), default=-1) + 1
     result = {}
     for i, e in enumerate(entities):
         lbl = labels[i]
@@ -160,6 +162,7 @@ def _dbscan(
 # ------------------------------------------------------------------
 # Leiden
 # ------------------------------------------------------------------
+
 
 def _leiden(
     cooccurrence: dict[tuple[str, str], float],

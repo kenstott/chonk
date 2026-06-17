@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from ..models import DocumentChunk
@@ -30,7 +30,7 @@ def _text(el: object) -> str:
     return (getattr(el, "text", None) or "").strip()
 
 
-def _iter_weaknesses_from_dict(obj: dict) -> list[dict]:
+def _iter_weaknesses_from_dict(obj: dict[str, Any]) -> list[dict[str, Any]]:
     """Extract weakness dicts from a _to_dict() result of CWE XML root."""
     # Root is Weakness_Catalog, child Weaknesses contains Weakness elements
     weaknesses_container = obj.get("Weaknesses")
@@ -44,7 +44,7 @@ def _iter_weaknesses_from_dict(obj: dict) -> list[dict]:
     return raw
 
 
-def _get_child_text(weakness: dict, child_key: str) -> str:
+def _get_child_text(weakness: dict[str, Any], child_key: str) -> str:
     child = weakness.get(child_key)
     if child is None:
         return ""
@@ -53,7 +53,7 @@ def _get_child_text(weakness: dict, child_key: str) -> str:
     return _text(child)
 
 
-def _render_one_dict(weakness: dict) -> str:
+def _render_one_dict(weakness: dict[str, Any]) -> str:
     cwe_id = weakness.get("ID", "")
     name = weakness.get("Name", "")
     description = _get_child_text(weakness, "Description")
@@ -156,7 +156,7 @@ class CweRenderer:
             return chunks
         weaknesses = _iter_weaknesses_from_dict(obj)
 
-        meta: dict[str, dict] = {}
+        meta: dict[str, dict[str, Any]] = {}
         rendered: dict[str, str] = {}
         for w in weaknesses:
             cwe_id = w.get("ID", "")

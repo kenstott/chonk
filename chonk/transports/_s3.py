@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 from urllib.parse import urlparse
 
 from ._protocol import FetchResult
@@ -28,7 +29,7 @@ class S3Transport:
     def can_handle(self, uri: str) -> bool:
         return uri.startswith("s3://") or uri.startswith("s3a://")
 
-    def fetch(self, uri: str, **kwargs) -> FetchResult:
+    def fetch(self, uri: str, **kwargs: object) -> FetchResult:
         if not _BOTO3_AVAILABLE:
             raise ImportError("pip install chonk[s3]")
 
@@ -36,7 +37,7 @@ class S3Transport:
         bucket = parsed.netloc
         key = parsed.path.lstrip("/")
 
-        session_kwargs: dict = {}
+        session_kwargs: dict[str, Any] = {}
         if kwargs.get("profile"):
             session_kwargs["profile_name"] = kwargs["profile"]
         if kwargs.get("region"):
@@ -51,7 +52,7 @@ class S3Transport:
 
         assert _boto3 is not None  # guarded by _BOTO3_AVAILABLE check above
         session = _boto3.Session(**session_kwargs)
-        client_kwargs: dict = {}
+        client_kwargs: dict[str, Any] = {}
         endpoint = kwargs.get("endpoint_url") or os.environ.get("AWS_ENDPOINT_OVERRIDE")
         if endpoint:
             client_kwargs["endpoint_url"] = endpoint

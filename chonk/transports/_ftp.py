@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from ftplib import FTP  # nosec B402 — FTP transport intentionally implements FTP protocol
 from io import BytesIO
+from typing import cast
 from urllib.parse import urlparse
 
 from ._protocol import FetchResult
@@ -22,13 +23,13 @@ class FtpTransport:
     def can_handle(self, uri: str) -> bool:
         return uri.startswith("ftp://")
 
-    def fetch(self, uri: str, **kwargs) -> FetchResult:
+    def fetch(self, uri: str, **kwargs: object) -> FetchResult:
         parsed = urlparse(uri)
         host = parsed.hostname
-        port = kwargs.get("port") or parsed.port or 21
+        port = cast("int", kwargs.get("port") or parsed.port or 21)
         remote_path = parsed.path
-        username = kwargs.get("username") or parsed.username or "anonymous"
-        password = kwargs.get("password") or parsed.password or ""
+        username = cast("str", kwargs.get("username") or parsed.username or "anonymous")
+        password = cast("str", kwargs.get("password") or parsed.password or "")
 
         if host is None:
             raise ValueError(f"FtpTransport: could not parse host from URI: {uri!r}")

@@ -6,9 +6,14 @@
 # permission from the copyright holder.
 
 """Parquet / Arrow / Feather extractor — schema summary or data table."""
+
 from __future__ import annotations
 
 import os
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from chonk.models import DocumentChunk
 
 
 class ParquetExtractor:
@@ -20,7 +25,7 @@ class ParquetExtractor:
 
     HANDLED = {"parquet", "arrow", "feather"}
 
-    def __init__(self, mode: str = "schema"):
+    def __init__(self, mode: str = "schema") -> None:
         self._mode = mode
 
     def can_handle(self, doc_type: str) -> bool:
@@ -54,7 +59,7 @@ class ParquetExtractor:
         return self._render_schema(table)
 
     @staticmethod
-    def _render_schema(table) -> str:
+    def _render_schema(table: Any) -> str:  # noqa: ANN401
         lines = [f"Rows: {table.num_rows}", "Columns:"]
         for field in table.schema:
             lines.append(f"  {field.name}: {field.type}")
@@ -67,19 +72,19 @@ class ParquetExtractor:
         return "\n".join(lines)
 
     @staticmethod
-    def _render_data(table) -> str:
+    def _render_data(table: Any) -> str:  # noqa: ANN401
         headers = table.schema.names
         header_row = "| " + " | ".join(headers) + " |"
         sep_row = "| " + " | ".join("---" for _ in headers) + " |"
         data_rows = [
-            "| " + " | ".join(
-                str(table.column(col)[i].as_py()).replace("|", "\\|")
-                for col in headers
-            ) + " |"
+            "| "
+            + " | ".join(str(table.column(col)[i].as_py()).replace("|", "\\|") for col in headers)
+            + " |"
             for i in range(table.num_rows)
         ]
         return "\n".join([header_row, sep_row] + data_rows)
 
-
-    def annotate(self, chunks: list, data: bytes, source_path: str | None = None) -> list:
+    def annotate(
+        self, chunks: list[DocumentChunk], data: bytes, source_path: str | None = None
+    ) -> list[DocumentChunk]:
         return chunks

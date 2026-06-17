@@ -6,19 +6,29 @@
 # permission from the copyright holder.
 
 """DocumentLoader — orchestrates Transport → Extractor → chunk_document → enrich_chunks."""
+
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 from ._struct_inference import infer_csv, infer_json, infer_jsonl, infer_parquet
 from .models import DocumentChunk
 from .schema import EndpointMeta, TableMeta
 
-_STRUCTURED_EXTENSIONS = frozenset({".parquet", ".arrow", ".feather", ".csv", ".json", ".jsonl", ".ndjson"})
-from .chunking import chunk_document
-from .extractors import detect_extractor, detect_type_from_source, normalize_type
-from .transports import (
+_STRUCTURED_EXTENSIONS = frozenset(
+    {".parquet", ".arrow", ".feather", ".csv", ".json", ".jsonl", ".ndjson"}
+)
+from .chunking import chunk_document  # noqa: E402
+from .extractors import (  # noqa: E402
+    Extractor,
+    detect_extractor,
+    detect_type_from_source,
+    normalize_type,
+)
+from .transports import (  # noqa: E402
     Crawler,
     DirectoryCrawler,
     FetchResult,
@@ -27,6 +37,7 @@ from .transports import (
     LocalTransport,
     S3Transport,
     SftpTransport,
+    Transport,
     WebCrawler,
 )
 
@@ -51,34 +62,34 @@ class DocumentLoader:
         overflow_margin: float = 0.15,
         enrich_context: bool = True,
         include_doc_name: bool = True,
-        extra_transports: list | None = None,
-        extra_extractors: list | None = None,
-    ):
+        extra_transports: Sequence[Transport] | None = None,
+        extra_extractors: Sequence[Extractor] | None = None,
+    ) -> None:
         """Args:
-            min_chunk_size: Accumulation floor — accumulate across sections until
-                this size is reached (default 600).
-            max_chunk_size: Hard ceiling — blocks exceeding this + overflow_margin
-                are split at natural boundaries (default 1500).
-            overflow_margin: Fractional slack above max_chunk_size before a split
-                is forced (default 0.15 = 15%).
-            enrich_context: When True (default), prepends a ``[doc > section]``
-                breadcrumb to every chunk and sets ``embedding_content``.  Set
-                False for naive chunks with no breadcrumb and
-                ``embedding_content = None``.
-            include_doc_name: Include the document name as the first breadcrumb
-                element (default True).  Set False when all chunks share a single
-                corpus document name that adds no signal (e.g. one "Medical" doc
-                containing many unrelated articles).
-            extra_transports: Additional transport backends checked before defaults.
-            extra_extractors: Additional extractor backends checked before defaults.
+        min_chunk_size: Accumulation floor — accumulate across sections until
+            this size is reached (default 600).
+        max_chunk_size: Hard ceiling — blocks exceeding this + overflow_margin
+            are split at natural boundaries (default 1500).
+        overflow_margin: Fractional slack above max_chunk_size before a split
+            is forced (default 0.15 = 15%).
+        enrich_context: When True (default), prepends a ``[doc > section]``
+            breadcrumb to every chunk and sets ``embedding_content``.  Set
+            False for naive chunks with no breadcrumb and
+            ``embedding_content = None``.
+        include_doc_name: Include the document name as the first breadcrumb
+            element (default True).  Set False when all chunks share a single
+            corpus document name that adds no signal (e.g. one "Medical" doc
+            containing many unrelated articles).
+        extra_transports: Additional transport backends checked before defaults.
+        extra_extractors: Additional extractor backends checked before defaults.
         """
         self.min_chunk_size = min_chunk_size
         self.max_chunk_size = max_chunk_size
         self.overflow_margin = overflow_margin
         self.enrich_context = enrich_context
         self.include_doc_name = include_doc_name
-        self._extra_transports = extra_transports or []
-        self._extra_extractors = extra_extractors or []
+        self._extra_transports: list[Transport] = list(extra_transports) if extra_transports else []
+        self._extra_extractors: list[Extractor] = list(extra_extractors) if extra_extractors else []
 
         self._transport_registry = self._extra_transports + [
             LocalTransport(),
@@ -88,19 +99,19 @@ class DocumentLoader:
             SftpTransport(),
         ]
 
-    def _find_transport(self, uri: str):
+    def _find_transport(self, uri: str) -> Transport:
         for transport in self._transport_registry:
             if transport.can_handle(uri):
                 return transport
         raise ValueError(f"No transport found for URI: {uri!r}")
 
-    def _find_extractor(self, doc_type: str):
+    def _find_extractor(self, doc_type: str) -> Extractor:
         for extractor in self._extra_extractors:
             if extractor.can_handle(doc_type):
                 return extractor
         return detect_extractor(doc_type)
 
-    def _find_extractor_raw(self, raw_doc_type: str):
+    def _find_extractor_raw(self, raw_doc_type: str) -> Extractor:
         """Try extra extractors first with the raw (un-normalised) type string.
 
         Falls back to normalising via normalize_type and then detect_extractor.
@@ -118,6 +129,7 @@ class DocumentLoader:
         if not self.enrich_context:
             return chunks
         from .context import enrich_chunks
+
         return enrich_chunks(chunks)
 
     def load(self, uri: str, name: str | None = None) -> list[DocumentChunk]:
@@ -134,6 +146,7 @@ class DocumentLoader:
             List of DocumentChunk objects.
         """
         import os
+
         if os.path.splitext(uri)[1].lower() in _STRUCTURED_EXTENSIONS:
             return self.load_structured_file(uri, name=name)
 
@@ -147,8 +160,11 @@ class DocumentLoader:
         doc_name = name or Path(result.source_path or uri).stem
 
         chunks = chunk_document(
-            doc_name, text,
-            self.min_chunk_size, self.max_chunk_size, self.overflow_margin,
+            doc_name,
+            text,
+            self.min_chunk_size,
+            self.max_chunk_size,
+            self.overflow_margin,
             include_breadcrumb=self.enrich_context,
             include_doc_name=self.include_doc_name,
         )
@@ -182,8 +198,11 @@ class DocumentLoader:
         text = extractor.extract(data, source_path)
 
         chunks = chunk_document(
-            name, text,
-            self.min_chunk_size, self.max_chunk_size, self.overflow_margin,
+            name,
+            text,
+            self.min_chunk_size,
+            self.max_chunk_size,
+            self.overflow_margin,
             include_breadcrumb=self.enrich_context,
             include_doc_name=self.include_doc_name,
         )
@@ -195,7 +214,7 @@ class DocumentLoader:
         connection_url: str,
         query: str,
         name: str,
-        params: dict | None = None,
+        params: dict[str, object] | None = None,
     ) -> list[DocumentChunk]:
         """Execute a SQL query via SQLAlchemy and load the result as a document.
 
@@ -227,8 +246,11 @@ class DocumentLoader:
         text = CsvExtractor().extract(result.data)
 
         chunks = chunk_document(
-            name, text,
-            self.min_chunk_size, self.max_chunk_size, self.overflow_margin,
+            name,
+            text,
+            self.min_chunk_size,
+            self.max_chunk_size,
+            self.overflow_margin,
             include_breadcrumb=self.enrich_context,
             include_doc_name=self.include_doc_name,
         )
@@ -236,7 +258,7 @@ class DocumentLoader:
 
     def load_from_db(
         self,
-        connection,
+        connection: Any,  # noqa: ANN401
         queries: dict[str, str] | list[tuple[str, str]],
         doc_type: str = "csv",
     ) -> list[DocumentChunk]:
@@ -290,8 +312,11 @@ class DocumentLoader:
             result = transport.fetch(f"sqlquery://{name}", sql=sql)
             text = extractor.extract(result.data, source_path=name)
             chunks = chunk_document(
-                name, text,
-                self.min_chunk_size, self.max_chunk_size, self.overflow_margin,
+                name,
+                text,
+                self.min_chunk_size,
+                self.max_chunk_size,
+                self.overflow_margin,
                 include_breadcrumb=self.enrich_context,
                 include_doc_name=self.include_doc_name,
             )
@@ -376,8 +401,11 @@ class DocumentLoader:
             result = crawler._cache[uri]
             text = extractor.extract(result.data, source_path=name)
             chunks = chunk_document(
-                name, text,
-                self.min_chunk_size, self.max_chunk_size, self.overflow_margin,
+                name,
+                text,
+                self.min_chunk_size,
+                self.max_chunk_size,
+                self.overflow_margin,
                 include_breadcrumb=self.enrich_context,
                 include_doc_name=self.include_doc_name,
             )
@@ -438,8 +466,11 @@ class DocumentLoader:
                     continue
                 name = result.source_path or "email"
                 chunks = chunk_document(
-                    name, text,
-                    self.min_chunk_size, self.max_chunk_size, self.overflow_margin,
+                    name,
+                    text,
+                    self.min_chunk_size,
+                    self.max_chunk_size,
+                    self.overflow_margin,
                     include_breadcrumb=self.enrich_context,
                 )
                 all_chunks.extend(self._enrich(chunks))
@@ -458,8 +489,11 @@ class DocumentLoader:
             List of DocumentChunk objects.
         """
         chunks = chunk_document(
-            name, text,
-            self.min_chunk_size, self.max_chunk_size, self.overflow_margin,
+            name,
+            text,
+            self.min_chunk_size,
+            self.max_chunk_size,
+            self.overflow_margin,
             include_breadcrumb=self.enrich_context,
             include_doc_name=self.include_doc_name,
         )
@@ -496,13 +530,15 @@ class DocumentLoader:
             if table.columns:
                 lines.append(f"Columns: {', '.join(c.name for c in table.columns)}")
 
-            chunks.append(DocumentChunk(
-                document_name=doc_name,
-                content="\n".join(lines),
-                section=["table_description"],
-                chunk_index=0,
-                chunk_type="db_table",
-            ))
+            chunks.append(
+                DocumentChunk(
+                    document_name=doc_name,
+                    content="\n".join(lines),
+                    section=["table_description"],
+                    chunk_index=0,
+                    chunk_type="db_table",
+                )
+            )
 
             for col_idx, col in enumerate(table.columns, start=1):
                 col_doc_name = f"schema:{db_prefix}.{table.name}.{col.name}"
@@ -519,13 +555,15 @@ class DocumentLoader:
                 if col.description:
                     col_lines.append(f"Description: {col.description}")
 
-                chunks.append(DocumentChunk(
-                    document_name=col_doc_name,
-                    content="\n".join(col_lines),
-                    section=["column_description"],
-                    chunk_index=col_idx,
-                    chunk_type="db_column",
-                ))
+                chunks.append(
+                    DocumentChunk(
+                        document_name=col_doc_name,
+                        content="\n".join(col_lines),
+                        section=["column_description"],
+                        chunk_index=col_idx,
+                        chunk_type="db_column",
+                    )
+                )
 
         return self._enrich(chunks)
 
@@ -561,13 +599,15 @@ class DocumentLoader:
             if endpoint.fields:
                 lines.append(f"Fields: {', '.join(f.name for f in endpoint.fields)}")
 
-            chunks.append(DocumentChunk(
-                document_name=doc_name,
-                content="\n".join(lines),
-                section=[],
-                chunk_index=0,
-                chunk_type=chunk_type,
-            ))
+            chunks.append(
+                DocumentChunk(
+                    document_name=doc_name,
+                    content="\n".join(lines),
+                    section=[],
+                    chunk_index=0,
+                    chunk_type=chunk_type,
+                )
+            )
 
             for field_idx, fld in enumerate(endpoint.fields, start=1):
                 field_doc_name = f"api:{api_prefix}.{endpoint.path}.{fld.name}"
@@ -580,13 +620,15 @@ class DocumentLoader:
                 if fld.description:
                     field_lines.append(f"Description: {fld.description}")
 
-                chunks.append(DocumentChunk(
-                    document_name=field_doc_name,
-                    content="\n".join(field_lines),
-                    section=[],
-                    chunk_index=field_idx,
-                    chunk_type="api_field",
-                ))
+                chunks.append(
+                    DocumentChunk(
+                        document_name=field_doc_name,
+                        content="\n".join(field_lines),
+                        section=[],
+                        chunk_index=field_idx,
+                        chunk_type="api_field",
+                    )
+                )
 
         return self._enrich(chunks)
 
@@ -607,6 +649,7 @@ class DocumentLoader:
             Enriched DocumentChunk list (one table chunk + one per column).
         """
         import os
+
         ext = os.path.splitext(path_or_uri)[1].lower()
         doc_name = name or os.path.splitext(os.path.basename(path_or_uri))[0]
 
@@ -638,7 +681,7 @@ class DocumentLoader:
         self,
         uri: str,
         crawler: Crawler | None = None,
-        **crawler_kwargs,
+        **crawler_kwargs: Any,  # noqa: ANN401
     ) -> list[DocumentChunk]:
         """Crawl *uri* with *crawler*, then load each discovered document.
 

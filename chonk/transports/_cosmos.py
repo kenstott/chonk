@@ -43,6 +43,7 @@ Usage::
 
 Requires: azure-cosmos>=4.5  (``pip install azure-cosmos``)
 """
+
 from __future__ import annotations
 
 import json
@@ -57,7 +58,7 @@ _log = logging.getLogger(__name__)
 _SCHEMA_SAMPLE_SIZE = DEFAULT_SCHEMA_SAMPLE_SIZE
 
 
-def _default(obj: Any) -> Any:
+def _default(obj: Any) -> Any:  # noqa: ANN401
     return str(obj)
 
 
@@ -89,7 +90,7 @@ class CosmosCrawler:
         connection_mode: str = "Gateway",
         schema_sample_size: int = _SCHEMA_SAMPLE_SIZE,
         field_aliases: dict[str, str] | None = None,
-    ):
+    ) -> None:
         self._url = url
         self._key = key
         self._database = database
@@ -108,14 +109,14 @@ class CosmosCrawler:
     def can_handle(self, uri: str) -> bool:
         return uri.startswith(f"{self.SCHEME}://")
 
-    def fetch(self, uri: str, **__) -> FetchResult:
+    def fetch(self, uri: str, **__: object) -> FetchResult:
         if uri not in self._cache:
             raise KeyError(f"CosmosCrawler: unknown URI {uri!r} — call crawl() first")
         return self._cache[uri]
 
     # ── Crawler protocol ──────────────────────────────────────────────────────
 
-    def crawl(self, uri: str = "", **__) -> list[str]:
+    def crawl(self, uri: str = "", **__: object) -> list[str]:
         """Query all configured containers, cache items, and emit schema chunks.
 
         Returns:
@@ -124,11 +125,10 @@ class CosmosCrawler:
         """
         try:
             from azure.cosmos import CosmosClient, PartitionKey  # noqa: F401
-        except ImportError:
+        except ImportError as exc:
             raise ImportError(
-                "azure-cosmos is required for CosmosCrawler. "
-                "Install with: pip install azure-cosmos"
-            )
+                "azure-cosmos is required for CosmosCrawler. Install with: pip install azure-cosmos"
+            ) from exc
 
         client = CosmosClient(self._url, credential=self._key)
         db = client.get_database_client(self._database)
@@ -151,7 +151,7 @@ class CosmosCrawler:
                 max_item_count=self._max_item_count,
                 enable_cross_partition_query=True,
             )
-            sample: list[dict] = []
+            sample: list[dict[str, object]] = []
             cname_total = 0
 
             for item in items:
@@ -180,8 +180,10 @@ class CosmosCrawler:
             # ── Schema chunk per container ────────────────────────────────────
             self._known_fields.update(collect_field_paths(sample))
             schema_text = infer_schema_text(
-                sample, f"{self._database}/{cname}",
-                total_docs=cname_total, sample_size=len(sample),
+                sample,
+                f"{self._database}/{cname}",
+                total_docs=cname_total,
+                sample_size=len(sample),
             )
             schema_uri = f"{self.SCHEME}://{self._database}/{cname}/_schema"
             self._cache[schema_uri] = FetchResult(

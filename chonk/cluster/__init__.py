@@ -6,8 +6,9 @@
 # permission from the copyright holder.
 
 """chonk cluster — co-occurrence matrix and entity clustering."""
-from ._cooccurrence import CooccurrenceMatrix
+
 from ._clusterer import cluster_entities
+from ._cooccurrence import CooccurrenceMatrix
 from ._map import ClusterMap
 
 __all__ = [

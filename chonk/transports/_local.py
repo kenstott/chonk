@@ -32,9 +32,9 @@ class LocalTransport:
     def can_handle(self, uri: str) -> bool:
         return _is_local_uri(uri)
 
-    def fetch(self, uri: str, **kwargs) -> FetchResult:
+    def fetch(self, uri: str, **kwargs: object) -> FetchResult:
         if uri.startswith("file://"):
-            path = Path(uri[len("file://"):])
+            path = Path(uri[len("file://") :])
         else:
             path = Path(uri)
 

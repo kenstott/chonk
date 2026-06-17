@@ -26,7 +26,8 @@ class AnswerContext:
         query: The original user query.
         active_entities: Entity names extracted from the query or retrieval.
     """
-    chunks: list["ScoredChunk"]
+
+    chunks: list[ScoredChunk]
     query: str
     community_context: str | None = None
     active_entities: list[str] = field(default_factory=list)

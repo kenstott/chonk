@@ -15,9 +15,10 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from .extractors import Extractor
 from .indexer import IndexHandle
 from .loader import DocumentLoader
-from .models import ScoredChunk
+from .models import DocumentChunk, ScoredChunk
 from .storage import Store
 
 if TYPE_CHECKING:
@@ -30,19 +31,21 @@ if TYPE_CHECKING:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _stable_id(*parts: str) -> str:
     """Stable 16-char hex ID from string parts."""
     return hashlib.sha1(":".join(parts).encode(), usedforsecurity=False).hexdigest()[:16]
 
 
-def _make_extractor(name: str):
+def _make_extractor(name: str) -> Extractor:
     if name == "edgar":
         from .extractors._edgar import EdgarExtractor
+
         return EdgarExtractor(infer_bold_headings=True)
     raise ValueError(f"Unknown extractor: {name!r}")
 
 
-def _make_loader(cfg: dict, enrich_override: bool | None = None) -> DocumentLoader:
+def _make_loader(cfg: dict[str, Any], enrich_override: bool | None = None) -> DocumentLoader:
     lc = cfg.get("loader", {})
     extractors = [_make_extractor(e) for e in lc.get("extra_extractors", [])]
     enrich = enrich_override if enrich_override is not None else lc.get("enrich_context", True)
@@ -54,7 +57,7 @@ def _make_loader(cfg: dict, enrich_override: bool | None = None) -> DocumentLoad
     )
 
 
-def _ingest_glob(loader: DocumentLoader, src: dict) -> list:
+def _ingest_glob(loader: DocumentLoader, src: dict[str, Any]) -> list[DocumentChunk]:
     base = Path(src["path"])
     pattern = src.get("pattern", "*")
     prefix = src.get("name_prefix", "")
@@ -69,7 +72,7 @@ def _ingest_glob(loader: DocumentLoader, src: dict) -> list:
     return chunks
 
 
-def _ingest_json_array(loader: DocumentLoader, src: dict) -> list:
+def _ingest_json_array(loader: DocumentLoader, src: dict[str, Any]) -> list[DocumentChunk]:
     path = Path(src["path"])
     array_field = src["array_field"]
     id_path: list[str] = src.get("id_path", "").split(".") if src.get("id_path") else []
@@ -86,7 +89,7 @@ def _ingest_json_array(loader: DocumentLoader, src: dict) -> list:
     return chunks
 
 
-def _ingest_sql(loader: DocumentLoader, src: dict) -> list:
+def _ingest_sql(loader: DocumentLoader, src: dict[str, Any]) -> list[DocumentChunk]:
     connection = src["connection"]
     query = src["query"].strip()
     name = src.get("name", "sql_source")
@@ -94,6 +97,7 @@ def _ingest_sql(loader: DocumentLoader, src: dict) -> list:
     content_col = src.get("content_col")
     if name_col and content_col:
         import duckdb
+
         db_path = connection.replace("duckdb:///", "")
         conn = duckdb.connect(db_path, read_only=True)
         rows = conn.execute(query).fetchall()
@@ -104,7 +108,9 @@ def _ingest_sql(loader: DocumentLoader, src: dict) -> list:
         chunks = []
         for row in rows:
             chunks.extend(
-                loader.load_bytes(str(row[content_idx]).encode(), name=str(row[name_idx]), doc_type="text")
+                loader.load_bytes(
+                    str(row[content_idx]).encode(), name=str(row[name_idx]), doc_type="text"
+                )
             )
         return chunks
     return loader.load_from_db(connection, queries={name: query})
@@ -117,7 +123,7 @@ _INGEST_FNS = {
 }
 
 
-def _embed_chunks(chunks: list, cfg: dict) -> np.ndarray:
+def _embed_chunks(chunks: list[DocumentChunk], cfg: dict[str, Any]) -> np.ndarray:
     import numpy as np
     from sentence_transformers import SentenceTransformer
 
@@ -129,7 +135,7 @@ def _embed_chunks(chunks: list, cfg: dict) -> np.ndarray:
     vecs = []
     for i in range(0, len(texts), batch_size):
         v = model.encode(
-            texts[i: i + batch_size],
+            texts[i : i + batch_size],
             show_progress_bar=False,
             normalize_embeddings=True,
         )
@@ -143,15 +149,18 @@ def _embed_chunks(chunks: list, cfg: dict) -> np.ndarray:
 def _embed_texts(texts: list[str], model_name: str, batch_size: int = 256) -> np.ndarray:
     import numpy as np
     from sentence_transformers import SentenceTransformer
+
     model = SentenceTransformer(model_name)
     vecs = []
     for i in range(0, len(texts), batch_size):
-        v = model.encode(texts[i: i + batch_size], show_progress_bar=False, normalize_embeddings=True)
+        v = model.encode(
+            texts[i : i + batch_size], show_progress_bar=False, normalize_embeddings=True
+        )
         vecs.append(np.array(v, dtype="float32"))
     return np.vstack(vecs)
 
 
-def _ingest_source(src: dict, loader: DocumentLoader) -> list:
+def _ingest_source(src: dict[str, Any], loader: DocumentLoader) -> list[DocumentChunk]:
     stype = src.get("type") or ""
     fn = _INGEST_FNS.get(stype)
     if fn is None:
@@ -162,6 +171,7 @@ def _ingest_source(src: dict, loader: DocumentLoader) -> list:
 # ---------------------------------------------------------------------------
 # Index — returned by build()
 # ---------------------------------------------------------------------------
+
 
 class Index:
     """Returned by :func:`build`. Wraps a fully-built Store with search and RT mutation.
@@ -182,11 +192,11 @@ class Index:
         self,
         store: Store,
         embed_model: str,
-        search_defaults: dict,
-        index_cfg: dict,
-        loader_cfg: dict,
-        embed_cfg: dict,
-    ):
+        search_defaults: dict[str, Any],
+        index_cfg: dict[str, Any],
+        loader_cfg: dict[str, Any],
+        embed_cfg: dict[str, Any],
+    ) -> None:
         self._store = store
         self._embed_model = embed_model
         self._search_defaults = search_defaults
@@ -234,7 +244,9 @@ class Index:
                 ids.extend(self._domain_map.get(ns, {}).values())
         return ids or None
 
-    def _get_or_register_domain(self, namespace_id: str, domain_name: str, description: str | None = None) -> str:
+    def _get_or_register_domain(
+        self, namespace_id: str, domain_name: str, description: str | None = None
+    ) -> str:
         ns_map = self._domain_map.get(namespace_id, {})
         if domain_name in ns_map:
             return ns_map[domain_name]
@@ -245,11 +257,15 @@ class Index:
 
     def _make_routing_fn(self) -> Callable[[str], str] | None:
         import os
+
         if not os.environ.get("OPENAI_API_KEY"):
             return None
-        model = self._index_cfg.get("routing_model") or self._index_cfg.get("svo_model", "gpt-4o-mini")
+        model = self._index_cfg.get("routing_model") or self._index_cfg.get(
+            "svo_model", "gpt-4o-mini"
+        )
         try:
             from openai import OpenAI as _OpenAI
+
             _client = _OpenAI()
 
             def _fn(prompt: str) -> str:
@@ -264,9 +280,10 @@ class Index:
         except ImportError:
             return None
 
-    def _make_embed_fn(self):
+    def _make_embed_fn(self) -> Callable[[list[str]], np.ndarray]:
         import numpy as np
         from sentence_transformers import SentenceTransformer
+
         model = SentenceTransformer(self._embed_model)
 
         def _embed_fn(texts: list[str]) -> np.ndarray:
@@ -274,11 +291,13 @@ class Index:
                 model.encode(texts, normalize_embeddings=True, show_progress_bar=False),
                 dtype="float32",
             )
+
         return _embed_fn
 
     def _get_search(self) -> EnhancedSearch:
         if self._enhanced is None:
             from .search._enhanced import EnhancedSearch
+
             self._enhanced = EnhancedSearch(
                 self._store,
                 embed_fn=self._make_embed_fn(),
@@ -295,7 +314,7 @@ class Index:
     def __enter__(self) -> Index:
         return self
 
-    def __exit__(self, *_: Any) -> None:
+    def __exit__(self, *_: object) -> None:
         self.close()
 
     def close(self) -> None:
@@ -337,15 +356,23 @@ class Index:
             # placeholders is a string of '?' param markers (one per domain_id), not
             # user data — every value is bound via parameters. Safe interpolation.
             placeholders = ", ".join("?" * len(domain_ids))
-            conn.execute(f"DELETE FROM chunk_entities WHERE chunk_id IN (SELECT chunk_id FROM embeddings WHERE domain_id IN ({placeholders}))", domain_ids)  # nosec B608  # placeholders are param markers, not user data
-            conn.execute(f"DELETE FROM svo_triples WHERE chunk_id IN (SELECT chunk_id FROM embeddings WHERE domain_id IN ({placeholders}))", domain_ids)  # nosec B608  # placeholders are param markers, not user data
+            conn.execute(
+                f"DELETE FROM chunk_entities WHERE chunk_id IN (SELECT chunk_id FROM embeddings WHERE domain_id IN ({placeholders}))",  # noqa: E501
+                domain_ids,
+            )  # nosec B608  # placeholders are param markers, not user data
+            conn.execute(
+                f"DELETE FROM svo_triples WHERE chunk_id IN (SELECT chunk_id FROM embeddings WHERE domain_id IN ({placeholders}))",  # noqa: E501
+                domain_ids,
+            )  # nosec B608  # placeholders are param markers, not user data
             conn.execute(f"DELETE FROM embeddings WHERE domain_id IN ({placeholders})", domain_ids)  # nosec B608  # placeholders are param markers, not user data
             conn.execute(f"DELETE FROM domains WHERE domain_id IN ({placeholders})", domain_ids)  # nosec B608  # placeholders are param markers, not user data
         conn.execute("DELETE FROM namespaces WHERE namespace_id = ?", [namespace_id])
         self._domain_map.pop(namespace_id, None)
         self._invalidate_search()
 
-    def add_domain(self, namespace_id: str, domain_name: str, description: str | None = None) -> str:
+    def add_domain(
+        self, namespace_id: str, domain_name: str, description: str | None = None
+    ) -> str:
         """Register a domain. Returns the domain_id. No-op if already registered.
 
         Args:
@@ -376,12 +403,12 @@ class Index:
 
     def add_source(
         self,
-        src: dict,
+        src: dict[str, Any],
         *,
         rebuild: bool = True,
-        on_progress: Any = None,
-        on_complete: Any = None,
-        on_error: Any = None,
+        on_progress: Callable[[str, int, int], None] | None = None,
+        on_complete: Callable[[int], None] | None = None,
+        on_error: Callable[[str, Exception], None] | None = None,
     ) -> IndexHandle | None:
         """Ingest a new source, register its domain, and optionally trigger async rebuild.
 
@@ -424,6 +451,7 @@ class Index:
 
         if rebuild:
             from .lifecycle import build_namespace_async
+
             return build_namespace_async(
                 namespace_id,
                 self._store.vector._conn.execute("PRAGMA database_list").fetchone()[2],
@@ -446,9 +474,9 @@ class Index:
         domain_name: str,
         *,
         rebuild: bool = True,
-        on_progress: Any = None,
-        on_complete: Any = None,
-        on_error: Any = None,
+        on_progress: Callable[[str, int, int], None] | None = None,
+        on_complete: Callable[[int], None] | None = None,
+        on_error: Callable[[str, Exception], None] | None = None,
     ) -> IndexHandle | None:
         """Remove all chunks for a domain and optionally rebuild secondary indexes.
 
@@ -464,6 +492,7 @@ class Index:
 
         if rebuild and self._domain_map.get(namespace_id):
             from .lifecycle import build_namespace_async
+
             return build_namespace_async(
                 namespace_id,
                 self._store.vector._conn.execute("PRAGMA database_list").fetchone()[2],
@@ -485,9 +514,9 @@ class Index:
         namespace_id: str | None = None,
         *,
         async_: bool = True,
-        on_progress: Any = None,
-        on_complete: Any = None,
-        on_error: Any = None,
+        on_progress: Callable[[str, int, int], None] | None = None,
+        on_complete: Callable[[int], None] | None = None,
+        on_error: Callable[[str, Exception], None] | None = None,
     ) -> list[IndexHandle]:
         """Trigger secondary-index rebuild for one or all namespaces.
 
@@ -538,7 +567,7 @@ class Index:
         mode: str | None = None,
         namespaces: list[str] | None = None,
         domains: list[str] | None = None,
-        **kwargs: Any,
+        **kwargs: Any,  # noqa: ANN401
     ) -> list[ScoredChunk]:
         """Search the index.
 
@@ -569,6 +598,7 @@ class Index:
 # ---------------------------------------------------------------------------
 # build() helpers
 # ---------------------------------------------------------------------------
+
 
 def _build_ingest_phase(
     cfg: dict[str, Any],
@@ -608,7 +638,7 @@ def _build_ingest_phase(
             return seen_domain[key]
 
         # (chunks, namespace_id, domain_id)
-        source_chunks: list[tuple[list, str | None, str | None]] = []
+        source_chunks: list[tuple[list[DocumentChunk], str | None, str | None]] = []
 
         for src in cfg.get("sources", []):
             stype = src.get("type")
@@ -627,7 +657,11 @@ def _build_ingest_phase(
                 domain_id = _get_domain_id(namespace_id, domain_name)
 
             enrich_override = src.get("enrich_context")
-            loader = _make_loader({"loader": loader_cfg}, enrich_override=enrich_override) if enrich_override is not None else default_loader
+            loader = (
+                _make_loader({"loader": loader_cfg}, enrich_override=enrich_override)
+                if enrich_override is not None
+                else default_loader
+            )
             label = f"{name!r}" + (f" → {namespace_id}/{domain_name}" if namespace_id else "")
             print(f"Ingesting {label}...")
             chunks = fn(loader, src)
@@ -641,7 +675,9 @@ def _build_ingest_phase(
         offset = 0
         for chunks, namespace_id, domain_id in source_chunks:
             n = len(chunks)
-            store.add_document(chunks, emb[offset: offset + n], namespace=namespace_id, domain_id=domain_id)
+            store.add_document(
+                chunks, emb[offset : offset + n], namespace=namespace_id, domain_id=domain_id
+            )
             offset += n
 
         print("Building FTS index...")
@@ -683,11 +719,11 @@ def _build_svo_phase(
                         return resp.choices[0].message.content or ""
 
                 llm_client = _OpenAILLMClient(svo_model)
-            except ImportError:
+            except ImportError as exc:
                 raise RuntimeError(
                     "index.svo=true requires openai installed or an LLMClient "
                     "passed as index.svo_llm_client in the config dict."
-                )
+                ) from exc
 
         extractor = SVOExtractor(llm_client)
         pipeline = EntityGraphPipeline(extractor)
@@ -701,7 +737,8 @@ def _build_svo_phase(
 # build()
 # ---------------------------------------------------------------------------
 
-def build(config: str | Path | dict, *, force: bool = False) -> Index:
+
+def build(config: str | Path | dict[str, Any], *, force: bool = False) -> Index:
     """Build a fully-indexed store from a YAML config and return an :class:`Index`.
 
     Phases: ingest → embed → FTS → NER → community → SVO (opt-in).
@@ -797,6 +834,7 @@ def build(config: str | Path | dict, *, force: bool = False) -> Index:
         if existing == 0 or force:
             print("Building NER index...")
             from .ner import build_ner
+
             build_ner(store, spacy_model=spacy_model)
             print("  NER done.")
         else:
@@ -804,10 +842,13 @@ def build(config: str | Path | dict, *, force: bool = False) -> Index:
 
     # ── Phase: community ─────────────────────────────────────────────────────
     if run_community:
-        existing = store.vector._conn.execute("SELECT COUNT(*) FROM chunk_communities").fetchone()[0]
+        existing = store.vector._conn.execute("SELECT COUNT(*) FROM chunk_communities").fetchone()[
+            0
+        ]
         if existing == 0 or force:
             print("Building community index...")
             from .community import build_community
+
             n = build_community(
                 db_path,
                 embed_model_name,
@@ -835,27 +876,27 @@ def build(config: str | Path | dict, *, force: bool = False) -> Index:
 from ._ingest_worker import (  # noqa: E402  # re-export after Index/build defs
     _pg_connect as _pg_connect,
 )
-from ._ingest_worker import (
+from ._ingest_worker import (  # noqa: E402
     _process_queue_job as _process_queue_job,
 )
-from ._ingest_worker import (
+from ._ingest_worker import (  # noqa: E402
     _queue_pending_count as _queue_pending_count,
 )
-from ._ingest_worker import (
+from ._ingest_worker import (  # noqa: E402
     _queue_processing_count as _queue_processing_count,
 )
-from ._ingest_worker import (
+from ._ingest_worker import (  # noqa: E402
     _requeue_stale_leases as _requeue_stale_leases,
 )
-from ._ingest_worker import (
+from ._ingest_worker import (  # noqa: E402
     _run_graph_build as _run_graph_build,
 )
-from ._ingest_worker import (
+from ._ingest_worker import (  # noqa: E402
     _set_control as _set_control,
 )
-from ._ingest_worker import (
+from ._ingest_worker import (  # noqa: E402
     run_coordinator as run_coordinator,
 )
-from ._ingest_worker import (
+from ._ingest_worker import (  # noqa: E402
     run_worker as run_worker,
 )

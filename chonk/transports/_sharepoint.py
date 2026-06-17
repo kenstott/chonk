@@ -93,7 +93,7 @@ _LIST_TEMPLATES = {
 }
 
 
-def _item_to_text(fields: dict, list_title: str, item_type: str = "List item") -> str:
+def _item_to_text(fields: dict[str, object], list_title: str, item_type: str = "List item") -> str:
     """Serialize a SharePoint list item's fields to plain text."""
     skip = {"@odata.etag", "odata.etag", "odata.id", "odata.type", "odata.editLink"}
     lines = [f"{item_type}: {list_title}"]
@@ -106,7 +106,7 @@ def _item_to_text(fields: dict, list_title: str, item_type: str = "List item") -
     return "\n".join(lines)
 
 
-def _event_to_text(fields: dict, list_title: str) -> str:
+def _event_to_text(fields: dict[str, Any], list_title: str) -> str:
     """Serialize a SharePoint calendar event to plain text."""
     lines = [f"Calendar: {list_title}"]
     priority = [
@@ -165,7 +165,7 @@ class SharePointCrawler:
         password: str | None = None,
         artifacts: list[str] | None = None,
         max_items: int = 5000,
-    ):
+    ) -> None:
         self._site_url = site_url.rstrip("/")
         self._auth_mode = auth_mode
         self._tenant_id = tenant_id
@@ -189,7 +189,7 @@ class SharePointCrawler:
     def can_handle(self, uri: str) -> bool:
         return uri.startswith(f"spitem://{self._url_key}/") or uri == self._site_url
 
-    def fetch(self, uri: str, **__) -> FetchResult:
+    def fetch(self, uri: str, **__: object) -> FetchResult:
         if uri in self._cache:
             return self._cache[uri]
         if uri in self._pending:
@@ -208,7 +208,7 @@ class SharePointCrawler:
 
     # ── Crawler Protocol ──────────────────────────────────────────────────────
 
-    def crawl(self, _uri: str = "", **__) -> list[str]:
+    def crawl(self, _uri: str = "", **__: object) -> list[str]:
         """Connect to SharePoint and index all configured artifact types.
 
         Returns:
@@ -242,7 +242,7 @@ class SharePointCrawler:
 
     # ── Auth ──────────────────────────────────────────────────────────────────
 
-    def _make_graph_session(self, requests_mod):
+    def _make_graph_session(self, requests_mod: Any) -> Any:  # noqa: ANN401
         try:
             import msal  # type: ignore[import]
         except ImportError:
@@ -266,7 +266,7 @@ class SharePointCrawler:
         session.headers["Accept"] = "application/json"
         return session
 
-    def _make_legacy_session(self, requests_mod):
+    def _make_legacy_session(self, requests_mod: Any) -> Any:  # noqa: ANN401
         """SharePoint Add-in OAuth via Azure ACS token endpoint."""
         realm = self._get_realm(requests_mod)
         resource = f"00000003-0000-0ff1-ce00-000000000000/{self._site_url.split('/')[2]}@{realm}"
@@ -288,7 +288,7 @@ class SharePointCrawler:
         session.headers["Accept"] = "application/json;odata=verbose"
         return session
 
-    def _get_realm(self, requests_mod) -> str:
+    def _get_realm(self, requests_mod: Any) -> str:  # noqa: ANN401
         """Fetch tenant realm GUID from SharePoint WWW-Authenticate header."""
         resp = requests_mod.get(
             f"{self._site_url}/_vti_bin/client.svc",
@@ -303,7 +303,7 @@ class SharePointCrawler:
         # Fall back to tenant_id if realm auto-discovery fails
         return self._tenant_id or ""
 
-    def _make_ntlm_session(self, requests_mod):
+    def _make_ntlm_session(self, requests_mod: Any) -> Any:  # noqa: ANN401
         try:
             from requests_ntlm import HttpNtlmAuth  # type: ignore[import]
         except ImportError:
@@ -344,7 +344,7 @@ class SharePointCrawler:
         resp.raise_for_status()
         return resp.json()["id"]
 
-    def _graph_get_lists(self, site_id: str) -> list[dict]:
+    def _graph_get_lists(self, site_id: str) -> list[dict[str, Any]]:
         resp = self._session.get(
             f"{_GRAPH_BASE}/sites/{site_id}/lists",
             params={"$top": 500},
@@ -451,7 +451,7 @@ class SharePointCrawler:
             elif tmpl == _TEMPLATE_GENERIC_LIST and "lists" in self._artifacts:
                 self._rest_list_items(list_id, title, "List item")
 
-    def _rest_get_lists(self) -> list[dict]:
+    def _rest_get_lists(self) -> list[dict[str, Any]]:
         resp = self._session.get(
             f"{self._site_url}/_api/web/lists",
             params={
@@ -516,19 +516,18 @@ class SharePointCrawler:
     # ── REST response helpers ─────────────────────────────────────────────────
 
     @staticmethod
-    def _rest_results(resp) -> list[dict]:
+    def _rest_results(resp: Any) -> list[dict[str, Any]]:  # noqa: ANN401
         data = resp.json()
         return SharePointCrawler._rest_results_raw(data)
 
     @staticmethod
-    def _rest_results_raw(data: dict) -> list[dict]:
+    def _rest_results_raw(data: dict[str, Any]) -> list[dict[str, Any]]:
         # verbose OData: d.results; minimal OData: value
         d = data.get("d", data)
-        results = d.get("results", d.get("value", []))
-        return results
+        return d.get("results", d.get("value", []))
 
     @staticmethod
-    def _rest_next(data: dict) -> str | None:
+    def _rest_next(data: dict[str, Any]) -> str | None:
         # verbose OData pagination uses __next
         d = data.get("d", data)
         return d.get("__next") or data.get("@odata.nextLink")

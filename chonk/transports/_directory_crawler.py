@@ -14,6 +14,7 @@ Supported URI schemes:
   - Local filesystem: ``/abs/path``, ``./rel/path``, ``file:///abs/path``
   - Amazon S3:        ``s3://bucket/prefix``
 """
+
 from __future__ import annotations
 
 import logging
@@ -25,10 +26,30 @@ logger = logging.getLogger(__name__)
 # Default file extensions treated as loadable documents
 _DEFAULT_EXTENSIONS: frozenset[str] = frozenset(
     {
-        ".md", ".txt", ".rst", ".html", ".htm",
-        ".pdf", ".docx", ".xlsx", ".pptx",
-        ".csv", ".json", ".xml", ".yaml", ".yml", ".toml",
-        ".py", ".pyw", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".java", ".sql",
+        ".md",
+        ".txt",
+        ".rst",
+        ".html",
+        ".htm",
+        ".pdf",
+        ".docx",
+        ".xlsx",
+        ".pptx",
+        ".csv",
+        ".json",
+        ".xml",
+        ".yaml",
+        ".yml",
+        ".toml",
+        ".py",
+        ".pyw",
+        ".ts",
+        ".tsx",
+        ".js",
+        ".jsx",
+        ".mjs",
+        ".java",
+        ".sql",
     }
 )
 
@@ -65,7 +86,7 @@ class DirectoryCrawler:
         recursive: bool = True,
         max_files: int = 1000,
         exclude_dirs: list[str] | None = None,
-    ):
+    ) -> None:
         self.extensions: frozenset[str] = (
             frozenset(e.lower() if e.startswith(".") else f".{e.lower()}" for e in extensions)
             if extensions is not None
@@ -88,7 +109,7 @@ class DirectoryCrawler:
         parsed = urlparse(uri)
         return parsed.scheme in ("", "file") or uri.startswith(("/", "./", "../"))
 
-    def crawl(self, uri: str, **kwargs) -> list[str]:
+    def crawl(self, uri: str, **kwargs: object) -> list[str]:
         """Return sorted list of document paths/URIs under *uri*.
 
         Args:
@@ -142,8 +163,8 @@ class DirectoryCrawler:
     def _crawl_s3(self, uri: str) -> list[str]:
         try:
             import boto3  # type: ignore[import]
-        except ImportError:
-            raise ImportError("pip install chonk[s3]  # boto3 required for S3 crawling")
+        except ImportError as exc:
+            raise ImportError("pip install chonk[s3]  # boto3 required for S3 crawling") from exc
 
         parsed = urlparse(uri)
         bucket = parsed.netloc
@@ -151,7 +172,7 @@ class DirectoryCrawler:
 
         import os
 
-        client_kwargs: dict = {}
+        client_kwargs: dict[str, str] = {}
         endpoint = os.environ.get("AWS_ENDPOINT_OVERRIDE")
         if endpoint:
             client_kwargs["endpoint_url"] = endpoint

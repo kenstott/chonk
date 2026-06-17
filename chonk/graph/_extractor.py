@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 # Copyright (c) 2025 Kenneth Stott. MIT License.
 # Canary: d624dd7b-9fcb-48a2-a460-6d6d3527a0f0
 #
@@ -128,9 +129,13 @@ class SVOExtractor:
         Returns:
             List of validated SVOTriples. Invalid rows are silently dropped.
         """
-        prompt = self._system + "\n\n" + self._user_template.format(
-            chunk_id=chunk_id or "",
-            text=text,
+        prompt = (
+            self._system
+            + "\n\n"
+            + self._user_template.format(
+                chunk_id=chunk_id or "",
+                text=text,
+            )
         )
         raw = self._llm.complete(prompt)
         result = self._parse(raw, chunk_id)
@@ -160,7 +165,7 @@ class SVOExtractor:
         self,
         text: str,
         chunk_id: str | None,
-        entities: list[dict],
+        entities: list[dict[str, str]],
     ) -> tuple[list[SVOTriple], dict[str, str], dict[str, list[str]], dict[str, str]]:
         """Entity-anchored extraction using co-occurrence hints.
 
@@ -193,10 +198,14 @@ class SVOExtractor:
         anchored_system = _ENTITY_ANCHORED_SYSTEM_PROMPT.format(
             verbs=", ".join(sorted(self._verb_set))
         )
-        prompt = anchored_system + "\n\n" + _ENTITY_ANCHORED_USER_TEMPLATE.format(
-            entity_list=entity_list,
-            chunk_id=chunk_id or "",
-            text=text,
+        prompt = (
+            anchored_system
+            + "\n\n"
+            + _ENTITY_ANCHORED_USER_TEMPLATE.format(
+                entity_list=entity_list,
+                chunk_id=chunk_id or "",
+                text=text,
+            )
         )
         raw = self._llm.complete(prompt)
         result = self._parse_entity_anchored(raw, chunk_id, valid_ids)
@@ -204,8 +213,6 @@ class SVOExtractor:
             raw = self._llm.complete(prompt + _RETRY_SUFFIX)
             result = self._parse_entity_anchored(raw, chunk_id, valid_ids)
         return result or ([], {}, {}, {})
-
-
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -228,13 +235,15 @@ class SVOExtractor:
                 verb = str(row["verb"])
                 if verb not in self._verb_set:
                     continue
-                triples.append(SVOTriple(
-                    subject_id=str(row["subject_id"]),
-                    verb=verb,
-                    object_id=str(row["object_id"]),
-                    confidence=float(row["confidence"]),
-                    source_chunk_id=chunk_id,
-                ))
+                triples.append(
+                    SVOTriple(
+                        subject_id=str(row["subject_id"]),
+                        verb=verb,
+                        object_id=str(row["object_id"]),
+                        confidence=float(row["confidence"]),
+                        source_chunk_id=chunk_id,
+                    )
+                )
             except (KeyError, TypeError, ValueError):
                 continue
 
@@ -273,14 +282,16 @@ class SVOExtractor:
                 if subj not in valid_ids or obj_ not in valid_ids:
                     continue
                 rel_key = f"{subj}|{verb}|{obj_}"
-                triples.append(SVOTriple(
-                    subject_id=subj,
-                    verb=verb,
-                    object_id=obj_,
-                    confidence=float(row["confidence"]),
-                    source_chunk_id=chunk_id,
-                    description=rel_descriptions.get(rel_key, ""),
-                ))
+                triples.append(
+                    SVOTriple(
+                        subject_id=subj,
+                        verb=verb,
+                        object_id=obj_,
+                        confidence=float(row["confidence"]),
+                        source_chunk_id=chunk_id,
+                        description=rel_descriptions.get(rel_key, ""),
+                    )
+                )
             except (KeyError, TypeError, ValueError):
                 continue
 

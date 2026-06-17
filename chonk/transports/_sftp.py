@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+from typing import Any
 from urllib.parse import urlparse
 
 from ._protocol import FetchResult
@@ -29,7 +30,7 @@ class SftpTransport:
     def can_handle(self, uri: str) -> bool:
         return uri.startswith("sftp://")
 
-    def fetch(self, uri: str, **kwargs) -> FetchResult:
+    def fetch(self, uri: str, **kwargs: object) -> FetchResult:
         if not _PARAMIKO_AVAILABLE:
             raise ImportError("pip install chonk[sftp]")
 
@@ -42,7 +43,7 @@ class SftpTransport:
         client = _paramiko.SSHClient()
         client.set_missing_host_key_policy(_paramiko.AutoAddPolicy())  # nosec B507
 
-        connect_kwargs: dict = {
+        connect_kwargs: dict[str, Any] = {
             "hostname": host,
             "port": port,
         }

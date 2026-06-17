@@ -104,7 +104,7 @@ class SchemaMatcher:
         schema_terms: list[str] | None = None,
         api_terms: list[str] | None = None,
         business_terms: list[str] | None = None,
-    ):
+    ) -> None:
         # variant_lowercase -> (entity_id, display_name, entity_type)
         self._lookup: dict[str, tuple[str, str, str]] = {}
         # entity_id -> (canonical_name, display_name, entity_type)

@@ -38,13 +38,14 @@ from __future__ import annotations
 
 import csv
 import io
+from typing import Any
 
 from ._protocol import FetchResult
 
 SCHEME = "sqlquery"
 
 
-def _resolve(connection):
+def _resolve(connection: Any) -> Any:  # noqa: ANN401
     """Return a usable connection.  Accepts URL str, Engine, or Connection."""
     if isinstance(connection, str):
         try:
@@ -64,7 +65,7 @@ def _resolve(connection):
     )
 
 
-def db_provenance(connection) -> dict:
+def db_provenance(connection: Any) -> dict[str, object]:  # noqa: ANN401
     """Return safe (no-credential) DB location info from a connection object.
 
     Extracts dialect, host, port, and database name from SQLAlchemy Engine,
@@ -86,7 +87,7 @@ def db_provenance(connection) -> dict:
     if url is None:
         return {}
 
-    info: dict = {}
+    info: dict[str, object] = {}
     if getattr(url, "drivername", None):
         info["db_dialect"] = url.drivername
     if getattr(url, "host", None):
@@ -98,7 +99,7 @@ def db_provenance(connection) -> dict:
     return info
 
 
-def _maybe_close(conn, original) -> None:
+def _maybe_close(conn: Any, original: Any) -> None:  # noqa: ANN401
     if isinstance(original, str) or (
         hasattr(original, "connect") and not hasattr(original, "execute")
     ):
@@ -108,7 +109,7 @@ def _maybe_close(conn, original) -> None:
             pass
 
 
-def _query_to_csv(conn, sql: str) -> bytes:
+def _query_to_csv(conn: Any, sql: str) -> bytes:  # noqa: ANN401
     """Execute *sql* and return result as UTF-8 CSV bytes."""
     try:
         import sqlalchemy as sa
@@ -137,13 +138,13 @@ class SqlQueryTransport:
             — no second authentication needed.
     """
 
-    def __init__(self, connection):
+    def __init__(self, connection: Any) -> None:  # noqa: ANN401
         self._connection = connection
 
     def can_handle(self, uri: str) -> bool:
         return uri.startswith(f"{SCHEME}://")
 
-    def fetch(self, uri: str, sql: str | None = None, **kwargs) -> FetchResult:
+    def fetch(self, uri: str, sql: str | None = None, **kwargs: object) -> FetchResult:
         """Fetch query results as CSV bytes.
 
         Args:

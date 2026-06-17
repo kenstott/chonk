@@ -13,12 +13,13 @@ import concurrent.futures
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable  # noqa: F401
 
 import duckdb  # type: ignore[import-untyped]  # optional dep; stubs not published
 
 from ._extractor import SVOExtractor
 from ._index import RelationshipIndex
+from ._svo import SVOTriple
 
 # Minimum number of entities a chunk must have to be eligible for extraction
 _MIN_ENTITY_CO_OCCURRENCE = 2
@@ -50,7 +51,7 @@ ProgressFn = Callable[[str, int, int], None]
 
 @runtime_checkable
 class EmbedModel(Protocol):
-    def encode(self, texts: list[str], **kwargs) -> object: ...
+    def encode(self, texts: list[str], **kwargs: Any) -> object: ...  # noqa: ANN401
 
 
 class EntityGraphPipeline:
@@ -98,7 +99,7 @@ class EntityGraphPipeline:
 
     def build(
         self,
-        store,
+        store: Any,  # noqa: ANN401
         *,
         progress: ProgressFn | None = None,
         force: bool = False,
@@ -115,6 +116,7 @@ class EntityGraphPipeline:
         Returns:
             :class:`EntityGraphStats` with counts for each write phase.
         """
+
         def _prog(phase: str, done: int, total: int) -> None:
             if progress is not None:
                 progress(phase, done, total)
@@ -135,9 +137,7 @@ class EntityGraphPipeline:
                 # svo_triples table not yet created — proceed with build
                 pass
 
-        rows = conn.execute(
-            "SELECT chunk_id, content FROM embeddings"
-        ).fetchall()
+        rows = conn.execute("SELECT chunk_id, content FROM embeddings").fetchall()
 
         try:
             chunk_entity_rows = conn.execute("""
@@ -149,16 +149,19 @@ class EntityGraphPipeline:
         except Exception:
             chunk_entity_rows = []
 
-        chunk_entities_map: dict[str, list[dict]] = defaultdict(list)
+        chunk_entities_map: dict[str, list[dict[str, str]]] = defaultdict(list)
         for chunk_id, entity_id, entity_type in chunk_entity_rows:
-            chunk_entities_map[chunk_id].append({
-                "id": entity_id,
-                "type": entity_type,
-                "description": "",
-            })
+            chunk_entities_map[chunk_id].append(
+                {
+                    "id": entity_id,
+                    "type": entity_type,
+                    "description": "",
+                }
+            )
 
-        eligible = [(cid, content) for cid, content in rows
-                    if len(chunk_entities_map.get(cid, [])) >= 2]
+        eligible = [
+            (cid, content) for cid, content in rows if len(chunk_entities_map.get(cid, [])) >= 2
+        ]
         stats.chunks_skipped = len(rows) - len(eligible)
 
         _prog(PHASE_LOAD, 1, 1)
@@ -168,7 +171,9 @@ class EntityGraphPipeline:
         new_descriptions: dict[str, str] = {}
         new_aliases: dict[str, list[str]] = defaultdict(list)
 
-        def _extract_one(row: tuple) -> tuple:
+        def _extract_one(
+            row: tuple[str, str | None],
+        ) -> tuple[list[SVOTriple], dict[str, str], dict[str, list[str]]]:
             chunk_id, content = row
             entities = chunk_entities_map.get(chunk_id, [])
             if len(entities) >= 2:
@@ -203,16 +208,12 @@ class EntityGraphPipeline:
         # ── Phase 4: persist descriptions ─────────────────────────────
         if new_descriptions:
             _prog(PHASE_PERSIST_DESCRIPTIONS, 0, len(new_descriptions))
-            stats.descriptions_written = store.set_entity_descriptions_batch(
-                new_descriptions
-            )
-            _prog(PHASE_PERSIST_DESCRIPTIONS, stats.descriptions_written,
-                  len(new_descriptions))
+            stats.descriptions_written = store.set_entity_descriptions_batch(new_descriptions)
+            _prog(PHASE_PERSIST_DESCRIPTIONS, stats.descriptions_written, len(new_descriptions))
 
         # ── Phase 5: persist aliases ──────────────────────────────────
         if new_aliases:
-            flat = {alias: eid for eid, alias_list in new_aliases.items()
-                    for alias in alias_list}
+            flat = {alias: eid for eid, alias_list in new_aliases.items() for alias in alias_list}
             _prog(PHASE_PERSIST_ALIASES, 0, len(flat))
             stats.aliases_written = store.add_entity_aliases_batch(
                 flat, source="llm", namespace=self._namespace
@@ -226,13 +227,14 @@ class EntityGraphPipeline:
         # ── Phase 7: context graph (optional) ────────────────────────
         if build_context_graph:
             from ._context_graph import build_context_graph_edges
+
             build_context_graph_edges(conn, namespace=self._namespace, force=True)
 
         return stats
 
     # ------------------------------------------------------------------
 
-    def _embed_entities(self, store, prog: ProgressFn) -> int:
+    def _embed_entities(self, store: Any, prog: ProgressFn) -> int:  # noqa: ANN401
         import numpy as np
 
         from ..models import DocumentChunk
@@ -263,7 +265,7 @@ class EntityGraphPipeline:
 
         texts: list[str] = []
         chunks: list[DocumentChunk] = []
-        for entity_id, name, description, entity_type in entity_rows:
+        for entity_id, name, description, _ in entity_rows:
             alias_str = ", ".join(aliases_map.get(entity_id, []))
             parts = [name]
             if alias_str:
@@ -272,12 +274,14 @@ class EntityGraphPipeline:
                 parts.append(description)
             text = ". ".join(parts)
             texts.append(text)
-            chunks.append(DocumentChunk(
-                document_name=f"__entity__{entity_id}",
-                content=text,
-                chunk_index=0,
-                chunk_type="entity",
-            ))
+            chunks.append(
+                DocumentChunk(
+                    document_name=f"__entity__{entity_id}",
+                    content=text,
+                    chunk_index=0,
+                    chunk_type="entity",
+                )
+            )
 
         prog(PHASE_EMBED_ENTITIES, 0, len(chunks))
         raw = self._embed_model.encode(

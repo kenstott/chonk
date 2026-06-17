@@ -6,10 +6,11 @@
 # permission from the copyright holder.
 
 """Store: composed facade over DuckDBVectorBackend and RelationalStore."""
+
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from ._pool import ThreadLocalDuckDB
 from ._protocol import VectorBackend  # noqa: F401 — runtime isinstance check
@@ -18,6 +19,7 @@ from ._vector import DuckDBVectorBackend
 
 if TYPE_CHECKING:
     from ..graph._context_graph import ContextEdge, ContextGraphStats
+    from ..models import DocumentChunk
 
 GLOBAL_NAMESPACE = "global"
 
@@ -46,7 +48,7 @@ class Store:
         embedding_dim: int = 1024,
         read_only: bool = False,
         dsn: str | None = None,
-    ):
+    ) -> None:
         """Create a Store.
 
         Args:
@@ -59,6 +61,7 @@ class Store:
         """
         if dsn is not None:
             from ._pg import PgVectorBackend
+
             self._db: ThreadLocalDuckDB | None = None
             self.vector: VectorBackend = PgVectorBackend(dsn, embedding_dim=embedding_dim)  # type: ignore[assignment]  # property satisfies bool protocol at runtime
             assert isinstance(self.vector, VectorBackend)
@@ -72,9 +75,7 @@ class Store:
         if read_only:
             self.relational = None  # type: ignore
             return
-        relational_url = (
-            f"duckdb:///{db_path}" if db_path != ":memory:" else "duckdb://"
-        )
+        relational_url = f"duckdb:///{db_path}" if db_path != ":memory:" else "duckdb://"
         try:
             self.relational = RelationalStore(relational_url)
             self.relational.init_schema()
@@ -82,6 +83,7 @@ class Store:
             # duckdb-engine or sqlalchemy is not installed; relational features are optional.
             # Install with: pip install duckdb-engine
             import logging
+
             logging.getLogger(__name__).warning(
                 f"RelationalStore unavailable (duckdb-engine not installed): {e}. "
                 "Install duckdb-engine for full SQLAlchemy+DuckDB support."
@@ -95,6 +97,7 @@ class Store:
             if "different configuration" not in str(e):
                 raise
             import logging
+
             logging.getLogger(__name__).warning(
                 f"RelationalStore unavailable (DuckDB connection conflict — relational "
                 f"features disabled): {e}"
@@ -103,8 +106,8 @@ class Store:
 
     def add_document(
         self,
-        chunks: list,
-        embeddings,
+        chunks: list[DocumentChunk],
+        embeddings: Any,  # noqa: ANN401
         namespace: str | None = None,
         source_id: str | None = None,
         domain_id: str | None = None,
@@ -119,12 +122,20 @@ class Store:
             domain_id: Optional domain registry ID (denormalization of source_id → domain).
             session_fingerprint: Optional fingerprint tagging community summary chunks.
         """
-        self.vector.add_chunks(chunks, embeddings, namespace=namespace, source_id=source_id, domain_id=domain_id, session_fingerprint=session_fingerprint)
+        self.vector.add_chunks(
+            chunks,
+            embeddings,
+            namespace=namespace,
+            source_id=source_id,
+            domain_id=domain_id,
+            session_fingerprint=session_fingerprint,
+        )
 
     @staticmethod
     def session_fingerprint(domain_ids: list[str]) -> str:
         """Stable hex fingerprint of a sorted domain_ids set."""
         import hashlib
+
         key = ",".join(sorted(domain_ids))
         return hashlib.sha256(key.encode()).hexdigest()[:16]
 
@@ -147,6 +158,7 @@ class Store:
     def write_community_cache(self, fingerprint: str, domain_ids: list[str]) -> None:
         """Record a community cache entry after building communities for domain_ids."""
         import json as _json
+
         chunk_count = self.vector._conn.execute(
             "SELECT COUNT(*) FROM embeddings WHERE domain_id IN ({})".format(
                 ", ".join("?" * len(domain_ids))
@@ -171,10 +183,8 @@ class Store:
             "SELECT fingerprint, domain_ids FROM community_cache"
         ).fetchall()
         import json as _json
-        to_delete = [
-            r[0] for r in rows
-            if domain_id in _json.loads(r[1])
-        ]
+
+        to_delete = [r[0] for r in rows if domain_id in _json.loads(r[1])]
         if not to_delete:
             return 0
         placeholders = ", ".join("?" * len(to_delete))
@@ -192,14 +202,14 @@ class Store:
 
     def search(
         self,
-        query_embedding,
+        query_embedding: Any,  # noqa: ANN401
         limit: int = 5,
         query_text: str | None = None,
         namespaces: list[str] | None = None,
         chunk_types: list[str] | None = None,
         domain_ids: list[str] | None = None,
         session_fingerprint: str | None = None,
-    ) -> list:
+    ) -> list[tuple[str, float, DocumentChunk]]:
         """Hybrid or pure vector search.
 
         Args:
@@ -216,8 +226,12 @@ class Store:
             List of (chunk_id, score, DocumentChunk).
         """
         return self.vector.search(
-            query_embedding, limit=limit, query_text=query_text,
-            namespaces=namespaces, chunk_types=chunk_types, domain_ids=domain_ids,
+            query_embedding,
+            limit=limit,
+            query_text=query_text,
+            namespaces=namespaces,
+            chunk_types=chunk_types,
+            domain_ids=domain_ids,
             session_fingerprint=session_fingerprint,
         )
 
@@ -273,10 +287,11 @@ class Store:
         domain_id: str,
         type: str,
         uri: str,
-        config: dict | None = None,
+        config: dict[str, Any] | None = None,
     ) -> None:
         """Upsert a source record."""
         import json as _json
+
         config_json = _json.dumps(config) if config is not None else None
         self.vector._conn.execute(
             """
@@ -300,7 +315,9 @@ class Store:
 
         When include_global=True, always folds in all domains from namespace_id='global'.
         """
-        domains_table = "all_domains" if getattr(self.vector, "_global_attached", False) else "domains"
+        domains_table = (
+            "all_domains" if getattr(self.vector, "_global_attached", False) else "domains"
+        )
         pairs = list(namespace_domain_pairs)
         if include_global:
             global_rows = self.vector._conn.execute(
@@ -372,7 +389,8 @@ class Store:
 
         # Collect chunk_ids for cascade deletes
         chunk_ids = [
-            r[0] for r in conn.execute(
+            r[0]
+            for r in conn.execute(
                 "SELECT chunk_id FROM embeddings WHERE domain_id = ?",
                 [domain_id],
             ).fetchall()
@@ -380,6 +398,7 @@ class Store:
 
         if chunk_ids:
             import logging as _logging
+
             placeholders = ", ".join("?" * len(chunk_ids))
             try:
                 conn.execute(
@@ -442,7 +461,10 @@ class Store:
         for uri, last_crawled in sources:
             if last_crawled is None:
                 return False
-            if not any(uri.startswith(p) for p in ("http://", "https://", "github://", "s3://", "ftp://", "sftp://")):
+            if not any(
+                uri.startswith(p)
+                for p in ("http://", "https://", "github://", "s3://", "ftp://", "sftp://")
+            ):
                 try:
                     mtime = os.path.getmtime(uri)
                     if mtime > last_crawled.timestamp():
@@ -476,10 +498,11 @@ class Store:
         domain_name: str,
         from_namespace: str,
         to_namespace: str,
-        target_db_path,
+        target_db_path: str | Path,
     ) -> None:
         """Copy domain data cross-DB, then delete from this store."""
         from pathlib import Path as _Path
+
         target_db_path = str(_Path(target_db_path))
 
         conn = self.vector._conn
@@ -489,9 +512,7 @@ class Store:
             [from_namespace, domain_name],
         ).fetchone()
         if row is None:
-            raise ValueError(
-                f"Domain {domain_name!r} not found in namespace {from_namespace!r}"
-            )
+            raise ValueError(f"Domain {domain_name!r} not found in namespace {from_namespace!r}")
         domain_id = row[0]
 
         try:
@@ -503,7 +524,8 @@ class Store:
                     (domain_id, namespace_id, name, description, parent_id, created_at, updated_at)
                 SELECT domain_id, ?, name, description, parent_id, created_at, now()
                 FROM domains WHERE domain_id = ?
-                ON CONFLICT (domain_id) DO UPDATE SET namespace_id = excluded.namespace_id, updated_at = now()
+                ON CONFLICT (domain_id) DO UPDATE
+                    SET namespace_id = excluded.namespace_id, updated_at = now()
                 """,
                 [to_namespace, domain_id],
             ).fetchall()
@@ -592,11 +614,14 @@ class Store:
         conn.execute(f"ATTACH '{global_db_path}' AS global_db (READ_ONLY)")
 
         def _global_has(table: str) -> bool:
-            return conn.execute(
-                "SELECT COUNT(*) FROM information_schema.tables "
-                "WHERE table_catalog = 'global_db' AND table_name = ?",
-                [table],
-            ).fetchone()[0] > 0
+            return (
+                conn.execute(
+                    "SELECT COUNT(*) FROM information_schema.tables "
+                    "WHERE table_catalog = 'global_db' AND table_name = ?",
+                    [table],
+                ).fetchone()[0]
+                > 0
+            )
 
         # ── all_embeddings ──────────────────────────────────────────────────
         if _global_has("embeddings"):
@@ -712,7 +737,9 @@ class Store:
                 FROM namespaces
             """)
 
-        assert isinstance(self.vector, DuckDBVectorBackend)  # guaranteed by _db is not None guard above
+        assert isinstance(
+            self.vector, DuckDBVectorBackend
+        )  # guaranteed by _db is not None guard above
         self.vector._global_attached = True
 
     def detach_global(self) -> None:
@@ -722,10 +749,18 @@ class Store:
         """
         if self._db is None:
             raise NotImplementedError("detach_global is not supported for the PG backend.")
-        assert isinstance(self.vector, DuckDBVectorBackend)  # guaranteed by _db is not None guard above
+        assert isinstance(
+            self.vector, DuckDBVectorBackend
+        )  # guaranteed by _db is not None guard above
         conn = self.vector._conn
-        for view in ("all_embeddings", "all_chunk_entities", "all_svo_triples",
-                     "all_domains", "all_sources", "all_namespaces"):
+        for view in (
+            "all_embeddings",
+            "all_chunk_entities",
+            "all_svo_triples",
+            "all_domains",
+            "all_sources",
+            "all_namespaces",
+        ):
             conn.execute(f"DROP VIEW IF EXISTS {view}")
         conn.execute("DETACH global_db")
         self.vector._global_attached = False
@@ -879,9 +914,16 @@ class Store:
             result.setdefault(name, []).append(alias)
         return result
 
-    _FORWARD_HIERARCHY_VERBS = frozenset({
-        "type_of", "instance_of", "classified_as", "part_of", "member_of", "extends",
-    })
+    _FORWARD_HIERARCHY_VERBS = frozenset(
+        {
+            "type_of",
+            "instance_of",
+            "classified_as",
+            "part_of",
+            "member_of",
+            "extends",
+        }
+    )
     _REVERSE_HIERARCHY_VERBS = frozenset({"contains", "composed_of"})
 
     def get_entity_parents(
@@ -950,14 +992,23 @@ class Store:
             )
         if namespace is None:
             from ..graph._context_graph import build_context_graph_all_namespaces
+
             return build_context_graph_all_namespaces(
-                self._db.conn, min_weight=min_weight,
-                force=force, algorithm=algorithm, min_chunks=min_chunks,
+                self._db.conn,
+                min_weight=min_weight,
+                force=force,
+                algorithm=algorithm,
+                min_chunks=min_chunks,
             )
         from ..graph._context_graph import build_context_graph_edges
+
         return build_context_graph_edges(
-            self._db.conn, namespace=namespace, min_weight=min_weight,
-            force=force, algorithm=algorithm, min_chunks=min_chunks,
+            self._db.conn,
+            namespace=namespace,
+            min_weight=min_weight,
+            force=force,
+            algorithm=algorithm,
+            min_chunks=min_chunks,
         )
 
     def get_context_graph(
@@ -967,10 +1018,9 @@ class Store:
         min_weight: float = 0.1,
     ) -> list[ContextEdge]:
         if self._db is None:
-            raise NotImplementedError(
-                "get_context_graph is not supported for the PG backend."
-            )
+            raise NotImplementedError("get_context_graph is not supported for the PG backend.")
         from ..graph._context_graph import get_context_graph_edges
+
         return get_context_graph_edges(
             self._db.conn, entity_id, namespace=namespace, min_weight=min_weight
         )
@@ -989,5 +1039,5 @@ class Store:
     def __enter__(self) -> Store:
         return self
 
-    def __exit__(self, *_) -> None:
+    def __exit__(self, *_: object) -> None:
         self.close()

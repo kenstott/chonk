@@ -33,10 +33,15 @@ Usage::
 from __future__ import annotations
 
 import logging
+import os
 import re
 from collections import Counter, defaultdict
+from typing import TYPE_CHECKING, Any  # noqa: F401
 
 import numpy as np
+
+if TYPE_CHECKING:
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +64,7 @@ _STOPWORDS = frozenset(
 
 
 def _top_terms(texts: list[str], n: int = 5) -> str:
-    counts: Counter = Counter()
+    counts: Counter[str] = Counter()
     for text in texts:
         words = re.sub(r"[^\w\s]", " ", text.lower()).split()
         for w in words:
@@ -70,7 +75,7 @@ def _top_terms(texts: list[str], n: int = 5) -> str:
 
 def _ner_embedding_labels(
     chunk_ids: list[str],
-    db_path,
+    db_path: str | os.PathLike[str],
     n: int = 5,
     synonym_threshold: float = 0.85,
 ) -> str:
@@ -139,7 +144,7 @@ def _ner_embedding_labels(
 
     cluster_info: list[tuple[int, str]] = []
     for members in clusters:
-        freq: Counter = Counter()
+        freq: Counter[str] = Counter()
         for idx in members:
             freq[entity_ids[idx]] += 1
         canonical = freq.most_common(1)[0][0]
@@ -150,8 +155,13 @@ def _ner_embedding_labels(
 
 
 class _LevelData:
-    __slots__ = ("resolution", "chunk_to_community", "community_to_label",
-                 "community_to_chunks", "community_to_coherence")
+    __slots__ = (
+        "resolution",
+        "chunk_to_community",
+        "community_to_label",
+        "community_to_chunks",
+        "community_to_coherence",
+    )
 
     def __init__(self, resolution: float) -> None:
         self.resolution = resolution
@@ -165,6 +175,7 @@ class _LevelData:
 # Build helpers (module-level to keep CommunityIndex.build thin)
 # ------------------------------------------------------------------
 
+
 def _resolve_levels(
     resolutions: list[float] | None,
     n_levels: int,
@@ -176,11 +187,13 @@ def _resolve_levels(
         return list(resolutions)
     if n_levels == 1:
         return [(resolution_min + resolution_max) / 2]
-    return list(np.logspace(
-        np.log10(resolution_min),
-        np.log10(resolution_max),
-        num=n_levels,
-    ).tolist())
+    return list(
+        np.logspace(
+            np.log10(resolution_min),
+            np.log10(resolution_max),
+            num=n_levels,
+        ).tolist()
+    )
 
 
 def _compute_working_vecs(
@@ -206,10 +219,10 @@ def _build_similarity_edges(
     edges: list[tuple[int, int, float]] = []
     batch = 256
     for i in range(0, n, batch):
-        sims = vecs[i:i + batch] @ vecs.T  # (batch, n)
+        sims = vecs[i : i + batch] @ vecs.T  # (batch, n)
         for bi in range(sims.shape[0]):
             gi = i + bi
-            js = np.where(sims[bi, gi + 1:] >= sim_threshold)[0] + gi + 1
+            js = np.where(sims[bi, gi + 1 :] >= sim_threshold)[0] + gi + 1
             for j in js:
                 edges.append((gi, int(j), float(sims[bi, int(j) - i])))
     if extra_edges:
@@ -263,6 +276,7 @@ def _run_louvain(
 
     try:
         import community as louvain_mod
+
         return louvain_mod.best_partition(  # type: ignore[attr-defined]  # python-louvain stub gap
             G, random_state=seed if seed is not None else 42
         )
@@ -303,7 +317,7 @@ def _assign_labels(
     chunk_ids: list[str],
     chunk_texts: list[str] | None,
     label_strategy: str,
-    db_path,
+    db_path: str | os.PathLike[str] | None,
     top_label_terms: int,
     label_synonym_threshold: float,
 ) -> None:
@@ -312,7 +326,8 @@ def _assign_labels(
         for cid, indices in community_members.items():
             cids = [chunk_ids[i] for i in indices if i < len(chunk_ids)]
             label = _ner_embedding_labels(
-                cids, db_path,
+                cids,
+                db_path,
                 n=top_label_terms,
                 synonym_threshold=label_synonym_threshold,
             )
@@ -350,7 +365,7 @@ def _build_level_data(
     chunk_texts: list[str] | None,
     vecs: np.ndarray,
     label_strategy: str,
-    db_path,
+    db_path: str | os.PathLike[str] | None,
     top_label_terms: int,
     label_synonym_threshold: float,
 ) -> _LevelData:
@@ -364,8 +379,14 @@ def _build_level_data(
         community_members[cid].append(idx)
 
     _assign_labels(
-        level_data, community_members, chunk_ids, chunk_texts,
-        label_strategy, db_path, top_label_terms, label_synonym_threshold,
+        level_data,
+        community_members,
+        chunk_ids,
+        chunk_texts,
+        label_strategy,
+        db_path,
+        top_label_terms,
+        label_synonym_threshold,
     )
     _compute_coherence(level_data, community_members, vecs)
     return level_data
@@ -375,9 +396,9 @@ def _populate_flat_attrs(instance: CommunityIndex, finest: _LevelData) -> None:
     """Copy the finest level's data into the instance's flat attributes."""
     instance._chunk_to_community = dict(finest.chunk_to_community)
     instance._community_to_label = dict(finest.community_to_label)
-    instance._community_to_chunks = defaultdict(list, {
-        k: list(v) for k, v in finest.community_to_chunks.items()
-    })
+    instance._community_to_chunks = defaultdict(
+        list, {k: list(v) for k, v in finest.community_to_chunks.items()}
+    )
     instance._community_to_coherence = dict(finest.community_to_coherence)
 
 
@@ -385,8 +406,9 @@ def _populate_flat_attrs(instance: CommunityIndex, finest: _LevelData) -> None:
 # from_db helpers
 # ------------------------------------------------------------------
 
+
 def _load_multilevel_schema(
-    con,
+    con: Any,  # noqa: ANN401
     instance: CommunityIndex,
 ) -> None:
     """Populate instance._levels from the multi-level chunk_communities schema."""
@@ -394,7 +416,7 @@ def _load_multilevel_schema(
         "SELECT chunk_id, level, community_id FROM chunk_communities ORDER BY level"
     ).fetchall()
     community_rows = con.execute(
-        "SELECT community_id, level, topic_label, coherence, resolution FROM communities ORDER BY level"
+        "SELECT community_id, level, topic_label, coherence, resolution FROM communities ORDER BY level"  # noqa: E501
     ).fetchall()
     con.close()
 
@@ -418,7 +440,7 @@ def _load_multilevel_schema(
         instance._levels.append(levels_by_idx[level_idx])
 
 
-def _fetch_legacy_community_rows(con) -> list[tuple]:
+def _fetch_legacy_community_rows(con: Any) -> list[tuple[int, str, float]]:  # noqa: ANN401
     """Fetch community rows from legacy schema, with or without coherence column."""
     try:
         return con.execute(
@@ -434,13 +456,11 @@ def _fetch_legacy_community_rows(con) -> list[tuple]:
 
 
 def _load_legacy_schema(
-    con,
+    con: Any,  # noqa: ANN401
     instance: CommunityIndex,
 ) -> None:
     """Populate instance._levels from the legacy (no level column) schema."""
-    chunk_rows = con.execute(
-        "SELECT chunk_id, community_id FROM chunk_communities"
-    ).fetchall()
+    chunk_rows = con.execute("SELECT chunk_id, community_id FROM chunk_communities").fetchall()
     community_rows_old = _fetch_legacy_community_rows(con)
     con.close()
 
@@ -479,7 +499,7 @@ class CommunityIndex:
         sim_threshold: float = 0.6,
         top_label_terms: int = 5,
         label_strategy: str = "term_freq",
-        db_path=None,
+        db_path: str | os.PathLike[str] | None = None,
         label_synonym_threshold: float = 0.85,
         algorithm: str = "leiden",
         resolutions: list[float] | None = None,
@@ -523,8 +543,15 @@ class CommunityIndex:
         for resolution in resolved:
             partition = _run_partition(n, edges, algorithm, resolution, n_iterations, seed)
             level_data = _build_level_data(
-                resolution, partition, chunk_ids, chunk_texts, vecs,
-                label_strategy, db_path, top_label_terms, label_synonym_threshold,
+                resolution,
+                partition,
+                chunk_ids,
+                chunk_texts,
+                vecs,
+                label_strategy,
+                db_path,
+                top_label_terms,
+                label_synonym_threshold,
             )
             instance._levels.append(level_data)
 
@@ -542,7 +569,9 @@ class CommunityIndex:
             return self._chunk_to_community.get(chunk_id)
         return self._levels[level].chunk_to_community.get(chunk_id)
 
-    def topic_label(self, chunk_id: str, min_coherence: float = 0.0, level: int | None = None) -> str | None:
+    def topic_label(
+        self, chunk_id: str, min_coherence: float = 0.0, level: int | None = None
+    ) -> str | None:
         if level is None:
             cid = self._chunk_to_community.get(chunk_id)
             if cid is None:
@@ -593,7 +622,7 @@ class CommunityIndex:
 
     def resolutions_list(self) -> list[float]:
         """Return list of resolution values per level."""
-        return [l.resolution for l in self._levels]
+        return [ln.resolution for ln in self._levels]
 
     def community_count(self) -> int:
         return len(self._community_to_label)
@@ -605,9 +634,10 @@ class CommunityIndex:
     # Persistence
     # ------------------------------------------------------------------
 
-    def persist(self, db_path) -> None:
+    def persist(self, db_path: str | os.PathLike[str]) -> None:
         """Write chunk_communities and communities tables to DuckDB."""
         import duckdb
+
         con = duckdb.connect(str(db_path))
 
         con.execute("DROP TABLE IF EXISTS chunk_communities")
@@ -656,9 +686,10 @@ class CommunityIndex:
         con.close()
 
     @classmethod
-    def from_db(cls, db_path) -> CommunityIndex:
+    def from_db(cls, db_path: str | os.PathLike[str]) -> CommunityIndex:
         """Load CommunityIndex from DuckDB tables."""
         import duckdb
+
         con = duckdb.connect(str(db_path), read_only=True)
 
         instance = cls()

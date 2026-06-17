@@ -44,6 +44,7 @@ Usage::
 
 Requires: pymongo>=4.0  (``pip install pymongo``)
 """
+
 from __future__ import annotations
 
 import json
@@ -58,9 +59,10 @@ _log = logging.getLogger(__name__)
 _SCHEMA_SAMPLE_SIZE = DEFAULT_SCHEMA_SAMPLE_SIZE
 
 
-def _to_json(doc: dict) -> bytes:
-    def _default(obj: Any) -> Any:
+def _to_json(doc: dict[str, object]) -> bytes:
+    def _default(obj: Any) -> str:  # noqa: ANN401
         return str(obj)
+
     return json.dumps(doc, indent=2, default=_default).encode("utf-8")
 
 
@@ -93,16 +95,16 @@ class MongoCrawler:
         connection_uri: str,
         database: str | None = None,
         collections: list[str] | None = None,
-        query: dict | None = None,
-        projection: dict | None = None,
+        query: dict[str, object] | None = None,
+        projection: dict[str, object] | None = None,
         batch_size: int = 200,
         field_aliases: dict[str, str] | None = None,
-    ):
+    ) -> None:
         self._uri = connection_uri
         self._database = database or self._db_from_uri(connection_uri)
         self._collections = collections
-        self._query: dict = query or {}
-        self._projection: dict | None = projection
+        self._query: dict[str, object] = query or {}
+        self._projection: dict[str, object] | None = projection
         self._batch_size = batch_size
         self._field_aliases: dict[str, str] = field_aliases or {}
         self._cache: dict[str, FetchResult] = {}
@@ -115,16 +117,14 @@ class MongoCrawler:
     def can_handle(self, uri: str) -> bool:
         return uri.startswith("mongodb://") or uri.startswith("mongodb+srv://")
 
-    def fetch(self, uri: str, **__) -> FetchResult:
+    def fetch(self, uri: str, **__: object) -> FetchResult:
         if uri not in self._cache:
-            raise KeyError(
-                f"MongoCrawler: unknown URI {uri!r} — call crawl() first"
-            )
+            raise KeyError(f"MongoCrawler: unknown URI {uri!r} — call crawl() first")
         return self._cache[uri]
 
     # ── Crawler protocol ──────────────────────────────────────────────────────
 
-    def crawl(self, uri: str = "", **__) -> list[str]:
+    def crawl(self, uri: str = "", **__: object) -> list[str]:
         """Connect to MongoDB, index all matching documents, and emit schema chunks.
 
         Args:
@@ -135,11 +135,10 @@ class MongoCrawler:
         """
         try:
             import pymongo
-        except ImportError:
+        except ImportError as exc:
             raise ImportError(
-                "pymongo is required for MongoCrawler. "
-                "Install with: pip install pymongo"
-            )
+                "pymongo is required for MongoCrawler. Install with: pip install pymongo"
+            ) from exc
 
         connection_uri = uri or self._uri
         db_name = self._db_from_uri(connection_uri) or self._database
@@ -156,9 +155,7 @@ class MongoCrawler:
             collection_names = self._collections
         else:
             collection_names = [
-                name
-                for name in db.list_collection_names()
-                if not name.startswith("system.")
+                name for name in db.list_collection_names() if not name.startswith("system.")
             ]
 
         self._cache.clear()
@@ -206,7 +203,8 @@ class MongoCrawler:
         client.close()
         _log.info(
             "MongoCrawler: indexed %d document(s) across %d collection(s)",
-            total, len(collection_names),
+            total,
+            len(collection_names),
         )
         return list(self._cache.keys())
 
@@ -227,7 +225,7 @@ class MongoCrawler:
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
-    def _schema_from_validator(self, db: Any, coll_name: str, db_name: str) -> str:
+    def _schema_from_validator(self, db: Any, coll_name: str, db_name: str) -> str:  # noqa: ANN401
         """Return schema text: $jsonSchema validator if available, else sample inference."""
         try:
             for info in db.list_collections(filter={"name": coll_name}):
@@ -250,12 +248,14 @@ class MongoCrawler:
         self._known_fields.update(collect_field_paths(sample))
         total = db[coll_name].estimated_document_count()
         return infer_schema_text(
-            sample, f"{db_name}/{coll_name}",
-            total_docs=total, sample_size=len(sample),
+            sample,
+            f"{db_name}/{coll_name}",
+            total_docs=total,
+            sample_size=len(sample),
         )
 
     @staticmethod
-    def _fields_from_json_schema(schema: dict, prefix: str = "") -> set[str]:
+    def _fields_from_json_schema(schema: dict[str, Any], prefix: str = "") -> set[str]:
         result: set[str] = set()
         for name, sub in schema.get("properties", {}).items():
             path = f"{prefix}.{name}" if prefix else name
@@ -268,6 +268,7 @@ class MongoCrawler:
     def _db_from_uri(uri: str) -> str | None:
         try:
             from urllib.parse import urlparse
+
             path = urlparse(uri).path.lstrip("/").split("?")[0]
             return path or None
         except Exception:

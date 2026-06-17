@@ -10,7 +10,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from .._types import EmbedModel
+
+if TYPE_CHECKING:
+    import duckdb
+    import numpy as np
 
 
 def _check_existing_count(db_path: Path) -> int:
@@ -30,7 +36,7 @@ def _check_existing_count(db_path: Path) -> int:
 def _load_chunks(
     db_path: Path,
     namespace_id: str | None,
-) -> tuple[list, Any]:
+) -> tuple[list[tuple[str, str | None, str | None, object]], Any]:
     """Open a read-only connection, load embedding rows, and return (rows, connection).
 
     Caller is responsible for closing the connection.
@@ -53,8 +59,8 @@ def _load_chunks(
 
 
 def _load_entity_edges(
-    con,  # duckdb.DuckDBPyConnection
-    rows: list,
+    con: duckdb.DuckDBPyConnection,
+    rows: list[tuple[str, str | None, str | None, object]],
 ) -> list[tuple[int, int, float]]:
     """Build cross-document entity bridge edges from chunk_entities.
 
@@ -103,8 +109,8 @@ def _load_entity_edges(
 
 def _embed_breadcrumbs(
     breadcrumbs: list[str],
-    embed_model,  # str or SentenceTransformer instance
-):
+    embed_model: EmbedModel,
+) -> np.ndarray | None:
     """Embed breadcrumb strings and return a float32 ndarray, or None if all empty.
 
     Args:
@@ -135,7 +141,7 @@ def _embed_breadcrumbs(
 
 def build_community(
     db_path: str | Path,
-    embed_model,  # str or SentenceTransformer instance
+    embed_model: EmbedModel,
     *,
     namespace_id: str | None = None,
     alpha: float = 0.2,

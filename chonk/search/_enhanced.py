@@ -26,7 +26,7 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Literal, overload
+from typing import TYPE_CHECKING, Any, Literal, overload
 
 import numpy as np
 
@@ -111,7 +111,7 @@ class EnhancedSearch(_GraphMixin, _ScoringMixin):
         entity_expansion: bool = True,
         cluster_expansion: bool = True,
         entity_embedding_expansion: bool = False,
-        entity_embeddings=None,
+        entity_embeddings: np.ndarray | None = None,
         entity_embedding_ids: list[str] | None = None,
         ner_fn: Callable[[str], list[str]] | None = None,
         embed_fn: Callable[[list[str]], np.ndarray] | None = None,
@@ -130,7 +130,7 @@ class EnhancedSearch(_GraphMixin, _ScoringMixin):
         context_graph_top_k: int = 5,
         redaction_filter: Callable[[Answer], Answer] | None = None,
         chunk_filter: Callable[[list[ScoredChunk]], list[ScoredChunk]] | None = None,
-    ):
+    ) -> None:
         self._store = store
         conn = store.vector._conn
         if entity_index is None:
@@ -174,7 +174,7 @@ class EnhancedSearch(_GraphMixin, _ScoringMixin):
         self._context_graph_top_k = context_graph_top_k
         self._redaction_filter = redaction_filter
         self._chunk_filter = chunk_filter
-        self.last_expansion_stats: dict | None = None
+        self.last_expansion_stats: dict[str, Any] | None = None
 
     # ------------------------------------------------------------------
     # Namespace / domain pre-filter
@@ -183,7 +183,7 @@ class EnhancedSearch(_GraphMixin, _ScoringMixin):
     _NAMESPACE_FILTER_PROMPT = (
         "You are a retrieval routing assistant. Below are the available knowledge namespaces "
         "and their descriptions. Select the namespaces most likely to contain evidence for "
-        "the query. Return ONLY a JSON array of namespace IDs, e.g. [\"cyber\", \"financial\"]. "
+        'the query. Return ONLY a JSON array of namespace IDs, e.g. ["cyber", "financial"]. '
         "Include all namespaces that may be relevant; omit those that are clearly unrelated.\n\n"
         "Namespaces:\n{namespace_list}\n\n"
         "Query: {query}\n\n"
@@ -194,7 +194,7 @@ class EnhancedSearch(_GraphMixin, _ScoringMixin):
         "You are a retrieval routing assistant. Below are the available knowledge domains "
         "and their descriptions. Select the domains most likely to contain evidence for "
         "the query. Return ONLY a JSON array of domain names exactly as listed, "
-        "e.g. [\"sales/north-america\", \"finance/q1\"]. "
+        'e.g. ["sales/north-america", "finance/q1"]. '
         "Include all domains that may be relevant; omit those that are clearly unrelated.\n\n"
         "Domains:\n{domain_list}\n\n"
         "Query: {query}\n\n"
@@ -256,7 +256,7 @@ class EnhancedSearch(_GraphMixin, _ScoringMixin):
         import json as _json
 
         where = "WHERE d.description IS NOT NULL AND d.description != ''"
-        params: list = []
+        params: list[str] = []
         if namespaces:
             placeholders = ", ".join("?" * len(namespaces))
             where += f" AND d.namespace_id IN ({placeholders})"
@@ -273,9 +273,7 @@ class EnhancedSearch(_GraphMixin, _ScoringMixin):
 
         # name_to_id for resolving LLM output back to domain_ids
         name_to_id = {name: domain_id for domain_id, _ns, name, _desc in rows}
-        domain_lines = "\n".join(
-            f"- {name} ({ns}): {desc}" for _did, ns, name, desc in rows
-        )
+        domain_lines = "\n".join(f"- {name} ({ns}): {desc}" for _did, ns, name, desc in rows)
         prompt = self._DOMAIN_FILTER_PROMPT.format(
             domain_list=domain_lines,
             query=query,
@@ -409,7 +407,9 @@ class EnhancedSearch(_GraphMixin, _ScoringMixin):
         trace = RetrievalTrace(mode=mode) if return_trace else None
 
         if mode == "global":
-            results = self._global_search(query_embedding, k, query_text, namespaces, domain_ids, _trace=trace)
+            results = self._global_search(
+                query_embedding, k, query_text, namespaces, domain_ids, _trace=trace
+            )
             if trace is not None:
                 trace.pool_size = len(results)
                 trace.final_provenance = _tally_provenance(results)
@@ -421,7 +421,14 @@ class EnhancedSearch(_GraphMixin, _ScoringMixin):
             return results
         if mode == "graph_first":
             results = self._graph_first_search(
-                query_embedding, k, query_text, query_entities, precomputed_entity_vecs, namespaces, domain_ids, _trace=trace
+                query_embedding,
+                k,
+                query_text,
+                query_entities,
+                precomputed_entity_vecs,
+                namespaces,
+                domain_ids,
+                _trace=trace,
             )
             if trace is not None:
                 trace.pool_size = len(results)
@@ -433,7 +440,9 @@ class EnhancedSearch(_GraphMixin, _ScoringMixin):
                 return results, trace
             return results
         if mode != "vector_first":
-            raise ValueError(f"Unknown search mode {mode!r}. Use 'vector_first', 'graph_first', or 'global'.")
+            raise ValueError(
+                f"Unknown search mode {mode!r}. Use 'vector_first', 'graph_first', or 'global'."
+            )
 
         ns_chunk_ids = self._resolve_ns_chunk_ids(namespaces, domain_ids)
         seed_limit = k * self._seed_multiplier
@@ -443,7 +452,9 @@ class EnhancedSearch(_GraphMixin, _ScoringMixin):
             trace.query_entities = list(query_entities) if query_entities else []
 
         # ------ Step 1: Seed -----------------------------------------------
-        pool, seed_chunk_ids = self._build_seed_pool(query_embedding, k, query_text, namespaces, domain_ids, seed_limit)
+        pool, seed_chunk_ids = self._build_seed_pool(
+            query_embedding, k, query_text, namespaces, domain_ids, seed_limit
+        )
         if trace is not None:
             trace.seed_chunk_ids = list(seed_chunk_ids)
 
@@ -460,7 +471,9 @@ class EnhancedSearch(_GraphMixin, _ScoringMixin):
             trace.entity_expanded_chunk_ids = _entity_added
 
         # ------ Step 4: Cluster expansion (budget-limited) ------------------
-        _cluster_added = self._expand_cluster(pool, expanded_entity_ids, ns_chunk_ids, cluster_budget)
+        _cluster_added = self._expand_cluster(
+            pool, expanded_entity_ids, ns_chunk_ids, cluster_budget
+        )
         if trace is not None:
             trace.cluster_expanded_chunk_ids = _cluster_added
 
@@ -482,7 +495,18 @@ class EnhancedSearch(_GraphMixin, _ScoringMixin):
             if ents is None and self._query_ner_fn is not None and query_text:
                 ents = self._query_ner_fn(query_text)
             if ents:
-                results = self._entity_ref_expand(results, pool, query_embedding, ents, k, query_text, precomputed_entity_vecs, namespaces, domain_ids, _trace=trace)
+                results = self._entity_ref_expand(
+                    results,
+                    pool,
+                    query_embedding,
+                    ents,
+                    k,
+                    query_text,
+                    precomputed_entity_vecs,
+                    namespaces,
+                    domain_ids,
+                    _trace=trace,
+                )
 
         if trace is not None:
             trace.pool_size = len(pool)
@@ -567,8 +591,11 @@ class EnhancedSearch(_GraphMixin, _ScoringMixin):
     ) -> tuple[dict[str, ScoredChunk], list[str]]:
         """Step 1: vector similarity seeds. Returns (pool, seed_chunk_ids)."""
         raw_seeds = self._store.search(
-            query_embedding, limit=seed_limit, query_text=query_text,
-            namespaces=namespaces, domain_ids=domain_ids,
+            query_embedding,
+            limit=seed_limit,
+            query_text=query_text,
+            namespaces=namespaces,
+            domain_ids=domain_ids,
         )
         pool: dict[str, ScoredChunk] = {}
         seed_chunk_ids: list[str] = []
@@ -615,7 +642,11 @@ class EnhancedSearch(_GraphMixin, _ScoringMixin):
         added: list[str] = []
         if not self._entity or self._entity_index is None:
             return expanded_entity_ids, added
-        query_vec_flat = query_embedding.flatten().astype("float32") if self._lane_entity_min_sim is not None else None
+        query_vec_flat = (
+            query_embedding.flatten().astype("float32")
+            if self._lane_entity_min_sim is not None
+            else None
+        )
         for cid in list(pool.keys()):
             for entity_id, _ in self._entity_index.get_entities_for_chunk(cid):
                 expanded_entity_ids.add(entity_id)
@@ -629,7 +660,10 @@ class EnhancedSearch(_GraphMixin, _ScoringMixin):
                             emb = self._get_embedding(linked_chunk_id)
                             lane_min_sim = self._lane_entity_min_sim  # non-None: guard at line 618
                             assert lane_min_sim is not None
-                            if emb is not None and self._cosine_similarity(query_vec_flat, emb) < lane_min_sim:
+                            if (
+                                emb is not None
+                                and self._cosine_similarity(query_vec_flat, emb) < lane_min_sim
+                            ):
                                 continue
                         chunk = self._fetch_chunk(linked_chunk_id)
                         if chunk is not None:
@@ -661,9 +695,11 @@ class EnhancedSearch(_GraphMixin, _ScoringMixin):
             for neighbor_entity_id in self._cluster_map.get_neighbors(entity_id):
                 if cluster_count >= cluster_budget:
                     break
-                cluster_chunks = self._entity_index.get_chunks_for_entity(
-                    neighbor_entity_id, top_n=1
-                ) if self._entity_index else []
+                cluster_chunks = (
+                    self._entity_index.get_chunks_for_entity(neighbor_entity_id, top_n=1)
+                    if self._entity_index
+                    else []
+                )
                 for linked_chunk_id, _ in cluster_chunks:
                     if ns_chunk_ids is not None and linked_chunk_id not in ns_chunk_ids:
                         continue

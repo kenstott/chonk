@@ -6,15 +6,16 @@
 # permission from the copyright holder.
 
 """Shared schema inference utilities for NoSQL crawlers."""
+
 from __future__ import annotations
 
 DEFAULT_SCHEMA_SAMPLE_SIZE = 500
 
-from collections import defaultdict
-from typing import Any
+from collections import defaultdict  # noqa: E402
+from typing import Any  # noqa: E402
 
 
-def _type_name(value: Any) -> str:
+def _type_name(value: Any) -> str:  # noqa: ANN401
     if value is None:
         return "null"
     if isinstance(value, bool):
@@ -32,7 +33,7 @@ def _type_name(value: Any) -> str:
     return type(value).__name__
 
 
-def _walk(doc: dict, counts: dict, prefix: str = "") -> None:
+def _walk(doc: dict[str, Any], counts: dict[str, Any], prefix: str = "") -> None:
     """Recursively record field paths and their value types."""
     for key, value in doc.items():
         path = f"{prefix}.{key}" if prefix else key
@@ -50,7 +51,7 @@ def _walk(doc: dict, counts: dict, prefix: str = "") -> None:
 
 
 def infer_schema_text(
-    docs: list[dict],
+    docs: list[dict[str, Any]],
     label: str,
     total_docs: int | None = None,
     sample_size: int | None = None,
@@ -71,7 +72,9 @@ def infer_schema_text(
         return f"Source: {label}\nNo documents sampled — schema unavailable.\n"
 
     sample_size = sample_size or n
-    counts: dict[str, Any] = defaultdict(lambda: {"present": 0, "types": defaultdict(int), "item_types": {}})
+    counts: dict[str, Any] = defaultdict(
+        lambda: {"present": 0, "types": defaultdict(int), "item_types": {}}
+    )
 
     for doc in docs:
         _walk(doc, counts)
@@ -104,10 +107,13 @@ def infer_schema_text(
     return "\n".join(lines) + "\n"
 
 
-def collect_field_paths(docs: list[dict]) -> set[str]:
+def collect_field_paths(docs: list[dict[str, Any]]) -> set[str]:
     """Return all dot-notation field paths observed across *docs*."""
     from collections import defaultdict
-    counts: dict = defaultdict(lambda: {"present": 0, "types": defaultdict(int), "item_types": {}})
+
+    counts: dict[str, Any] = defaultdict(
+        lambda: {"present": 0, "types": defaultdict(int), "item_types": {}}
+    )
     for doc in docs:
         _walk(doc, counts)
     return set(counts.keys())

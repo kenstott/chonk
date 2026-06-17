@@ -13,35 +13,48 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    import duckdb
+
     from ..community._index import CommunityIndex
     from ..graph._index import RelationshipIndex
+    from ..models import ScoredChunk
     from ..ner._index import EntityIndex
     from ..storage._store import Store
 
 
-def _load_entity_index_from_store(conn) -> EntityIndex | None:
+def _load_entity_index_from_store(conn: duckdb.DuckDBPyConnection) -> EntityIndex | None:
     import duckdb
 
     try:
-        count = conn.execute("SELECT COUNT(*) FROM chunk_entities").fetchone()[0]
+        row = conn.execute("SELECT COUNT(*) FROM chunk_entities").fetchone()
+        if row is None:
+            raise RuntimeError("COUNT(*) returned no rows")
+        count = row[0]
     except (duckdb.CatalogException, duckdb.BinderException):
         return None  # table absent — entity index not built yet (expected)
     if count == 0:
         return None
     from ..ner._index import EntityIndex as _EI
+
     return _EI.load_from_db(conn)
 
 
-def _load_relationship_index_from_store(conn) -> RelationshipIndex | None:
+def _load_relationship_index_from_store(
+    conn: duckdb.DuckDBPyConnection,
+) -> RelationshipIndex | None:
     import duckdb
 
     try:
-        count = conn.execute("SELECT COUNT(*) FROM svo_triples").fetchone()[0]
+        row = conn.execute("SELECT COUNT(*) FROM svo_triples").fetchone()
+        if row is None:
+            raise RuntimeError("COUNT(*) returned no rows")
+        count = row[0]
     except (duckdb.CatalogException, duckdb.BinderException):
         return None  # table absent — relationship index not built yet (expected)
     if count == 0:
         return None
     from ..graph._index import RelationshipIndex as _RI
+
     return _RI.load_from_db(conn)
 
 
@@ -55,9 +68,12 @@ def _load_community_index_from_store(store: Store) -> CommunityIndex | None:
     from ..community._index import CommunityIndex as _CI
 
     conn = store.vector._conn
-    tables = {r[0] for r in conn.execute(
-        "SELECT table_name FROM information_schema.tables WHERE table_name IN ('chunk_communities', 'communities')"
-    ).fetchall()}
+    tables = {
+        r[0]
+        for r in conn.execute(
+            "SELECT table_name FROM information_schema.tables WHERE table_name IN ('chunk_communities', 'communities')"  # noqa: E501
+        ).fetchall()
+    }
     if "chunk_communities" not in tables or "communities" not in tables:
         return None
     count = conn.execute("SELECT COUNT(*) FROM chunk_communities").fetchone()[0]
@@ -66,7 +82,7 @@ def _load_community_index_from_store(store: Store) -> CommunityIndex | None:
     return _CI.from_db(db_path)
 
 
-def _tally_provenance(results: list) -> dict[str, int]:
+def _tally_provenance(results: list[ScoredChunk]) -> dict[str, int]:
     tally: dict[str, int] = {}
     for sc in results:
         tally[sc.provenance] = tally.get(sc.provenance, 0) + 1

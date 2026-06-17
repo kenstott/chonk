@@ -24,6 +24,7 @@ satisfy this protocol by implementing two methods::
 
 Then pass it to ``DocumentLoader.load_crawl(uri, crawler=SharePointCrawler())``.
 """
+
 from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
@@ -42,7 +43,7 @@ class Crawler(Protocol):
         """Return True if this crawler can traverse the given root URI."""
         ...
 
-    def crawl(self, uri: str, **kwargs) -> list[str]:
+    def crawl(self, uri: str, **kwargs: object) -> list[str]:
         """Traverse *uri* and return all discovered document URIs.
 
         Args:

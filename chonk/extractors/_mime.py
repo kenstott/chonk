@@ -105,10 +105,34 @@ EXTENSION_TO_SHORT: dict[str, str] = {
 
 # All known short aliases
 _KNOWN_SHORT: set[str] = {
-    "auto", "pdf", "html", "markdown", "text", "csv", "tsv", "json", "jsonl",
-    "yaml", "xml", "docx", "xlsx", "pptx", "odt", "ods", "odp", "image", "audio",
-    "email", "eml", "parquet", "arrow", "feather",
-    "python", "typescript", "javascript", "java",
+    "auto",
+    "pdf",
+    "html",
+    "markdown",
+    "text",
+    "csv",
+    "tsv",
+    "json",
+    "jsonl",
+    "yaml",
+    "xml",
+    "docx",
+    "xlsx",
+    "pptx",
+    "odt",
+    "ods",
+    "odp",
+    "image",
+    "audio",
+    "email",
+    "eml",
+    "parquet",
+    "arrow",
+    "feather",
+    "python",
+    "typescript",
+    "javascript",
+    "java",
 }
 
 # Legacy transport types — treated as "auto" (transport is now inferred from fields)
@@ -152,7 +176,8 @@ def detect_type_from_source(
 ) -> str:
     """Auto-detect document type from transport metadata and file extension.
 
-    Priority: detected_mime (from HTTP Content-Type / S3 metadata) > file extension > "text" fallback.
+    Priority: detected_mime (from HTTP Content-Type / S3 metadata) > file extension >
+    "text" fallback.
     """
     # Try MIME from transport first
     if detected_mime:
@@ -176,6 +201,7 @@ def detect_type_from_source(
     # Try file extension
     if source_path:
         import os
+
         ext = os.path.splitext(source_path)[1].lower()
         if ext in EXTENSION_TO_SHORT:
             return EXTENSION_TO_SHORT[ext]

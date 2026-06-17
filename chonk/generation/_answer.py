@@ -9,8 +9,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 from ._prompt_builder import PromptBuilder
 
@@ -27,8 +28,9 @@ class Answer:
         text: LLM-generated answer text.
         citations: Chunks that were included in the prompt (provenance-ordered).
     """
+
     text: str
-    citations: list["ScoredChunk"] = field(default_factory=list)
+    citations: list[ScoredChunk] = field(default_factory=list)
 
 
 class AnswerGenerator:
@@ -41,12 +43,12 @@ class AnswerGenerator:
         token_budget: Max tokens to pass to PromptBuilder (default 4096).
     """
 
-    def __init__(self, llm_fn: Callable[[str], str], token_budget: int = 4096):
+    def __init__(self, llm_fn: Callable[[str], str], token_budget: int = 4096) -> None:
         self._llm_fn = llm_fn
         self._token_budget = token_budget
         self._builder = PromptBuilder()
 
-    def generate(self, context: "AnswerContext") -> Answer:
+    def generate(self, context: AnswerContext) -> Answer:
         """Build prompt, call llm_fn, return Answer with citations."""
         citations = self._builder.select_chunks(context, self._token_budget)
         prompt = self._builder.build(context, self._token_budget)

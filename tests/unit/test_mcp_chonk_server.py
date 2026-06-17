@@ -106,13 +106,13 @@ class TestConfig:
 
 
 class TestListTools:
-    def test_returns_three_tools(self, server):
+    def test_returns_four_tools(self, server):
         tools = run(server.list_tools())
-        assert len(tools) == 3
+        assert len(tools) == 4
 
     def test_tool_names(self, server):
         names = {t.name for t in run(server.list_tools())}
-        assert names == {"search_chunks", "get_chunk", "expand_chunk_graph"}
+        assert names == {"search_chunks", "ask", "get_chunk", "expand_chunk_graph"}
 
     def test_search_chunks_requires_query_embedding(self, server):
         tools = {t.name: t for t in run(server.list_tools())}

@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from ..models import DocumentChunk
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 _ATTACK_ID_RE = re.compile(r"\bT\d{4}(?:\.\d{3})?\b")
 
 
-def _ext_id(obj: dict) -> str | None:
+def _ext_id(obj: dict[str, Any]) -> str | None:
     """Return the ATT&CK technique ID (e.g. T1055.011) from external_references."""
     for ref in obj.get("external_references", []):
         if ref.get("source_name") == "mitre-attack":
@@ -26,30 +26,30 @@ def _ext_id(obj: dict) -> str | None:
     return None
 
 
-def _ext_url(obj: dict) -> str | None:
+def _ext_url(obj: dict[str, Any]) -> str | None:
     for ref in obj.get("external_references", []):
         if ref.get("source_name") == "mitre-attack":
             return ref.get("url")
     return None
 
 
-def _is_live(obj: dict) -> bool:
+def _is_live(obj: dict[str, Any]) -> bool:
     return not obj.get("revoked") and not obj.get("x_mitre_deprecated")
 
 
 class _Index:
     """Pre-built lookup tables over a STIX bundle."""
 
-    def __init__(self, objects: list[dict]) -> None:
-        self.by_id: dict[str, dict] = {o["id"]: o for o in objects if "id" in o}
+    def __init__(self, objects: list[dict[str, Any]]) -> None:
+        self.by_id: dict[str, dict[str, Any]] = {o["id"]: o for o in objects if "id" in o}
 
         # course-of-action id → mitigation dict
-        self.mitigations: dict[str, dict] = {
+        self.mitigations: dict[str, dict[str, Any]] = {
             o["id"]: o for o in objects if o.get("type") == "course-of-action" and _is_live(o)
         }
 
         # attack-pattern id → list[mitigation dict]
-        self.tech_mitigations: dict[str, list[dict]] = {}
+        self.tech_mitigations: dict[str, list[dict[str, Any]]] = {}
         # attack-pattern id → parent attack-pattern id (for sub-techniques)
         self.parent: dict[str, str] = {}
 
@@ -65,16 +65,16 @@ class _Index:
                 self.parent[src] = tgt
 
 
-def _iter_techniques(obj: object) -> tuple[list[dict], _Index]:
+def _iter_techniques(obj: object) -> tuple[list[dict[str, Any]], _Index]:
     """Return (technique_list, index) from a STIX bundle dict."""
     if not isinstance(obj, dict):
         return [], _Index([])
-    objects: list[dict] = obj.get("objects", [])
+    objects: list[dict[str, Any]] = obj.get("objects", [])
     techniques = [o for o in objects if o.get("type") == "attack-pattern" and _is_live(o)]
     return techniques, _Index(objects)
 
 
-def _render_one(tech: dict, index: _Index) -> str:
+def _render_one(tech: dict[str, Any], index: _Index) -> str:
     attack_id = _ext_id(tech) or tech.get("id", "UNKNOWN")
     name = tech.get("name", "")
     description = (tech.get("description") or "").strip()
@@ -167,7 +167,7 @@ class AttackRenderer:
     ) -> list[DocumentChunk]:
         techniques, index = _iter_techniques(obj)
 
-        meta: dict[str, dict] = {}
+        meta: dict[str, dict[str, Any]] = {}
         rendered_map: dict[str, str] = {}
         for tech in techniques:
             attack_id = _ext_id(tech)
@@ -181,7 +181,7 @@ class AttackRenderer:
                 parent_stix = index.parent.get(tech["id"])
                 if parent_stix and parent_stix in index.by_id:
                     parent_id = _ext_id(index.by_id[parent_stix])
-            detail: dict = {
+            detail: dict[str, Any] = {
                 "attack_id": attack_id,
                 "name": tech.get("name", ""),
                 "tactics": tactics,

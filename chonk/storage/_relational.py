@@ -13,7 +13,7 @@ Uses SQLAlchemy Core (not ORM) for compatibility with any SQLAlchemy-supported d
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from sqlalchemy import create_engine, text
@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS chunk_entities (
 class RelationalStore:
     """Minimal CRUD for entities and chunk-entity links via SQLAlchemy Core."""
 
-    def __init__(self, connection_string: str):
+    def __init__(self, connection_string: str) -> None:
         """Args:
         connection_string: Any SQLAlchemy connection string,
             e.g. 'duckdb:///index.duckdb' or 'sqlite:///index.db'.
@@ -88,7 +88,7 @@ class RelationalStore:
             )
             conn.commit()
 
-    def get_entities_for_chunk(self, chunk_id: str) -> list[dict]:
+    def get_entities_for_chunk(self, chunk_id: str) -> list[dict[str, Any]]:
         """Return all entities linked to a chunk_id."""
         with self._engine.connect() as conn:
             rows = conn.execute(

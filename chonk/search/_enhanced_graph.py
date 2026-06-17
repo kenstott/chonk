@@ -58,10 +58,21 @@ class _GraphMixin:
     _entity_ref_expansion_k: int
     _entity_ref_expansion_per_k: int | None
     _entity_ref_expansion_min_sim: float | None
-    search: Callable[..., Any]
-    _resolve_ns_chunk_ids: Callable[..., Any]
-    _select_cohort: Callable[..., Any]
-    _fetch_chunk: Callable[..., Any]
+    # Methods supplied by sibling mixins / the host EnhancedSearch. Declared as
+    # TYPE_CHECKING method stubs (with self) so override checks align and the
+    # concrete signatures are visible to the type checker. search() is overloaded
+    # on return_trace; graph callers always use the default (return_trace=False)
+    # form, hence the list[ScoredChunk] return.
+    if TYPE_CHECKING:
+
+        def search(self, *args: Any, **kwargs: Any) -> list[ScoredChunk]: ...  # noqa: ANN401
+        def _resolve_ns_chunk_ids(
+            self, namespaces: list[str] | None, domain_ids: list[str] | None
+        ) -> set[str] | None: ...
+        def _select_cohort(
+            self, candidates: list[ScoredChunk], query_embedding: np.ndarray, k: int
+        ) -> list[ScoredChunk]: ...
+        def _fetch_chunk(self, chunk_id: str) -> DocumentChunk | None: ...
 
     # ------------------------------------------------------------------
     # graph_first mode
@@ -69,11 +80,11 @@ class _GraphMixin:
 
     def _graph_first_search(
         self,
-        query_embedding,
+        query_embedding: np.ndarray,
         k: int,
         query_text: str | None,
         query_entities: list[str] | None,
-        precomputed_entity_vecs,
+        precomputed_entity_vecs: dict[str, np.ndarray] | None,
         namespaces: list[str] | None = None,
         domain_ids: list[str] | None = None,
         _trace: RetrievalTrace | None = None,
@@ -92,7 +103,9 @@ class _GraphMixin:
         )
         if fallback:
             return self.search(
-                query_embedding, k=k, query_text=query_text,
+                query_embedding,
+                k=k,
+                query_text=query_text,
                 query_entities=query_entities,
                 precomputed_entity_vecs=precomputed_entity_vecs,
                 mode="vector_first",
@@ -106,7 +119,9 @@ class _GraphMixin:
             ents = self._query_entity_id_fn(query_text)
         if not ents:
             return self.search(
-                query_embedding, k=k, query_text=query_text,
+                query_embedding,
+                k=k,
+                query_text=query_text,
                 query_entities=query_entities,
                 precomputed_entity_vecs=precomputed_entity_vecs,
                 mode="vector_first",
@@ -150,7 +165,11 @@ class _GraphMixin:
         # Augment with vector seeds so reranker has enough candidates
         seed_limit = max(k * self._seed_multiplier, k - len(pool))
         for chunk_id, score, chunk in self._store.search(
-            query_embedding, limit=seed_limit, query_text=query_text, namespaces=namespaces, domain_ids=domain_ids
+            query_embedding,
+            limit=seed_limit,
+            query_text=query_text,
+            namespaces=namespaces,
+            domain_ids=domain_ids,
         ):
             if chunk_id not in pool:
                 pool[chunk_id] = ScoredChunk(
@@ -194,7 +213,7 @@ class _GraphMixin:
 
     def _global_search(
         self,
-        query_embedding,
+        query_embedding: np.ndarray,
         k: int,
         query_text: str | None,
         namespaces: list[str] | None = None,
@@ -213,12 +232,14 @@ class _GraphMixin:
         )
         results: list[ScoredChunk] = []
         for chunk_id, score, chunk in raw:
-            results.append(ScoredChunk(
-                chunk_id=chunk_id,
-                chunk=chunk,
-                score=score,
-                provenance="seed",
-            ))
+            results.append(
+                ScoredChunk(
+                    chunk_id=chunk_id,
+                    chunk=chunk,
+                    score=score,
+                    provenance="seed",
+                )
+            )
         if _trace is not None:
             _trace.community_chunk_ids = [sc.chunk_id for sc in results]
         return results
@@ -229,7 +250,7 @@ class _GraphMixin:
 
     def assemble_graph_context(
         self,
-        hits: list,
+        hits: list[Any],
         query_text: str | None = None,
         query_entities: list[str] | None = None,
         context_token_budget: int = 8000,
@@ -260,7 +281,7 @@ class _GraphMixin:
         )
 
     @staticmethod
-    def _normalise_hits(hits: list) -> list[tuple[str, DocumentChunk]]:
+    def _normalise_hits(hits: list[Any]) -> list[tuple[str, DocumentChunk]]:
         """Normalise mixed hit types to (chunk_id, DocumentChunk) pairs."""
         chunk_pairs: list[tuple[str, DocumentChunk]] = []
         for h in hits:
@@ -285,7 +306,7 @@ class _GraphMixin:
             entity_ids.update(self._query_entity_id_fn(query_text))
         return entity_ids
 
-    def _fetch_entity_records(self, entity_ids: set[str]) -> list[dict]:
+    def _fetch_entity_records(self, entity_ids: set[str]) -> list[dict[str, str]]:
         """Fetch (id, name, type, description) rows for the given entity IDs."""
         if not entity_ids:
             return []
@@ -303,7 +324,7 @@ class _GraphMixin:
     def _collect_rel_rows(
         self,
         entity_ids: set[str],
-        entity_records: list[dict],
+        entity_records: list[dict[str, str]],
     ) -> list[tuple[str, str, str, str]]:
         """Collect 1-hop SVO triples for matched entities as (subj_name, verb, obj_name, desc)."""
         rel_rows: list[tuple[str, str, str, str]] = []
@@ -316,12 +337,14 @@ class _GraphMixin:
                 key = (t.subject_id, t.verb, t.object_id)
                 if key not in seen:
                     seen.add(key)
-                    rel_rows.append((
-                        id_to_name.get(t.subject_id, t.subject_id),
-                        t.verb,
-                        id_to_name.get(t.object_id, t.object_id),
-                        t.description or "",
-                    ))
+                    rel_rows.append(
+                        (
+                            id_to_name.get(t.subject_id, t.subject_id),
+                            t.verb,
+                            id_to_name.get(t.object_id, t.object_id),
+                            t.description or "",
+                        )
+                    )
         return rel_rows
 
     def _collect_community_texts(self, chunk_ids: list[str]) -> list[str]:
@@ -348,7 +371,7 @@ class _GraphMixin:
 
     def _assemble_sections(
         self,
-        entity_records: list[dict],
+        entity_records: list[dict[str, str]],
         rel_rows: list[tuple[str, str, str, str]],
         community_texts: list[str],
         chunk_pairs: list[tuple[str, DocumentChunk]],
@@ -371,30 +394,32 @@ class _GraphMixin:
         if entity_records:
             header = "## Entities\n\n| Name | Type | Description |\n|------|------|-------------|"
             rows_str = "\n".join(
-                f"| {r['name']} | {r['type']} | {r['description'] or '—'} |"
-                for r in entity_records
+                f"| {r['name']} | {r['type']} | {r['description'] or '—'} |" for r in entity_records
             )
             _add(f"{header}\n{rows_str}")
 
         if rel_rows:
-            header = "## Relationships\n\n| Subject | Relationship | Object | Description |\n|---------|-------------|--------|-------------|"
+            header = "## Relationships\n\n| Subject | Relationship | Object | Description |\n|---------|-------------|--------|-------------|"  # noqa: E501
             rows_str = "\n".join(
-                f"| {subj} | {verb} | {obj} | {desc or '—'} |"
-                for subj, verb, obj, desc in rel_rows
+                f"| {subj} | {verb} | {obj} | {desc or '—'} |" for subj, verb, obj, desc in rel_rows
             )
             _add(f"{header}\n{rows_str}")
 
         for text in community_texts:
-            block = f"## Community Reports\n\n{text}" if not any(
-                s.startswith("## Community Reports") for s in sections
-            ) else text
+            block = (
+                f"## Community Reports\n\n{text}"
+                if not any(s.startswith("## Community Reports") for s in sections)
+                else text
+            )
             if not _add(block):
                 break
 
         for _, chunk in chunk_pairs:
-            block = f"## Source Text\n\n{chunk.content or ''}" if not any(
-                s.startswith("## Source Text") for s in sections
-            ) else (chunk.content or "")
+            block = (
+                f"## Source Text\n\n{chunk.content or ''}"
+                if not any(s.startswith("## Source Text") for s in sections)
+                else (chunk.content or "")
+            )
             if not _add(block):
                 break
 
@@ -408,14 +433,14 @@ class _GraphMixin:
         "You are an expert analyst. Using ONLY the community report below, "
         "provide a concise answer to the question and rate how relevant this "
         "community report is (0 = not relevant, 100 = fully answers the question).\n\n"
-        "Return ONLY valid JSON: {{\"answer\": \"<answer>\", \"score\": <0-100>}}\n\n"
+        'Return ONLY valid JSON: {{"answer": "<answer>", "score": <0-100>}}\n\n'
         "Question: {query}\n\n"
         "Community Report:\n{community_text}"
     )
 
     def map_reduce_global_context(
         self,
-        hits: list,
+        hits: list[Any],
         query_text: str,
         llm_fn: Callable[[str], str],
         concurrency: int = 4,
@@ -459,7 +484,9 @@ class _GraphMixin:
                 answer = str(parsed.get("answer", "")).strip()
                 score = int(parsed.get("score", 0))
             except (_json.JSONDecodeError, ValueError):
-                return None  # LLM returned unparseable/invalid JSON — skip this community (expected)
+                return (
+                    None  # LLM returned unparseable/invalid JSON — skip this community (expected)
+                )
             if not answer or score <= 0:
                 return None
             return answer, score
@@ -490,7 +517,7 @@ class _GraphMixin:
         self,
         results: list[ScoredChunk],
         existing_pool: dict[str, ScoredChunk],
-        query_embedding,
+        query_embedding: np.ndarray,
         query_entities: list[str],
         k: int,
         query_text: str | None,
@@ -523,13 +550,17 @@ class _GraphMixin:
             )
         else:
             self._literal_expand_missing(
-                missing, new_pool, found_entities, query_embedding, query_text, namespaces, domain_ids
+                missing,
+                new_pool,
+                found_entities,
+                query_embedding,
+                query_text,
+                namespaces,
+                domain_ids,
             )
 
         chunks_added = len(new_pool) - len(existing_pool)
-        cg_chunks = sum(
-            1 for sc in new_pool.values() if sc.provenance == "context_graph_expansion"
-        )
+        cg_chunks = sum(1 for sc in new_pool.values() if sc.provenance == "context_graph_expansion")
         self.last_expansion_stats = {
             "invoked": True,
             "missing_entities": missing,
@@ -556,8 +587,8 @@ class _GraphMixin:
         found_entities: list[str],
         namespaces: list[str] | None,
     ) -> None:
-        """Expand missing entities via context graph edges into new_pool (mutates in place)."""
-        # Caller (_entity_ref_expand) guards: self._context_graph_expansion and self._entity_index is not None
+        """Expand missing entities via context graph edges into new_pool (mutates in place)."""  # noqa: E501
+        # Caller (_entity_ref_expand) guards: self._context_graph_expansion and self._entity_index is not None  # noqa: E501
         assert self._entity_index is not None
         namespace = namespaces[0] if namespaces else "global"
         for entity in missing:
@@ -592,7 +623,7 @@ class _GraphMixin:
         namespaces: list[str] | None,
         domain_ids: list[str] | None,
     ) -> list[str]:
-        """Per-entity vector search for missing entities. Returns (possibly filtered) missing list."""
+        """Per-entity vector search for missing entities. Returns (possibly filtered) missing list."""  # noqa: E501
         if self._entity_ref_expansion_per_k is not None:
             per_k = self._entity_ref_expansion_per_k
         else:
@@ -600,7 +631,9 @@ class _GraphMixin:
         min_sim = self._entity_ref_expansion_min_sim
         if precomputed_entity_vecs is not None:
             available = [e for e in missing if e in precomputed_entity_vecs]
-            entity_vecs = np.stack([precomputed_entity_vecs[e] for e in available]) if available else None
+            entity_vecs = (
+                np.stack([precomputed_entity_vecs[e] for e in available]) if available else None
+            )
             missing = available
         else:
             # Caller (_entity_ref_expand) guards: self._embed_fn is not None
@@ -610,13 +643,21 @@ class _GraphMixin:
         for i, entity in enumerate(_missing_iter):
             # entity_vecs non-None: loop condition above guards entry
             assert entity_vecs is not None
-            hits = self._store.search(entity_vecs[i], limit=per_k, query_text=None, namespaces=namespaces, domain_ids=domain_ids)
+            hits = self._store.search(
+                entity_vecs[i],
+                limit=per_k,
+                query_text=None,
+                namespaces=namespaces,
+                domain_ids=domain_ids,
+            )
             for chunk_id, score, chunk in hits:
                 if min_sim is not None and score < min_sim:
                     continue
                 if chunk_id not in new_pool:
                     new_pool[chunk_id] = ScoredChunk(
-                        chunk_id=chunk_id, chunk=chunk, score=score,
+                        chunk_id=chunk_id,
+                        chunk=chunk,
+                        score=score,
                         provenance="entity_ref_expansion",
                     )
                 if entity not in found_entities:
@@ -628,15 +669,18 @@ class _GraphMixin:
         missing: list[str],
         new_pool: dict[str, ScoredChunk],
         found_entities: list[str],
-        query_embedding,
+        query_embedding: np.ndarray,
         query_text: str | None,
         namespaces: list[str] | None,
         domain_ids: list[str] | None,
     ) -> None:
         """Literal substring fallback: expand pool with chunks containing missing entity text."""
         expanded_seeds = self._store.search(
-            query_embedding, limit=self._entity_ref_expansion_k,
-            query_text=query_text, namespaces=namespaces, domain_ids=domain_ids,
+            query_embedding,
+            limit=self._entity_ref_expansion_k,
+            query_text=query_text,
+            namespaces=namespaces,
+            domain_ids=domain_ids,
         )
         for chunk_id, score, chunk in expanded_seeds:
             if chunk_id in new_pool:
@@ -645,7 +689,9 @@ class _GraphMixin:
             matched = [e for e in missing if e.lower() in chunk_text]
             if matched:
                 new_pool[chunk_id] = ScoredChunk(
-                    chunk_id=chunk_id, chunk=chunk, score=score,
+                    chunk_id=chunk_id,
+                    chunk=chunk,
+                    score=score,
                     provenance="entity_ref_expansion",
                 )
                 for e in matched:

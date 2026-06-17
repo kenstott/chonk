@@ -9,14 +9,19 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from .schema import ColumnMeta, TableMeta
+
+if TYPE_CHECKING:
+    import pyarrow as pa
 
 # ---------------------------------------------------------------------------
 # Type normalisation helpers
 # ---------------------------------------------------------------------------
 
 
-def _pandas_dtype_to_str(dtype) -> str:
+def _pandas_dtype_to_str(dtype: object) -> str:
     name = str(dtype)
     if name.startswith("int") or name.startswith("Int"):
         return "INTEGER"
@@ -29,7 +34,7 @@ def _pandas_dtype_to_str(dtype) -> str:
     return "TEXT"
 
 
-def _python_type_to_str(value) -> str:
+def _python_type_to_str(value: object) -> str:
     if isinstance(value, bool):
         return "BOOLEAN"
     if isinstance(value, int):
@@ -41,7 +46,7 @@ def _python_type_to_str(value) -> str:
     return "TEXT"
 
 
-def _arrow_type_to_str(pa_type) -> str:
+def _arrow_type_to_str(pa_type: pa.DataType) -> str:
     import pyarrow as pa
 
     if pa.types.is_integer(pa_type):

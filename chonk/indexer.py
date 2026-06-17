@@ -11,9 +11,13 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+from ._types import EmbedModel
 from .storage._store import Store
+
+if TYPE_CHECKING:
+    from .models import DocumentChunk
 
 # ── Singleton registry ────────────────────────────────────────────────────────
 # One Indexer per namespace, keyed by namespace id.  Search sessions always
@@ -25,8 +29,8 @@ _registry_lock = threading.Lock()
 def get_indexer(
     namespace_id: str,
     store: Store,
-    embed_model: str | Any,
-    **kwargs: Any,
+    embed_model: EmbedModel,
+    **kwargs: Any,  # noqa: ANN401
 ) -> Indexer:
     """Return the process-wide Indexer for *namespace_id*, creating it once.
 
@@ -54,7 +58,7 @@ def release_indexer(namespace_id: str) -> None:
 class IndexHandle:
     """Handle returned by index_source_async. Call .join() to wait for completion."""
 
-    def __init__(self, thread: threading.Thread):
+    def __init__(self, thread: threading.Thread) -> None:
         self._thread = thread
 
     def join(self, timeout: float | None = None) -> None:
@@ -90,7 +94,7 @@ class Indexer:
     def __init__(
         self,
         store: Store,
-        embed_model: str | Any,
+        embed_model: EmbedModel,
         on_progress: Callable[[str, int, int], None] | None = None,
         on_complete: Callable[[int], None] | None = None,
         on_error: Callable[[str, Exception], None] | None = None,
@@ -99,7 +103,7 @@ class Indexer:
         min_chunk_size: int = 400,
         max_chunk_size: int = 1200,
         embed_content_only: bool = True,
-    ):
+    ) -> None:
         self._store = store
         self._embed_model = embed_model
         self._on_progress = on_progress or (lambda *_: None)
@@ -116,22 +120,20 @@ class Indexer:
         """Signal the background thread to stop after the current batch."""
         self._abort_flag.set()
 
-    def index_source(self, source_config: dict) -> int:
+    def index_source(self, source_config: dict[str, Any]) -> int:
         """Blocking index of one source config dict. Returns chunks stored."""
         return self._run(source_config)
 
-    def index_source_async(self, source_config: dict) -> IndexHandle:
+    def index_source_async(self, source_config: dict[str, Any]) -> IndexHandle:
         """Non-blocking index. Returns an IndexHandle; call .join() to wait."""
         self._abort_flag.clear()
         t = threading.Thread(target=self._run, args=(source_config,), daemon=True)
         t.start()
         return IndexHandle(t)
 
-    def _run(self, source_config: dict) -> int:
+    def _run(self, source_config: dict[str, Any]) -> int:
         """Internal: run the full indexing pipeline for one source."""
         import numpy as np
-
-        from chonk.models import DocumentChunk
 
         # Resolve embed model
         if isinstance(self._embed_model, str):
@@ -212,7 +214,7 @@ class Indexer:
         self._on_complete(total_chunks)
         return total_chunks
 
-    def _crawl(self, source_config: dict) -> list:
+    def _crawl(self, source_config: dict[str, Any]) -> list[DocumentChunk]:
         """Dispatch to the correct crawler/transport and return DocumentChunks.
 
         Uses DocumentLoader so all file types (PDF, DOCX, HTML, …) are handled

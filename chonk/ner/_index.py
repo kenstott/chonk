@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
+from typing import Any
 
 from ..models import EntityAssociation
 from ._vocabulary import EntityMatch, VocabularyMatcher
@@ -37,7 +38,7 @@ class EntityIndex:
         score_weights: (frequency_weight, position_weight, specificity_weight).
     """
 
-    def __init__(self, score_weights: tuple[float, float, float] = (0.4, 0.3, 0.3)):
+    def __init__(self, score_weights: tuple[float, float, float] = (0.4, 0.3, 0.3)) -> None:
         self._fw, self._pw, self._sw = score_weights
         # entity_id -> {chunk_id -> EntityAssociation}
         self._entity_to_chunks: dict[str, dict[str, EntityAssociation]] = defaultdict(dict)
@@ -184,11 +185,7 @@ class EntityIndex:
         freq_score = math.log1p(frequency)
         pos_score = 1.0 - (first_position / chunk_length)
         spec_score = math.log(n / df) if df > 0 else 0.0
-        return (
-            self._fw * freq_score
-            + self._pw * pos_score
-            + self._sw * spec_score
-        )
+        return self._fw * freq_score + self._pw * pos_score + self._sw * spec_score
 
     def recompute_scores(self) -> None:
         """Recompute all association scores with the current corpus size.
@@ -203,30 +200,28 @@ class EntityIndex:
                 freq_score = math.log1p(assoc.frequency)
                 pos_score = 1.0 - (assoc.positions[0] / max(1, assoc.chunk_length))
                 spec_score = math.log(n / df) if df > 0 and n > 0 else 0.0
-                assoc.score = (
-                    self._fw * freq_score
-                    + self._pw * pos_score
-                    + self._sw * spec_score
-                )
+                assoc.score = self._fw * freq_score + self._pw * pos_score + self._sw * spec_score
                 self._chunk_to_entities[chunk_id][entity_id] = assoc
 
     # ------------------------------------------------------------------
     # Serialisation (simple JSON, no external deps)
     # ------------------------------------------------------------------
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Serialise index to a plain dict (JSON-compatible)."""
         assocs = []
-        for entity_id, chunk_map in self._entity_to_chunks.items():
-            for chunk_id, a in chunk_map.items():
-                assocs.append({
-                    "entity_id": a.entity_id,
-                    "chunk_id": a.chunk_id,
-                    "frequency": a.frequency,
-                    "positions": a.positions,
-                    "score": a.score,
-                    "chunk_length": a.chunk_length,
-                })
+        for _, chunk_map in self._entity_to_chunks.items():
+            for _, a in chunk_map.items():
+                assocs.append(
+                    {
+                        "entity_id": a.entity_id,
+                        "chunk_id": a.chunk_id,
+                        "frequency": a.frequency,
+                        "positions": a.positions,
+                        "score": a.score,
+                        "chunk_length": a.chunk_length,
+                    }
+                )
         return {
             "total_chunks": self._total_chunks,
             "score_weights": [self._fw, self._pw, self._sw],
@@ -234,7 +229,7 @@ class EntityIndex:
         }
 
     @classmethod
-    def load_from_db(cls, con, namespace: str | None = None) -> EntityIndex:
+    def load_from_db(cls, con: Any, namespace: str | None = None) -> EntityIndex:  # noqa: ANN401
         """Restore an EntityIndex from the chunk_entities table.
 
         Args:
@@ -246,7 +241,7 @@ class EntityIndex:
         where = "WHERE namespace = ?" if namespace else ""
         params = [namespace] if namespace else []
         rows = con.execute(
-            f"SELECT chunk_id, entity_id, frequency, positions_json, score FROM chunk_entities {where}",
+            f"SELECT chunk_id, entity_id, frequency, positions_json, score FROM chunk_entities {where}",  # noqa: E501
             params,
         ).fetchall()
 
@@ -254,7 +249,8 @@ class EntityIndex:
             return cls()
 
         total_chunks_row = con.execute(
-            "SELECT COUNT(DISTINCT chunk_id) FROM embeddings" + (" WHERE namespace = ?" if namespace else ""),
+            "SELECT COUNT(DISTINCT chunk_id) FROM embeddings"
+            + (" WHERE namespace = ?" if namespace else ""),
             params,
         ).fetchone()
         total_chunks = total_chunks_row[0] if total_chunks_row else 0
@@ -276,7 +272,7 @@ class EntityIndex:
         return idx
 
     @classmethod
-    def from_dict(cls, data: dict) -> EntityIndex:
+    def from_dict(cls, data: dict[str, Any]) -> EntityIndex:
         """Restore an index from a dict produced by ``to_dict()``."""
         weights = tuple(data.get("score_weights", [0.4, 0.3, 0.3]))
         idx = cls(score_weights=weights)  # type: ignore[arg-type]

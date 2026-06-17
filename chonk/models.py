@@ -55,7 +55,7 @@ class ScoredChunk:
     provenance: str  # "seed" | "structural" | "entity_adjacent" | "cluster_adjacent"
     linked_by: str | None = None  # entity_id that linked this chunk
     cluster: str | None = None  # cluster_id for cluster-adjacent chunks
-    embedding: list | None = None  # cached embedding for scoring
+    embedding: list[float] | None = None  # cached embedding for scoring
 
 
 @dataclass

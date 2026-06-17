@@ -41,6 +41,7 @@ Usage::
 
 Requires: requests>=2.28  (``pip install requests``)
 """
+
 from __future__ import annotations
 
 import json
@@ -83,7 +84,7 @@ class SolrCrawler:
         password: str | None = None,
         verify_ssl: bool = True,
         field_aliases: dict[str, str] | None = None,
-    ):
+    ) -> None:
         self._base_url = base_url.rstrip("/")
         self._collection = collection
         self._query = query
@@ -101,16 +102,14 @@ class SolrCrawler:
     def can_handle(self, uri: str) -> bool:
         return uri.startswith(f"{self._base_url}/{self._collection}")
 
-    def fetch(self, uri: str, **__) -> FetchResult:
+    def fetch(self, uri: str, **__: object) -> FetchResult:
         if uri not in self._cache:
-            raise KeyError(
-                f"SolrCrawler: unknown URI {uri!r} — call crawl() first"
-            )
+            raise KeyError(f"SolrCrawler: unknown URI {uri!r} — call crawl() first")
         return self._cache[uri]
 
     # ── Crawler protocol ──────────────────────────────────────────────────────
 
-    def crawl(self, uri: str = "", **__) -> list[str]:
+    def crawl(self, uri: str = "", **__: object) -> list[str]:
         """Paginate through the collection using cursorMark, cache all documents, and emit schema.
 
         Args:
@@ -121,11 +120,10 @@ class SolrCrawler:
         """
         try:
             import requests
-        except ImportError:
+        except ImportError as exc:
             raise ImportError(
-                "requests is required for SolrCrawler. "
-                "Install with: pip install requests"
-            )
+                "requests is required for SolrCrawler. Install with: pip install requests"
+            ) from exc
 
         session = requests.Session()
         session.verify = self._verify_ssl

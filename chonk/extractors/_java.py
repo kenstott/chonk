@@ -60,11 +60,11 @@ class JavaExtractor:
     def can_handle(self, doc_type: str) -> bool:
         return doc_type in {"java"}
 
-    def _scan(self, source: str) -> tuple[str, dict[tuple[str, ...], dict]]:
+    def _scan(self, source: str) -> tuple[str, dict[tuple[str, ...], dict[str, object]]]:
         """Return (markdown, section_map) where section_map maps section key → line metadata."""
         lines = source.splitlines()
         parts: list[str] = []
-        section_map: dict[tuple[str, ...], dict] = {}
+        section_map: dict[tuple[str, ...], dict[str, object]] = {}
 
         import_line_indices = [idx for idx, ln in enumerate(lines) if _IMPORT_RE.match(ln)]
         if import_line_indices:

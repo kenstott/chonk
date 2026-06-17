@@ -47,7 +47,7 @@ class ImapTransport:
     def can_handle(self, uri: str) -> bool:
         return uri.startswith("imap://") or uri.startswith("imaps://")
 
-    def fetch(self, uri: str, **kwargs) -> FetchResult:
+    def fetch(self, uri: str, **kwargs: object) -> FetchResult:
         """Return the single most-recent message matching the URI."""
         results = list(self.fetch_messages(uri, limit=1))
         if not results:

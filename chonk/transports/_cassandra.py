@@ -52,6 +52,7 @@ Usage::
 
 Requires: cassandra-driver>=3.25  (``pip install cassandra-driver``)
 """
+
 from __future__ import annotations
 
 import csv
@@ -117,12 +118,11 @@ class CassandraCrawler:
         dataset_queries: dict[str, str] | None = None,
         entity_queries: dict[str, str] | None = None,
         local_dc: str | None = None,
-    ):
+    ) -> None:
         self._contact_points = contact_points
         self._port = port
         self._keyspace_filter: set[str] | None = (
-            set(keyspaces) if keyspaces
-            else ({keyspace} if keyspace else None)
+            set(keyspaces) if keyspaces else ({keyspace} if keyspace else None)
         )
         self._username = username
         self._password = password
@@ -132,7 +132,7 @@ class CassandraCrawler:
         self._local_dc = local_dc
 
         self._cache: dict[str, FetchResult] = {}
-        self._table_meta: list[Any] = []       # list[TableMeta] — populated after crawl
+        self._table_meta: list[Any] = []  # list[TableMeta] — populated after crawl
         self._entity_vocab: dict[str, list[str]] = {}  # entity_type → names
         self._known_keyspaces: list[str] = []
 
@@ -141,16 +141,14 @@ class CassandraCrawler:
     def can_handle(self, uri: str) -> bool:
         return uri.startswith("cassandra://")
 
-    def fetch(self, uri: str, **__) -> FetchResult:
+    def fetch(self, uri: str, **__: object) -> FetchResult:
         if uri not in self._cache:
-            raise KeyError(
-                f"CassandraCrawler: unknown URI {uri!r} — call crawl() first"
-            )
+            raise KeyError(f"CassandraCrawler: unknown URI {uri!r} — call crawl() first")
         return self._cache[uri]
 
     # ── Crawler protocol ──────────────────────────────────────────────────────
 
-    def crawl(self, uri: str = "", **__) -> list[str]:
+    def crawl(self, uri: str = "", **__: object) -> list[str]:
         """Connect to Cassandra, index schema and dataset query results.
 
         Args:
@@ -163,30 +161,30 @@ class CassandraCrawler:
         try:
             from cassandra.cluster import Cluster
             from cassandra.policies import DCAwareRoundRobinPolicy
-        except ImportError:
+        except ImportError as exc:
             raise ImportError(
                 "cassandra-driver is required for CassandraCrawler. "
                 "Install with: pip install cassandra-driver"
-            )
+            ) from exc
 
         contact_points = self._contact_points
         if uri.startswith("cassandra://"):
             from urllib.parse import urlparse
+
             parsed = urlparse(uri)
             if parsed.hostname:
                 contact_points = [parsed.hostname]
             if parsed.path.lstrip("/") and self._keyspace_filter is None:
                 self._keyspace_filter = {parsed.path.lstrip("/")}
 
-        kwargs: dict = {"contact_points": contact_points, "port": self._port}
+        kwargs: dict[str, object] = {"contact_points": contact_points, "port": self._port}
         if self._local_dc:
-            kwargs["load_balancing_policy"] = DCAwareRoundRobinPolicy(
-                local_dc=self._local_dc
-            )
+            kwargs["load_balancing_policy"] = DCAwareRoundRobinPolicy(local_dc=self._local_dc)
 
         auth_provider = None
         if self._username:
             from cassandra.auth import PlainTextAuthProvider
+
             auth_provider = PlainTextAuthProvider(
                 username=self._username, password=self._password or ""
             )
@@ -209,13 +207,14 @@ class CassandraCrawler:
 
         _log.info(
             "CassandraCrawler: indexed %d URI(s) across %d keyspace(s)",
-            len(self._cache), len(self._known_keyspaces),
+            len(self._cache),
+            len(self._known_keyspaces),
         )
         return list(self._cache.keys())
 
     # ── NER vocabulary ────────────────────────────────────────────────────────
 
-    def get_table_meta(self) -> list:
+    def get_table_meta(self) -> list[Any]:
         """Return ``list[TableMeta]`` for all crawled tables.
 
         Pass to ``SchemaVocabBuilder.add_tables()`` or
@@ -248,37 +247,39 @@ class CassandraCrawler:
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
-    def _connect_session(self, session: Any, keyspace: str) -> Any:
+    def _connect_session(self, session: Any, keyspace: str) -> Any:  # noqa: ANN401
         """Return session connected to *keyspace* (no-op if already connected)."""
         session.set_keyspace(keyspace)
         return session
 
-    def _keyspaces_to_crawl(self, session: Any) -> list[str]:
-        rows = session.execute(
-            "SELECT keyspace_name FROM system_schema.keyspaces"
-        )
-        all_ks = [r.keyspace_name for r in rows
-                  if r.keyspace_name not in _SYSTEM_KEYSPACES]
+    def _keyspaces_to_crawl(self, session: Any) -> list[str]:  # noqa: ANN401
+        rows = session.execute("SELECT keyspace_name FROM system_schema.keyspaces")
+        all_ks = [r.keyspace_name for r in rows if r.keyspace_name not in _SYSTEM_KEYSPACES]
         if self._keyspace_filter:
             return [k for k in all_ks if k in self._keyspace_filter]
         return all_ks
 
-    def _crawl_schema(self, session: Any, host: str) -> None:
+    def _crawl_schema(self, session: Any, host: str) -> None:  # noqa: ANN401
         from chonk.schema import ColumnMeta, TableMeta
 
         keyspaces = self._keyspaces_to_crawl(session)
         self._known_keyspaces = list(keyspaces)
 
         for ks in keyspaces:
-            tables = list(session.execute(
-                "SELECT table_name, comment FROM system_schema.tables "
-                "WHERE keyspace_name = %s", (ks,)
-            ))
+            tables = list(
+                session.execute(
+                    "SELECT table_name, comment FROM system_schema.tables WHERE keyspace_name = %s",
+                    (ks,),
+                )
+            )
             if self._include_views:
-                views = list(session.execute(
-                    "SELECT view_name, where_clause FROM system_schema.views "
-                    "WHERE keyspace_name = %s", (ks,)
-                ))
+                views = list(
+                    session.execute(
+                        "SELECT view_name, where_clause FROM system_schema.views "
+                        "WHERE keyspace_name = %s",
+                        (ks,),
+                    )
+                )
             else:
                 views = []
 
@@ -286,11 +287,13 @@ class CassandraCrawler:
             all_tables += [(r.view_name, getattr(r, "where_clause", None), True) for r in views]
 
             for table_name, comment, is_view in all_tables:
-                col_rows = list(session.execute(
-                    "SELECT column_name, type, kind FROM system_schema.columns "
-                    "WHERE keyspace_name = %s AND table_name = %s",
-                    (ks, table_name),
-                ))
+                col_rows = list(
+                    session.execute(
+                        "SELECT column_name, type, kind FROM system_schema.columns "
+                        "WHERE keyspace_name = %s AND table_name = %s",
+                        (ks, table_name),
+                    )
+                )
                 columns = []
                 col_lines = []
                 for col in col_rows:
@@ -302,8 +305,10 @@ class CassandraCrawler:
                         is_primary_key=is_pk,
                     )
                     columns.append(cm)
-                    pk_marker = " [partition key]" if kind == "partition_key" else (
-                        " [clustering]" if kind == "clustering" else ""
+                    pk_marker = (
+                        " [partition key]"
+                        if kind == "partition_key"
+                        else (" [clustering]" if kind == "clustering" else "")
                     )
                     col_lines.append(f"  {col.column_name} {col.type}{pk_marker}")
 
@@ -323,7 +328,9 @@ class CassandraCrawler:
                     f"Keyspace: {ks}\n"
                     f"Table: {table_name}\n"
                     + (f"Comment: {comment}\n" if comment else "")
-                    + "Columns:\n" + "\n".join(col_lines) + "\n"
+                    + "Columns:\n"
+                    + "\n".join(col_lines)
+                    + "\n"
                 )
 
                 schema_uri = f"cassandra://{host}/{ks}/{table_name}/_schema"
@@ -333,7 +340,7 @@ class CassandraCrawler:
                     source_path=f"{ks}/{table_name}/_schema",
                 )
 
-    def _crawl_datasets(self, session: Any, host: str) -> None:
+    def _crawl_datasets(self, session: Any, host: str) -> None:  # noqa: ANN401
         for doc_name, cql in self._dataset_queries.items():
             try:
                 rows = list(session.execute(cql))
@@ -351,7 +358,7 @@ class CassandraCrawler:
             except Exception as exc:
                 _log.warning("CassandraCrawler: dataset query %r failed: %s", doc_name, exc)
 
-    def _collect_entity_vocab(self, session: Any) -> None:
+    def _collect_entity_vocab(self, session: Any) -> None:  # noqa: ANN401
         for entity_type, cql in self._entity_queries.items():
             try:
                 rows = list(session.execute(cql))
@@ -363,17 +370,18 @@ class CassandraCrawler:
                     self._entity_vocab[entity_type] = names
                     _log.debug(
                         "CassandraCrawler: entity_query %r → %d names",
-                        entity_type, len(names),
+                        entity_type,
+                        len(names),
                     )
             except Exception as exc:
-                _log.warning(
-                    "CassandraCrawler: entity_query %r failed: %s", entity_type, exc
-                )
+                _log.warning("CassandraCrawler: entity_query %r failed: %s", entity_type, exc)
 
     @staticmethod
-    def cassandra_provenance(contact_points: list[str], port: int, keyspace: str | None) -> dict:
+    def cassandra_provenance(
+        contact_points: list[str], port: int, keyspace: str | None
+    ) -> dict[str, object]:
         """Return source annotation dict for ``chunk.source_detail``."""
-        info: dict = {
+        info: dict[str, object] = {
             "db_dialect": "cassandra",
             "db_host": contact_points[0] if contact_points else "",
             "db_port": port,

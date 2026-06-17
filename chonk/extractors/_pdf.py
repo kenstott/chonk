@@ -71,6 +71,9 @@ class PdfExtractor:
                 if len(matched_pages) == 1:
                     chunk.source_detail = {"page": matched_pages[0]}
                 else:
-                    chunk.source_detail = {"page_start": matched_pages[0], "page_end": matched_pages[-1]}
+                    chunk.source_detail = {
+                        "page_start": matched_pages[0],
+                        "page_end": matched_pages[-1],
+                    }  # noqa: E501
 
         return chunks

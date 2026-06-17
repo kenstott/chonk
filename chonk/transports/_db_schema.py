@@ -37,6 +37,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import textwrap
+from typing import Any
 
 from ._protocol import FetchResult
 
@@ -115,7 +116,7 @@ class DatabaseSchemaCrawler:
         include_views: bool = True,
         include_triggers: bool = True,
         schemas: list[str] | None = None,
-    ):
+    ) -> None:
         self._url = connection_url
         self.include_procs = include_procs
         self.include_views = include_views
@@ -131,12 +132,12 @@ class DatabaseSchemaCrawler:
             uri
         )
 
-    def fetch(self, uri: str, **__) -> FetchResult:
+    def fetch(self, uri: str, **__: object) -> FetchResult:
         if uri not in self._cache:
             raise KeyError(f"DatabaseSchemaCrawler: unknown URI {uri!r} — call crawl() first")
         return self._cache[uri]
 
-    def crawl(self, uri: str = "", **__) -> list[str]:  # noqa: ARG002  # uri ignored; connection set in constructor
+    def crawl(self, uri: str = "", **__: object) -> list[str]:  # noqa: ARG002  # uri ignored; connection set in constructor
         """Connect to the database and index all schema objects.
 
         Args:
@@ -206,7 +207,7 @@ class DatabaseSchemaCrawler:
             source_path=f"{obj_type}: {qualified}",
         )
 
-    def _index_views(self, _conn, engine, sa) -> None:
+    def _index_views(self, _conn: Any, engine: Any, sa: Any) -> None:  # noqa: ANN401
         insp = sa.inspect(engine)
         for schema in self._schemas or [None]:  # type: ignore[list-item]
             try:
@@ -223,8 +224,8 @@ class DatabaseSchemaCrawler:
 
     def _run_query(
         self,
-        conn,
-        sa,
+        conn: Any,  # noqa: ANN401
+        sa: Any,  # noqa: ANN401
         sql: str,
         name_col: str,
         type_col: str,
@@ -246,7 +247,7 @@ class DatabaseSchemaCrawler:
                 str(row.get("definition", "") or ""),
             )
 
-    def _run_mssql(self, conn, sa) -> None:
+    def _run_mssql(self, conn: Any, sa: Any) -> None:  # noqa: ANN401
         try:
             rows = conn.execute(sa.text(_MSSQL_OBJECTS)).mappings().all()
         except Exception as exc:
@@ -275,7 +276,7 @@ class DatabaseSchemaCrawler:
                 str(row.get("definition", "") or ""),
             )
 
-    def _run_sqlite(self, conn, sa) -> None:
+    def _run_sqlite(self, conn: Any, sa: Any) -> None:  # noqa: ANN401
         rows_v = rows_t = []
         if self.include_views:
             try:

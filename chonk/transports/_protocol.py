@@ -24,5 +24,5 @@ class FetchResult:
 
 @runtime_checkable
 class Transport(Protocol):
-    def fetch(self, uri: str, **kwargs) -> FetchResult: ...
+    def fetch(self, uri: str, **kwargs) -> FetchResult: ...  # noqa: ANN003
     def can_handle(self, uri: str) -> bool: ...

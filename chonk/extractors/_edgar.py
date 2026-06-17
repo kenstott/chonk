@@ -33,38 +33,43 @@ Or register globally::
     from chonk.extractors import register_extractor, EdgarExtractor
     register_extractor(EdgarExtractor())
 """
+
 from __future__ import annotations
 
 import re
 from html.parser import HTMLParser
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from chonk.models import DocumentChunk
 
 
 # ── SEC-mandated Item → section name mapping ─────────────────────────────────
 # These are fixed by SEC regulation S-K and do not change across filers.
 
 _ITEM_NAMES: dict[str, str] = {
-    "1":   "Business",
-    "1A":  "Risk Factors",
-    "1B":  "Unresolved Staff Comments",
-    "1C":  "Cybersecurity",
-    "2":   "Properties",
-    "3":   "Legal Proceedings",
-    "4":   "Mine Safety Disclosures",
-    "5":   "Market Information",
-    "6":   "Reserved",
-    "7":   "Management Discussion and Analysis",
-    "7A":  "Quantitative Qualitative Disclosures About Market Risk",
-    "8":   "Financial Statements",
-    "9":   "Disagreements with Accountants",
-    "9A":  "Controls and Procedures",
-    "9B":  "Other Information",
-    "9C":  "Foreign Jurisdictions Disclosures",
-    "10":  "Directors Officers Corporate Governance",
-    "11":  "Executive Compensation",
-    "12":  "Security Ownership",
-    "13":  "Certain Relationships Related Transactions",
-    "14":  "Principal Accountant Fees",
-    "15":  "Exhibits Financial Statement Schedules",
+    "1": "Business",
+    "1A": "Risk Factors",
+    "1B": "Unresolved Staff Comments",
+    "1C": "Cybersecurity",
+    "2": "Properties",
+    "3": "Legal Proceedings",
+    "4": "Mine Safety Disclosures",
+    "5": "Market Information",
+    "6": "Reserved",
+    "7": "Management Discussion and Analysis",
+    "7A": "Quantitative Qualitative Disclosures About Market Risk",
+    "8": "Financial Statements",
+    "9": "Disagreements with Accountants",
+    "9A": "Controls and Procedures",
+    "9B": "Other Information",
+    "9C": "Foreign Jurisdictions Disclosures",
+    "10": "Directors Officers Corporate Governance",
+    "11": "Executive Compensation",
+    "12": "Security Ownership",
+    "13": "Certain Relationships Related Transactions",
+    "14": "Principal Accountant Fees",
+    "15": "Exhibits Financial Statement Schedules",
 }
 
 # Items that contain primarily prose.  Items 8 and 10-15 are financial
@@ -80,20 +85,19 @@ _ITEM_RE = re.compile(
 
 # ── HTML → plain text helpers ─────────────────────────────────────────────────
 
+
 class _PlainTextParser(HTMLParser):
     """Strip all HTML tags, decode entities, insert paragraph breaks."""
 
-    _BLOCK = frozenset(
-        "p div section article li tr td th h1 h2 h3 h4 h5 h6 br hr".split()
-    )
+    _BLOCK = frozenset("p div section article li tr td th h1 h2 h3 h4 h5 h6 br hr".split())
     _SKIP = frozenset("script style ix:header ix:nonfraction ix:nonnumeric".split())
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self._parts: list[str] = []
         self._skip_depth = 0
 
-    def handle_starttag(self, tag: str, attrs):
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         t = tag.lower()
         if t in self._SKIP or t.startswith("ix:"):
             self._skip_depth += 1
@@ -102,12 +106,12 @@ class _PlainTextParser(HTMLParser):
         if t in self._BLOCK:
             self._parts.append("\n")
 
-    def handle_endtag(self, tag: str):
+    def handle_endtag(self, tag: str) -> None:
         t = tag.lower()
         if t in self._SKIP or t.startswith("ix:"):
             self._skip_depth = max(0, self._skip_depth - 1)
 
-    def handle_data(self, data: str):
+    def handle_data(self, data: str) -> None:
         if not self._skip_depth:
             self._parts.append(data)
 
@@ -125,19 +129,23 @@ class _MarkdownParser(HTMLParser):
 
     _BLOCK = frozenset("p div section article li tr td th br hr".split())
     _HEADING_MARKERS: dict[str, str] = {
-        "h1": "#", "h2": "##", "h3": "###",
-        "h4": "####", "h5": "#####", "h6": "######",
+        "h1": "#",
+        "h2": "##",
+        "h3": "###",
+        "h4": "####",
+        "h5": "#####",
+        "h6": "######",
     }
     _SKIP = frozenset("script style ix:header ix:nonfraction ix:nonnumeric".split())
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self._parts: list[str] = []
         self._skip_depth = 0
-        self._heading_marker: str | None = None   # "##" etc. when inside a heading tag
-        self._heading_prefixed = False             # True once we've emitted the marker
+        self._heading_marker: str | None = None  # "##" etc. when inside a heading tag
+        self._heading_prefixed = False  # True once we've emitted the marker
 
-    def handle_starttag(self, tag: str, attrs):
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         t = tag.lower()
         if t in self._SKIP or t.startswith("ix:"):
             self._skip_depth += 1
@@ -150,7 +158,7 @@ class _MarkdownParser(HTMLParser):
         elif t in self._BLOCK:
             self._parts.append("\n")
 
-    def handle_endtag(self, tag: str):
+    def handle_endtag(self, tag: str) -> None:
         t = tag.lower()
         if t in self._SKIP or t.startswith("ix:"):
             self._skip_depth = max(0, self._skip_depth - 1)
@@ -159,7 +167,7 @@ class _MarkdownParser(HTMLParser):
             self._heading_prefixed = False
             self._parts.append("\n")
 
-    def handle_data(self, data: str):
+    def handle_data(self, data: str) -> None:
         if self._skip_depth:
             return
         if self._heading_marker is not None and not self._heading_prefixed:
@@ -253,15 +261,15 @@ def _promote_bold_headings(html: str, max_len: int = 120) -> str:
     Returns:
         HTML with qualifying bold blocks replaced by ``<h2>...</h2>``.
     """
-    def _replace(m: re.Match) -> str:
+
+    def _replace(m: re.Match[str]) -> str:
         text = m.group(1).strip().rstrip(".")
         if not text or len(text) > max_len:
             return m.group(0)
         return f"<h2>{text}</h2>"
 
     html = _BOLD_B_RE.sub(_replace, html)
-    html = _BOLD_SPAN_RE.sub(_replace, html)
-    return html
+    return _BOLD_SPAN_RE.sub(_replace, html)
 
 
 # ── TOC parsing ───────────────────────────────────────────────────────────────
@@ -332,6 +340,7 @@ def _parse_toc(html: str) -> list[tuple[str, str]]:
 
 
 # ── Main extractor ────────────────────────────────────────────────────────────
+
 
 def _extract_edgar_prose(
     html: str,
@@ -419,6 +428,7 @@ def _extract_edgar_prose(
 
 # ── Extractor class (satisfies chonk Extractor protocol) ──────────────
 
+
 class EdgarExtractor:
     """Extract prose from SEC EDGAR 10-K inline XBRL HTML.
 
@@ -469,6 +479,7 @@ class EdgarExtractor:
         head = data[:4096].decode("utf-8", errors="replace").lower()
         return "xmlns:ix=" in head or "<ix:header" in head or "sec.gov" in head
 
-
-    def annotate(self, chunks: list, data: bytes, source_path: str | None = None) -> list:
+    def annotate(
+        self, chunks: list[DocumentChunk], data: bytes, source_path: str | None = None
+    ) -> list[DocumentChunk]:
         return chunks

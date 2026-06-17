@@ -40,6 +40,7 @@ Usage::
 
 Requires: boto3>=1.26  (``pip install boto3``)
 """
+
 from __future__ import annotations
 
 import json
@@ -55,7 +56,7 @@ _log = logging.getLogger(__name__)
 _SCHEMA_SAMPLE_SIZE = DEFAULT_SCHEMA_SAMPLE_SIZE
 
 
-def _default(obj: Any) -> Any:
+def _default(obj: Any) -> Any:  # noqa: ANN401
     if isinstance(obj, Decimal):
         return float(obj)
     return str(obj)
@@ -89,13 +90,13 @@ class DynamoDBCrawler:
         aws_secret_access_key: str | None = None,
         aws_session_token: str | None = None,
         endpoint_url: str | None = None,
-        filter_expression: Any = None,
+        filter_expression: Any = None,  # noqa: ANN401
         projection_expression: str | None = None,
-        expression_attribute_names: dict | None = None,
+        expression_attribute_names: dict[str, str] | None = None,
         page_size: int = 100,
         schema_sample_size: int = _SCHEMA_SAMPLE_SIZE,
         field_aliases: dict[str, str] | None = None,
-    ):
+    ) -> None:
         self._table = table
         self._region = region
         self._ak = aws_access_key_id
@@ -116,14 +117,14 @@ class DynamoDBCrawler:
     def can_handle(self, uri: str) -> bool:
         return uri.startswith(f"{self.SCHEME}://")
 
-    def fetch(self, uri: str, **__) -> FetchResult:
+    def fetch(self, uri: str, **__: object) -> FetchResult:
         if uri not in self._cache:
             raise KeyError(f"DynamoDBCrawler: unknown URI {uri!r} — call crawl() first")
         return self._cache[uri]
 
     # ── Crawler protocol ──────────────────────────────────────────────────────
 
-    def crawl(self, uri: str = "", **__) -> list[str]:
+    def crawl(self, uri: str = "", **__: object) -> list[str]:
         """Scan the DynamoDB table, cache all items, and emit a schema chunk.
 
         Returns:
@@ -131,13 +132,12 @@ class DynamoDBCrawler:
         """
         try:
             import boto3
-        except ImportError:
+        except ImportError as exc:
             raise ImportError(
-                "boto3 is required for DynamoDBCrawler. "
-                "Install with: pip install boto3"
-            )
+                "boto3 is required for DynamoDBCrawler. Install with: pip install boto3"
+            ) from exc
 
-        kwargs: dict = dict(region_name=self._region)
+        kwargs: dict[str, Any] = dict(region_name=self._region)
         if self._ak:
             kwargs["aws_access_key_id"] = self._ak
             kwargs["aws_secret_access_key"] = self._sk
@@ -149,7 +149,7 @@ class DynamoDBCrawler:
         ddb = boto3.resource("dynamodb", **kwargs)
         table = ddb.Table(self._table)  # type: ignore[attr-defined]  # boto3 stub gap
 
-        scan_kwargs: dict = {"Limit": self._page_size}
+        scan_kwargs: dict[str, object] = {"Limit": self._page_size}
         if self._filter_expr is not None:
             scan_kwargs["FilterExpression"] = self._filter_expr
         if self._projection:
@@ -161,7 +161,7 @@ class DynamoDBCrawler:
         self._known_fields.clear()
         total = 0
         last_key = None
-        sample: list[dict] = []
+        sample: list[dict[str, object]] = []
 
         while True:
             if last_key:
@@ -197,8 +197,10 @@ class DynamoDBCrawler:
         # ── Schema chunk ──────────────────────────────────────────────────────
         self._known_fields.update(collect_field_paths(sample))
         schema_text = infer_schema_text(
-            sample, self._table,
-            total_docs=total, sample_size=len(sample),
+            sample,
+            self._table,
+            total_docs=total,
+            sample_size=len(sample),
         )
         schema_uri = f"{self.SCHEME}://{self._table}/_schema"
         self._cache[schema_uri] = FetchResult(

@@ -6,9 +6,13 @@
 # permission from the copyright holder.
 
 """VectorBackend protocol — implemented by DuckDBVectorBackend and PgVectorBackend."""
+
 from __future__ import annotations
 
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+
+if TYPE_CHECKING:
+    from ..models import DocumentChunk
 
 
 @runtime_checkable
@@ -37,8 +41,8 @@ class VectorBackend(Protocol):
 
     def add_chunks(
         self,
-        chunks: list,
-        embeddings,                          # np.ndarray shape (n, embedding_dim)
+        chunks: list[DocumentChunk],
+        embeddings: Any,  # noqa: ANN401  # np.ndarray shape (n, embedding_dim)
         namespace: str | None = None,
         source_id: str | None = None,
         domain_id: str | None = None,
@@ -63,17 +67,17 @@ class VectorBackend(Protocol):
 
     def search(
         self,
-        query_embedding,                     # np.ndarray shape (dim,) or (1, dim)
+        query_embedding: Any,  # noqa: ANN401  # np.ndarray shape (dim,) or (1, dim)
         limit: int = 5,
-        query_text: str | None = None,       # None → pure vector; str → hybrid RRF
+        query_text: str | None = None,  # None → pure vector; str → hybrid RRF
         include_breadcrumbs: bool = True,
         namespaces: list[str] | None = None,
         chunk_types: list[str] | None = None,
         domain_ids: list[str] | None = None,
         session_fingerprint: str | None = None,
-    ) -> list[tuple[str, float, object]]: ...  # (chunk_id, score, DocumentChunk)
+    ) -> list[tuple[str, float, DocumentChunk]]: ...  # (chunk_id, score, DocumentChunk)
 
-    def get_all_chunks(self) -> list: ...    # list[DocumentChunk] — used by graph builder
+    def get_all_chunks(self) -> list[DocumentChunk]: ...  # used by graph builder
 
     # ------------------------------------------------------------------
     # Document registry
@@ -81,7 +85,11 @@ class VectorBackend(Protocol):
 
     def get_document_hash(self, document_name: str) -> str | None: ...
 
-    def list_documents(self) -> list[dict]: ...  # keys: document_name, content_hash, source_uri, indexed_at, chunk_count
+    def list_documents(
+        self,
+    ) -> list[
+        dict[str, Any]
+    ]: ...  # keys: document_name, content_hash, source_uri, indexed_at, chunk_count
 
     def count(self) -> int: ...
 
@@ -90,7 +98,9 @@ class VectorBackend(Protocol):
     # ------------------------------------------------------------------
 
     def rebuild_fts_index(self) -> None: ...
+
     # Backends with live FTS indexes (PG tsvector) implement as no-op.
 
     def preload_embeddings(self) -> None: ...
+
     # Backends with index-backed ANN (pgvector HNSW) implement as no-op.

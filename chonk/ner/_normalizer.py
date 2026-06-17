@@ -23,18 +23,21 @@ Pipeline per entity string:
 from __future__ import annotations
 
 import re
+from typing import Any
 
 # Words that inflect mis-singularizes for typical data-domain use.
-SINGULAR_EXCEPTIONS: frozenset[str] = frozenset({
-    "data",
-    "metadata",
-    "criteria",   # domain often uses "criteria" as singular
-    "media",
-    "agenda",
-    "stamina",
-    "trivia",
-    "insignia",
-})
+SINGULAR_EXCEPTIONS: frozenset[str] = frozenset(
+    {
+        "data",
+        "metadata",
+        "criteria",  # domain often uses "criteria" as singular
+        "media",
+        "agenda",
+        "stamina",
+        "trivia",
+        "insignia",
+    }
+)
 
 # Compiled patterns
 _LEADING_TRAILING_SYMBOLS = re.compile(r"^[^\w\s]+|[^\w\s]+$", re.UNICODE)
@@ -60,7 +63,8 @@ def _singularize(word: str) -> str:
     if lower in SINGULAR_EXCEPTIONS:
         return word
     try:
-        import inflect as _inflect_mod
+        import inflect as _inflect_mod  # noqa: F401
+
         _engine = _get_engine()
         result = _engine.singular_noun(word)  # type: ignore[arg-type]  # inflect stub uses Word, runtime accepts str
         if result is False:
@@ -73,13 +77,14 @@ def _singularize(word: str) -> str:
         return word
 
 
-_inflect_engine = None
+_inflect_engine: Any = None  # noqa: ANN401
 
 
-def _get_engine():
+def _get_engine() -> Any:  # noqa: ANN401
     global _inflect_engine
     if _inflect_engine is None:
         import inflect
+
         _inflect_engine = inflect.engine()
     return _inflect_engine
 
@@ -121,7 +126,9 @@ def normalize_entity(entity: str) -> str:
 
     # 3. Collapse dotted acronyms: U.S.A. → USA (before whitespace collapse)
     entity = " ".join(
-        re.sub(r"\.", "", tok) if _DOTTED_ACRONYM.match(tok + ("." if not tok.endswith(".") else "")) else tok
+        re.sub(r"\.", "", tok)
+        if _DOTTED_ACRONYM.match(tok + ("." if not tok.endswith(".") else ""))
+        else tok
         for tok in entity.split(" ")
     )
 
@@ -175,7 +182,11 @@ class EntityNormalizer:
             try:
                 result = _get_engine().singular_noun(last)  # type: ignore[arg-type]  # inflect stub uses Word, runtime accepts str
                 if result is not False:
-                    tokens[-1] = result.capitalize() if last[0].isupper() and not _is_acronym(last) else result
+                    tokens[-1] = (
+                        result.capitalize()
+                        if last[0].isupper() and not _is_acronym(last)
+                        else result
+                    )
             except ImportError:
                 pass
         return sep.join(tokens)
