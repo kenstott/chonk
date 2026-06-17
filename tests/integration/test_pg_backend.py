@@ -10,14 +10,13 @@ from collections.abc import Generator
 import numpy as np
 import pytest
 
-docker = pytest.importorskip("docker", reason="docker SDK not installed — pip install docker")
-psycopg2 = pytest.importorskip("psycopg2", reason="psycopg2 not installed")
-pytest.importorskip("pgvector", reason="pgvector not installed")
-
-
 from chonk.graph._svo import SVOTriple
 from chonk.models import DocumentChunk
 from chonk.storage._pg import PgVectorBackend
+
+docker = pytest.importorskip("docker", reason="docker SDK not installed — pip install docker")
+psycopg2 = pytest.importorskip("psycopg2", reason="psycopg2 not installed")
+pytest.importorskip("pgvector", reason="pgvector not installed")
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -197,7 +196,12 @@ class TestVectorSearch:
                 "(chunk_id, document_name, section, chunk_index, content, chunk_type, embedding) "
                 "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 [
-                    "cid_summary", "doc_x", "[]", 0, "summary text", "summary",
+                    "cid_summary",
+                    "doc_x",
+                    "[]",
+                    0,
+                    "summary text",
+                    "summary",
                     _embeddings(1)[0].tolist(),
                 ],
             )
@@ -561,7 +565,9 @@ class TestWorkerCoordinatorMechanics:
         with _pg_connect(pg_dsn) as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "UPDATE ingest_queue SET leased_at = now() - interval '20 minutes' WHERE id = %s",
+                    "UPDATE ingest_queue"
+                    " SET leased_at = now() - interval '20 minutes'"
+                    " WHERE id = %s",
                     [job_id],
                 )
             conn.commit()
@@ -618,10 +624,7 @@ class TestWorkerCoordinatorMechanics:
         assert namespace == "orders"
 
         # Simulate the embed + insert step (no real model needed)
-        chunks = [
-            _chunk(doc="order_doc", idx=i, content=f"order content {i}")
-            for i in range(3)
-        ]
+        chunks = [_chunk(doc="order_doc", idx=i, content=f"order content {i}") for i in range(3)]
         backend.add_chunks(chunks, _embeddings(3), namespace=namespace)
         backend.register_document(
             "order_doc",
@@ -695,13 +698,30 @@ class TestWorkerCoordinatorTandem:
     _EMBED_MODEL = "all-MiniLM-L6-v2"
     _TIMEOUT = 120  # seconds to wait for queue to drain
 
+    @pytest.fixture()
+    def backend(self, pg_dsn: str) -> Generator[PgVectorBackend, None, None]:
+        # all-MiniLM-L6-v2 produces 384-dim vectors; drop and recreate the
+        # embeddings table so the column type matches before the worker runs.
+        with psycopg2.connect(pg_dsn) as conn:
+            conn.autocommit = True
+            with conn.cursor() as cur:
+                cur.execute("DROP TABLE IF EXISTS embeddings CASCADE")
+        b = PgVectorBackend(pg_dsn, embedding_dim=384)
+        b.clear()
+        with b._pgconn.cursor() as cur:
+            cur.execute("TRUNCATE svo_triples")
+            cur.execute("TRUNCATE documents")
+        b._pgconn.commit()
+        yield b
+        b.close()
+
     @pytest.fixture(autouse=True)
     def _clean(self, pg_dsn: str) -> Generator[None, None, None]:
         from chonk.ingest import _pg_connect  # noqa: PLC0415
 
         with _pg_connect(pg_dsn) as conn:
             with conn.cursor() as cur:
-                cur.execute("TRUNCATE embeddings, documents, svo_triples, ingest_queue, control")
+                cur.execute("TRUNCATE documents, svo_triples, ingest_queue, control")
             conn.commit()
         yield
 
