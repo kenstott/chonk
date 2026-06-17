@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from ..models import DocumentChunk
@@ -21,14 +21,14 @@ _CVE_ID_RE = re.compile(r"CVE-\d{4}-\d{4,}", re.IGNORECASE)
 _CVSS_KEYS = ("cvssMetricV40", "cvssMetricV31", "cvssMetricV30", "cvssMetricV2")
 
 
-def _en(items: list[dict]) -> str:
+def _en(items: list[dict[str, Any]]) -> str:
     for item in items:
         if item.get("lang") == "en":
             return item.get("value", "").strip()
     return items[0].get("value", "").strip() if items else ""
 
 
-def _best_cvss(metrics: dict) -> tuple[float | None, str | None]:
+def _best_cvss(metrics: dict[str, Any]) -> tuple[float | None, str | None]:
     for key in _CVSS_KEYS:
         for entry in metrics.get(key, []):
             data = entry.get("cvssData", {})
@@ -41,7 +41,7 @@ def _best_cvss(metrics: dict) -> tuple[float | None, str | None]:
     return None, None
 
 
-def _cpe_readable(criteria: str, match: dict) -> str:
+def _cpe_readable(criteria: str, match: dict[str, Any]) -> str:
     parts = criteria.split(":")
     base = ""
     if len(parts) >= 6:
@@ -67,7 +67,7 @@ def _cpe_readable(criteria: str, match: dict) -> str:
     return f"{base} {version}".strip()
 
 
-def _iter_cves(obj: object) -> list[dict]:
+def _iter_cves(obj: object) -> list[dict[str, Any]]:
     if isinstance(obj, dict):
         if "vulnerabilities" in obj:
             return [v["cve"] for v in obj["vulnerabilities"] if "cve" in v]
@@ -76,14 +76,14 @@ def _iter_cves(obj: object) -> list[dict]:
         if "cve" in obj:
             return [obj["cve"]]
     if isinstance(obj, list):
-        out: list[dict] = []
+        out: list[dict[str, Any]] = []
         for item in obj:
             out.extend(_iter_cves(item))
         return out
     return []
 
 
-def _render_one(cve: dict) -> str:
+def _render_one(cve: dict[str, Any]) -> str:
     cve_id = cve.get("id", "UNKNOWN")
     published = (cve.get("published") or "")[:10]
     modified = (cve.get("lastModified") or "")[:10]
@@ -165,7 +165,7 @@ class CveRenderer:
         chunks: list[DocumentChunk],
         obj: object,
     ) -> list[DocumentChunk]:
-        meta: dict[str, dict] = {}
+        meta: dict[str, dict[str, Any]] = {}
         rendered: dict[str, str] = {}
         for cve in _iter_cves(obj):
             cve_id = cve.get("id")

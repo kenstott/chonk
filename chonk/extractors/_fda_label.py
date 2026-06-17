@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from ..models import DocumentChunk
@@ -45,7 +45,7 @@ def _join_field(val: object) -> str:
     return str(val).strip() if val else ""
 
 
-def _iter_labels(obj: object) -> list[dict]:
+def _iter_labels(obj: object) -> list[dict[str, Any]]:
     if isinstance(obj, dict):
         if "results" in obj:
             return [r for r in obj["results"] if isinstance(r, dict)]
@@ -56,7 +56,7 @@ def _iter_labels(obj: object) -> list[dict]:
     return []
 
 
-def _label_id(label: dict) -> str:
+def _label_id(label: dict[str, Any]) -> str:
     openfda = label.get("openfda", {})
     appl = openfda.get("application_number", [])
     if appl:
@@ -65,7 +65,7 @@ def _label_id(label: dict) -> str:
     return label.get("set_id") or label.get("id") or "UNKNOWN"
 
 
-def _render_one(label: dict) -> str:
+def _render_one(label: dict[str, Any]) -> str:
     openfda = label.get("openfda", {})
 
     brand_names = openfda.get("brand_name", [])
@@ -137,7 +137,7 @@ class FdaLabelRenderer:
         chunks: list[DocumentChunk],
         obj: object,
     ) -> list[DocumentChunk]:
-        meta: dict[str, dict] = {}
+        meta: dict[str, dict[str, Any]] = {}
         rendered: dict[str, str] = {}
         for label in _iter_labels(obj):
             appl_id = _label_id(label)

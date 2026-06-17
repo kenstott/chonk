@@ -14,13 +14,13 @@ entity -> neighbour chunks.
 
 from __future__ import annotations
 
-import json
 from collections import defaultdict
+from typing import Any
 
 from ..models import ClusterRecord
-from ._cooccurrence import CooccurrenceMatrix
-from ._clusterer import cluster_entities
 from ..ner._index import EntityIndex
+from ._clusterer import cluster_entities
+from ._cooccurrence import CooccurrenceMatrix
 
 
 class ClusterMap:
@@ -50,7 +50,7 @@ class ClusterMap:
         distance_threshold: float = 0.5,
         normalization: str = "pmi",
         min_cooccurrence: int = 2,
-    ) -> "ClusterMap":
+    ) -> ClusterMap:
         """Compute clusters from an EntityIndex and return a ClusterMap.
 
         Args:
@@ -140,7 +140,7 @@ class ClusterMap:
     # Serialisation
     # ------------------------------------------------------------------
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, object]:
         return {
             "assignments": self._entity_to_cluster,
             "clusters": {
@@ -154,7 +154,7 @@ class ClusterMap:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "ClusterMap":
+    def from_dict(cls, data: dict[str, Any]) -> ClusterMap:
         instance = cls()
         instance._entity_to_cluster = data.get("assignments", {})
         instance._cluster_to_entities = defaultdict(list)

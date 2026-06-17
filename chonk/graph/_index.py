@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from typing import Any  # noqa: F401
 
 from ._svo import SVOTriple
 
@@ -52,7 +53,7 @@ class RelationshipIndex:
     def __len__(self) -> int:
         return sum(len(v) for v in self._by_subject.values())
 
-    def save_to_db(self, con, incremental: bool = False) -> int:
+    def save_to_db(self, con: Any, incremental: bool = False) -> int:  # noqa: ANN401
         """Upsert all triples into svo_triples table. Returns count written.
 
         Args:
@@ -98,17 +99,17 @@ class RelationshipIndex:
         return len(rows)
 
     @classmethod
-    def load_from_db(cls, con, namespaces: list[str] | None = None) -> RelationshipIndex:
+    def load_from_db(cls, con: Any, namespaces: list[str] | None = None) -> RelationshipIndex:  # noqa: ANN401
         """Load RelationshipIndex from svo_triples table. Returns empty index if table absent."""
         idx = cls()
         try:
-            _view_exists = (
-                con.execute(
-                    "SELECT COUNT(*) FROM information_schema.tables "
-                    "WHERE table_name = 'all_svo_triples'"
-                ).fetchone()[0]
-                > 0
-            )
+            _row = con.execute(
+                "SELECT COUNT(*) FROM information_schema.tables "
+                "WHERE table_name = 'all_svo_triples'"
+            ).fetchone()
+            if _row is None:
+                raise RuntimeError("COUNT(*) returned no rows")
+            _view_exists = _row[0] > 0
             table = "all_svo_triples" if _view_exists else "svo_triples"
             if namespaces is not None:
                 placeholders = ", ".join(["?" for _ in namespaces])

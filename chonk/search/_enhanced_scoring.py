@@ -125,7 +125,7 @@ class _ScoringMixin:
     # Scoring and selection (greedy sequential MMR)
     # ------------------------------------------------------------------
 
-    def _cosine_similarity(self, a, b) -> float:
+    def _cosine_similarity(self, a: np.ndarray | list[float], b: np.ndarray | list[float]) -> float:
         """Cosine similarity between two embedding vectors."""
         a = np.asarray(a, dtype="float32")
         b = np.asarray(b, dtype="float32")
@@ -150,7 +150,7 @@ class _ScoringMixin:
     def _select_cohort(
         self,
         candidates: list[ScoredChunk],
-        query_embedding,
+        query_embedding: np.ndarray,
         k: int,
     ) -> list[ScoredChunk]:
         """Greedy sequential MMR selection (vectorized with numpy).
@@ -198,7 +198,9 @@ class _ScoringMixin:
         sel_units: list[np.ndarray] = []
         result: list[ScoredChunk] = []
 
-        sel_mat: np.ndarray = np.empty((0, dim), dtype=np.float32)  # populated when sel_units is non-empty
+        sel_mat: np.ndarray = np.empty(
+            (0, dim), dtype=np.float32
+        )  # populated when sel_units is non-empty
         for _ in range(min(k, len(remaining))):
             # Build matrix of selected unit vectors for batch max-sim
             if sel_units:

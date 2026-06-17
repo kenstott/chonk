@@ -98,7 +98,15 @@ target-version = "py311"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP"]
+# ANN: enforce annotations + ban `Any` in annotations (ANN401).
+# RET: catch inconsistent / implicit returns.
+select = ["E", "F", "I", "B", "UP", "ANN", "RET"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests need not be fully annotated.
+"tests/**" = ["ANN"]
+# Scripts and one-off tooling are not part of the typed migration surface.
+"scripts/**" = ["ANN"]
 
 [tool.black]
 line-length = 100
@@ -112,4 +120,9 @@ exclude = ["**/__pycache__", "demo", "work", "tests"]
 # absence is expected and not actionable in this repo's type gate.
 reportMissingImports = "warning"
 reportMissingModuleSource = "none"
+# Per-rule errors promoted while staying in standard mode:
+# bare `-> list`/`dict`/`tuple` (opaque to the Go migration) and
+# unguarded `.fetchone()[0]` subscripts on Optional results.
+reportMissingTypeArgument = "error"
+reportOptionalSubscript = "error"
 target-version = ["py311"]

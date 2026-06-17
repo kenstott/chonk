@@ -15,6 +15,10 @@ import os
 import threading
 import weakref
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    pass
 
 try:
     import duckdb
@@ -27,7 +31,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # Track all live pools for atexit cleanup
-_all_pools: weakref.WeakSet = weakref.WeakSet()
+_all_pools: weakref.WeakSet[ThreadLocalDuckDB] = weakref.WeakSet()
 
 
 def _close_all_pools() -> None:
@@ -87,52 +91,52 @@ class _PendingResult:
 
     __slots__ = ("_conn", "_lock", "_released")
 
-    def __init__(self, conn, lock: threading.RLock):
+    def __init__(self, conn: Any, lock: threading.RLock) -> None:  # noqa: ANN401
         self._conn = conn
         self._lock = lock
         self._released = False
 
-    def _release(self):
+    def _release(self) -> None:
         if not self._released:
             self._released = True
             self._lock.release()
 
-    def fetchall(self):
+    def fetchall(self) -> list[Any]:  # noqa: ANN401
         try:
             return self._conn.fetchall()
         finally:
             self._release()
 
-    def fetchone(self):
+    def fetchone(self) -> Any:  # noqa: ANN401
         try:
             return self._conn.fetchone()
         finally:
             self._release()
 
-    def fetchdf(self):
+    def fetchdf(self) -> Any:  # noqa: ANN401
         try:
             return self._conn.fetchdf()
         finally:
             self._release()
 
-    def df(self):
+    def df(self) -> Any:  # noqa: ANN401
         try:
             return self._conn.df()
         finally:
             self._release()
 
     @property
-    def description(self):
+    def description(self) -> Any:  # noqa: ANN401
         return self._conn.description
 
     @property
-    def rowcount(self):
+    def rowcount(self) -> Any:  # noqa: ANN401
         return self._conn.rowcount
 
-    def __del__(self):
+    def __del__(self) -> None:
         self._release()
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> Any:  # noqa: ANN401
         return getattr(self._conn, name)
 
 
@@ -141,11 +145,11 @@ class _LockedConnection:
 
     __slots__ = ("_conn", "_lock")
 
-    def __init__(self, conn, lock: threading.RLock):
+    def __init__(self, conn: Any, lock: threading.RLock) -> None:  # noqa: ANN401
         self._conn = conn
         self._lock = lock
 
-    def execute(self, *args, **kwargs):
+    def execute(self, *args: Any, **kwargs: Any) -> _PendingResult:  # noqa: ANN401
         self._lock.acquire()
         try:
             self._conn.execute(*args, **kwargs)
@@ -154,11 +158,11 @@ class _LockedConnection:
             self._lock.release()
             raise
 
-    def executemany(self, *args, **kwargs):
+    def executemany(self, *args: Any, **kwargs: Any) -> None:  # noqa: ANN401
         with self._lock:
             self._conn.executemany(*args, **kwargs)
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> Any:  # noqa: ANN401
         return getattr(self._conn, name)
 
 
@@ -177,9 +181,9 @@ class ThreadLocalDuckDB:
         self,
         db_path: str | Path,
         read_only: bool = False,
-        config: dict | None = None,
+        config: dict[str, Any] | None = None,
         init_sql: list[str] | None = None,
-    ):
+    ) -> None:
         if not _DUCKDB_AVAILABLE:
             raise ImportError(
                 "duckdb is required for storage. Install it with: pip install chonk[storage]"
@@ -249,5 +253,5 @@ class ThreadLocalDuckDB:
     def __enter__(self) -> ThreadLocalDuckDB:
         return self
 
-    def __exit__(self, *_) -> None:
+    def __exit__(self, *_: object) -> None:
         self.close()

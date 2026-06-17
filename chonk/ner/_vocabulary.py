@@ -17,6 +17,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 
 @dataclass
@@ -59,16 +60,16 @@ class VocabularyMatcher:
 
     def __init__(
         self,
-        entities: list[dict],
+        entities: list[dict[str, Any]],
         match_mode: str = "case_insensitive",
         min_entity_length: int = 2,
-    ):
+    ) -> None:
         self._match_mode = match_mode
         self._min_len = min_entity_length
         # Map from normalised surface form -> (entity_id, display_name, type)
         self._lookup: dict[str, tuple[str, str, str]] = {}
         # Track canonical entity metadata
-        self._entities: dict[str, dict] = {}
+        self._entities: dict[str, dict[str, Any]] = {}
 
         for ent in entities:
             eid = ent["id"]
@@ -98,7 +99,7 @@ class VocabularyMatcher:
         """
         check_text = text if self._match_mode == "exact" else text.lower()
         # entity_id -> {positions: list, display_name, type}
-        found: dict[str, dict] = {}
+        found: dict[str, dict[str, Any]] = {}
 
         for surface, (eid, display_name, etype) in self._lookup.items():
             start = 0

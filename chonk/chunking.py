@@ -38,7 +38,6 @@ _VERB_RE = re.compile(
 _SENT_END_RE = re.compile(r"(?<=[.!?])\s+")
 
 
-
 def _extract_chapter_title(text: str, pos: int) -> tuple[str, int]:
     """Extract ALL-CAPS title words from *text* starting at *pos*.
 
@@ -76,6 +75,7 @@ def _extract_chapter_title(text: str, pos: int) -> tuple[str, int]:
 
 
 # ── promote_plain_text_headers phase helpers ──────────────────────────────────
+
 
 def _promote_structural_levels(
     text: str,
@@ -122,15 +122,15 @@ def _promote_structural_levels(
 
 def _strip_index_paragraphs(text: str, index_line_threshold: float) -> str:
     """Remove paragraphs that look like back-of-book indexes."""
-    _INDEX_LINE_RE = re.compile(r'^.{2,60},\s*\d[\d,\s\-–]*$')
+    _INDEX_LINE_RE = re.compile(r"^.{2,60},\s*\d[\d,\s\-–]*$")
     paras = text.split("\n\n")
     cleaned = []
     for para in paras:
-        lines = [l for l in para.splitlines() if l.strip()]
+        lines = [ln for ln in para.splitlines() if ln.strip()]
         if not lines:
             cleaned.append(para)
             continue
-        index_lines = sum(1 for l in lines if _INDEX_LINE_RE.match(l.strip()))
+        index_lines = sum(1 for ln in lines if _INDEX_LINE_RE.match(ln.strip()))
         if index_lines / len(lines) >= index_line_threshold:
             continue  # drop entire paragraph
         cleaned.append(para)
@@ -151,7 +151,7 @@ def _promote_question_sentences(
         next_s = sentences[i + 1].strip() if i + 1 < len(sentences) else ""
         if (
             s.endswith("?")
-            and not next_s.endswith("?")           # not a run of questions
+            and not next_s.endswith("?")  # not a run of questions
             and len(s.split()) <= max_header_words * 2  # not a paragraph
             and len(s) <= max_header_chars * 2
         ):
@@ -168,7 +168,7 @@ def _promote_short_phrase_headers(
     max_header_chars: int,
 ) -> str:
     """Promote short verbless capitalised phrases to ## headings."""
-    _TRAILING_DASH_RE = re.compile(r'\s[–—-]+\s*$')
+    _TRAILING_DASH_RE = re.compile(r"\s[–—-]+\s*$")
 
     def _valid_header(phrase: str) -> bool:
         return (
@@ -186,7 +186,7 @@ def _promote_short_phrase_headers(
         re.MULTILINE,
     )
 
-    def _full_replace(m: re.Match) -> str:
+    def _full_replace(m: re.Match[str]) -> str:
         sent_end = m.group(1)
         phrase = m.group(2).strip().rstrip(".,;:")
         if not _valid_header(phrase):
@@ -302,12 +302,12 @@ def merge_blocks(paragraphs: list[str], separator: str) -> list[str]:
         para = paragraphs[i]
         lines = para.split("\n") if "\n" in para else [para]
 
-        if any(is_table_line(l) for l in lines if l.strip()):
+        if any(is_table_line(ln) for ln in lines if ln.strip()):
             block_parts = [para]
             j = i + 1
             while j < len(paragraphs):
                 next_lines = paragraphs[j].split("\n") if "\n" in paragraphs[j] else [paragraphs[j]]
-                if any(is_table_line(l) for l in next_lines if l.strip()):
+                if any(is_table_line(ln) for ln in next_lines if ln.strip()):
                     block_parts.append(paragraphs[j])
                     j += 1
                 else:
@@ -316,12 +316,12 @@ def merge_blocks(paragraphs: list[str], separator: str) -> list[str]:
             i = j
             continue
 
-        if any(is_list_line(l) for l in lines if l.strip()):
+        if any(is_list_line(ln) for ln in lines if ln.strip()):
             block_parts = [para]
             j = i + 1
             while j < len(paragraphs):
                 next_lines = paragraphs[j].split("\n") if "\n" in paragraphs[j] else [paragraphs[j]]
-                if any(is_list_line(l) for l in next_lines if l.strip()):
+                if any(is_list_line(ln) for ln in next_lines if ln.strip()):
                     block_parts.append(paragraphs[j])
                     j += 1
                 else:
@@ -399,7 +399,7 @@ def _split_at_sentences(text: str, max_size: int) -> list[str]:
     # Fallback: any piece still over max_size has no sentence boundaries;
     # split it at word boundaries rather than returning an oversized chunk.
     result: list[str] = []
-    for piece in (pieces or [text]):
+    for piece in pieces or [text]:
         if len(piece) > max_size:
             result.extend(_split_at_words(piece, max_size))
         else:
@@ -427,14 +427,14 @@ def _split_at_list_items(text: str, max_size: int) -> list[str]:
     return pieces or [text]
 
 
-_TABLE_SEP_RE = re.compile(r'^[-:|\ ]+$')
+_TABLE_SEP_RE = re.compile(r"^[-:|\ ]+$")
 
 
 def _table_cells_from_text(text: str) -> list[str]:
-    """Extract cell values from pipe-table text (horizontal or vertical HTML cell-per-line format)."""
+    """Extract cell values from pipe-table text (horizontal or vertical HTML cell-per-line format)."""  # noqa: E501
     cells = []
-    for seg in text.replace('\n', ' ').split('|'):
-        val = ' '.join(seg.split())
+    for seg in text.replace("\n", " ").split("|"):
+        val = " ".join(seg.split())
         if val and not _TABLE_SEP_RE.match(val):
             cells.append(val)
     return cells
@@ -464,6 +464,7 @@ def _split_at_table_rows(text: str, max_size: int) -> list[str]:
 # LCA breadcrumb
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _lca_path(paths: list[list[str]]) -> list[str]:
     """Lowest common ancestor of a list of heading paths.
 
@@ -477,7 +478,7 @@ def _lca_path(paths: list[list[str]]) -> list[str]:
     if len(non_empty) == 1:
         return list(non_empty[0])
     result: list[str] = []
-    for parts in zip(*non_empty):
+    for parts in zip(*non_empty, strict=False):
         if len(set(parts)) == 1:
             result.append(parts[0])
         else:
@@ -489,6 +490,7 @@ def _lca_path(paths: list[list[str]]) -> list[str]:
 # chunk_document helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _trim_overlap_tail(prev_content: str, overlap_chars: int) -> str:
     """Return the trailing *overlap_chars* of *prev_content*, trimmed to a word boundary."""
     if len(prev_content) <= overlap_chars:
@@ -496,10 +498,13 @@ def _trim_overlap_tail(prev_content: str, overlap_chars: int) -> str:
     tail = prev_content[-overlap_chars:]
     # trim to word boundary: if the cut lands mid-word, advance to the start of
     # the next word
-    if not prev_content[-(overlap_chars + 1) : -(overlap_chars)].isspace() and not tail[0].isspace():
+    if (
+        not prev_content[-(overlap_chars + 1) : -(overlap_chars)].isspace()
+        and not tail[0].isspace()
+    ):
         space_pos = tail.find(" ")
         if space_pos != -1:
-            tail = tail[space_pos + 1:]
+            tail = tail[space_pos + 1 :]
     return tail
 
 
@@ -528,6 +533,7 @@ def _apply_overlap_chars(
 # ─────────────────────────────────────────────────────────────────────────────
 # chunk_document
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def chunk_document(
     name: str,
@@ -661,7 +667,7 @@ def chunk_document(
         return f"[{' > '.join(parts)}]"
 
     def _heading_only(text: str) -> bool:
-        return all(not l.strip() or l.strip().startswith("#") for l in text.splitlines())
+        return all(not ln.strip() or ln.strip().startswith("#") for ln in text.splitlines())
 
     def _flush(
         text: str,
@@ -726,7 +732,9 @@ def chunk_document(
             row = cells[ri : ri + nh]
             if len(row) == nh:
                 rows_enriched.append(
-                    ' | '.join(f"{h.lower()}: {v}" for h, v in zip(table_headers, row))
+                    " | ".join(
+                        f"{h.lower()}: {v}" for h, v in zip(table_headers, row, strict=False)
+                    )  # noqa: E501
                 )
         if not rows_enriched:
             return None
@@ -736,7 +744,7 @@ def chunk_document(
             em_markers = f"{marker_cont}\n{{body}}\n{marker_cont}"
         else:
             em_markers = f"{marker_cont}\n{{body}}\n{marker_end}"
-        return em_markers.format(body='\n'.join(rows_enriched))
+        return em_markers.format(body="\n".join(rows_enriched))
 
     def _build_piece_content(
         piece: str,
@@ -772,7 +780,7 @@ def chunk_document(
         table_header: str | None = None
         table_headers: list[str] = []
         if n > 1 and marker_start == "[TABLE:start]":
-            _sep_re = re.compile(r'^[\s|:\-]+$')
+            _sep_re = re.compile(r"^[\s|:\-]+$")
             for _row in pieces[0].split("\n"):
                 if _row.strip() and not _sep_re.match(_row.strip()):
                     table_header = _row.strip()
@@ -809,8 +817,15 @@ def chunk_document(
                 marked = piece
                 continuation = False
                 embedding_marked = None
-            chunks.append(_flush(marked, chunk_index, base_offset, paragraph_continuation=continuation,
-                                 embedding_text=embedding_marked))
+            chunks.append(
+                _flush(
+                    marked,
+                    chunk_index,
+                    base_offset,
+                    paragraph_continuation=continuation,
+                    embedding_text=embedding_marked,
+                )
+            )
             chunk_index += 1
             _reset()
 
@@ -819,7 +834,11 @@ def chunk_document(
         level = len(para) - len(para.lstrip("#"))
         heading_text = para.lstrip("#").strip()
 
-        if current_chunk and len(current_chunk) >= min_chunk_size and not _heading_only(current_chunk):
+        if (
+            current_chunk
+            and len(current_chunk) >= min_chunk_size
+            and not _heading_only(current_chunk)
+        ):
             _flush_current(clear_paths=True)
 
         while heading_stack and heading_stack[-1][0] >= level:
@@ -832,7 +851,7 @@ def chunk_document(
         nonlocal current_path
         if current_chunk and not _heading_only(current_chunk):
             _flush_current()
-        sheet_name = para[len("[Sheet:"):-1].strip()
+        sheet_name = para[len("[Sheet:") : -1].strip()
         heading_stack.clear()
         heading_stack.append((0, sheet_name))
         current_path = [sheet_name]
@@ -843,16 +862,28 @@ def chunk_document(
             _flush_current()
 
         lines = para.split("\n")
-        is_table = any(is_table_line(l) for l in lines if l.strip())
-        is_list  = any(is_list_line(l)  for l in lines if l.strip())
+        is_table = any(is_table_line(ln) for ln in lines if ln.strip())
+        is_list = any(is_list_line(ln) for ln in lines if ln.strip())
 
         if is_table:
             pieces = _split_at_table_rows(para, max_chunk_size)
-            pieces = [s for p in pieces for s in (_split_at_sentences(p, max_chunk_size) if len(p) > max_chunk_size else [p])]
+            pieces = [
+                s
+                for p in pieces
+                for s in (
+                    _split_at_sentences(p, max_chunk_size) if len(p) > max_chunk_size else [p]
+                )
+            ]
             _emit_splits(pieces, "[TABLE:start]", "[TABLE:cont]", "[TABLE:end]", para_byte_offset)
         elif is_list:
             pieces = _split_at_list_items(para, max_chunk_size)
-            pieces = [s for p in pieces for s in (_split_at_sentences(p, max_chunk_size) if len(p) > max_chunk_size else [p])]
+            pieces = [
+                s
+                for p in pieces
+                for s in (
+                    _split_at_sentences(p, max_chunk_size) if len(p) > max_chunk_size else [p]
+                )
+            ]
             _emit_splits(pieces, "[LIST:start]", "[LIST:cont]", "[LIST:end]", para_byte_offset)
         else:
             pieces = _split_at_sentences(para, max_chunk_size)

@@ -1,0 +1,74 @@
+store:
+  path: index.duckdb
+  embedding_dim: 1024
+
+embed:
+  model: BAAI/bge-large-en-v1.5
+  batch_size: 256
+
+loader:
+  min_chunk_size: 400
+  max_chunk_size: 1200
+  enrich_context: true
+
+index:
+  ner: false
+  community: false
+  svo: false
+
+namespaces:
+  chonk:
+    description: "Chonk project source and documentation"
+    domains:
+      legacy: "legacy documentation and code for Chonk"
+      future_state: "architecture and conversion plan for the Go rewrite of Chonk"
+
+sources:
+  - name: chonk-source
+    type: glob
+    path: ../chonk
+    pattern: "**/*.py"
+    namespace: chonk
+    domain: legacy
+
+  - name: chonk-docs
+    type: glob
+    path: ../docs
+    pattern: "**/*.md"
+    namespace: chonk
+    domain: legacy
+
+  - name: chonk-examples
+    type: glob
+    path: ../examples
+    pattern: "**/*.py"
+    namespace: chonk
+    domain: legacy
+
+  - name: training-docs
+    type: glob
+    path: ../generate-training
+    pattern: "**/*.md"
+    namespace: chonk
+    domain: legacy
+
+  - name: readme
+    type: glob
+    path: ..
+    pattern: "README.md"
+    namespace: chonk
+    domain: legacy
+
+  - name: agents
+    type: glob
+    path: ..
+    pattern: "AGENTS.md"
+    namespace: chonk
+    domain: legacy
+
+  - name: future-state-architecture
+    type: glob
+    path: future_state_architecture
+    pattern: "**/*.md"
+    namespace: chonk
+    domain: future_state

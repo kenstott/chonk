@@ -20,7 +20,9 @@ _CLASS_RE = re.compile(r"^(?:export\s+)?(?:abstract\s+)?class\s+(\w+)")
 _INTERFACE_RE = re.compile(r"^(?:export\s+)?interface\s+(\w+)")
 _FUNCTION_RE = re.compile(r"^(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(")
 _CONST_ARROW_RE = re.compile(r"^(?:export\s+)?const\s+(\w+)\s*=\s*(?:async\s*)?\(")
-_METHOD_RE = re.compile(r"^\s{2,}(?:(?:public|private|protected|static|async|readonly|override)\s+)*(\w+)\s*[=(]\s*")
+_METHOD_RE = re.compile(
+    r"^\s{2,}(?:(?:public|private|protected|static|async|readonly|override)\s+)*(\w+)\s*[=(]\s*"
+)
 
 
 def _strip_jsdoc(lines: list[str]) -> str:
@@ -45,7 +47,7 @@ def _collect_imports(lines: list[str]) -> tuple[list[str], list[int]]:
 def _emit_imports(
     lines: list[str],
     parts: list[str],
-    section_map: dict[tuple[str, ...], dict],
+    section_map: dict[tuple[str, ...], dict[str, object]],
 ) -> None:
     """Append import section to parts and section_map in-place."""
     import_lines, indices = _collect_imports(lines)
@@ -124,7 +126,7 @@ def _handle_top_level_callable(
     class_stack: list[tuple[str, int]],
     pending_jsdoc: list[str],
     parts: list[str],
-    section_map: dict[tuple[str, ...], dict],
+    section_map: dict[tuple[str, ...], dict[str, object]],
     lines: list[str],
 ) -> tuple[bool, int, int, list[str]]:
     """Handle a top-level function or const-arrow declaration.
@@ -161,7 +163,7 @@ def _handle_class_method(
     class_stack: list[tuple[str, int]],
     pending_jsdoc: list[str],
     parts: list[str],
-    section_map: dict[tuple[str, ...], dict],
+    section_map: dict[tuple[str, ...], dict[str, object]],
     lines: list[str],
 ) -> tuple[bool, int, int, list[str]]:
     """Handle a method declaration inside the current class body.
@@ -204,11 +206,11 @@ class TypeScriptExtractor:
     def can_handle(self, doc_type: str) -> bool:
         return doc_type in {"typescript", "javascript"}
 
-    def _scan(self, source: str) -> tuple[str, dict[tuple[str, ...], dict]]:
+    def _scan(self, source: str) -> tuple[str, dict[tuple[str, ...], dict[str, object]]]:
         """Return (markdown, section_map) where section_map maps section key → line metadata."""
         lines = source.splitlines()
         parts: list[str] = []
-        section_map: dict[tuple[str, ...], dict] = {}
+        section_map: dict[tuple[str, ...], dict[str, object]] = {}
 
         _emit_imports(lines, parts, section_map)
 

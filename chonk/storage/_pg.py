@@ -12,6 +12,15 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    import numpy as np
+
+    from ..graph._svo import SVOTriple
+    from ..models import DocumentChunk
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +38,7 @@ def _require_deps() -> None:
         raise ImportError(_MISSING_DEPS_MSG) from exc
 
 
-def _deserialize_section(value) -> list[str]:
+def _deserialize_section(value: Any) -> list[str]:  # noqa: ANN401
     if not value:
         return []
     if isinstance(value, list):
@@ -53,19 +62,19 @@ class _PgResult:
 
     __slots__ = ("_rows",)
 
-    def __init__(self, rows: list) -> None:
+    def __init__(self, rows: list[Any]) -> None:
         self._rows = rows
 
-    def fetchall(self) -> list:
+    def fetchall(self) -> list[Any]:
         return self._rows
 
-    def fetchone(self):
+    def fetchone(self) -> Any:  # noqa: ANN401
         return self._rows[0] if self._rows else None
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[Any]:
         return iter(self._rows)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> Any:  # noqa: ANN401
         return self._rows[idx]
 
 
@@ -79,10 +88,10 @@ class _PsycopgAdapter:
     Each ``execute()`` call auto-commits (matches DuckDB's default behaviour).
     """
 
-    def __init__(self, pgconn) -> None:
+    def __init__(self, pgconn: Any) -> None:  # noqa: ANN401
         self._pgconn = pgconn
 
-    def execute(self, sql: str, params=None) -> _PgResult:
+    def execute(self, sql: str, params: list[Any] | None = None) -> _PgResult:
         pg_sql = _translate_sql(sql)
         param_list = list(params) if params is not None else []
         with self._pgconn.cursor() as cur:
@@ -91,7 +100,7 @@ class _PsycopgAdapter:
         self._pgconn.commit()
         return _PgResult(rows)
 
-    def executemany(self, sql: str, params_list) -> None:
+    def executemany(self, sql: str, params_list: list[list[Any]]) -> None:
         pg_sql = _translate_sql(sql)
         with self._pgconn.cursor() as cur:
             for row in params_list:
@@ -121,6 +130,7 @@ class PgVectorBackend:
         self._docs_table = "documents"
         self._pgconn = self._connect()
         self._global_attached = False
+        self._fts_dirty = False  # tsvector index is live — no manual rebuild needed
         self._init_schema()
 
     # ------------------------------------------------------------------
@@ -136,19 +146,11 @@ class PgVectorBackend:
         """
         return _PsycopgAdapter(self._pgconn)
 
-    @property
-    def _fts_dirty(self) -> bool:
-        return False
-
-    @_fts_dirty.setter
-    def _fts_dirty(self, value: bool) -> None:
-        pass  # tsvector index is live — no manual rebuild needed
-
     # ------------------------------------------------------------------
     # Connection
     # ------------------------------------------------------------------
 
-    def _connect(self):
+    def _connect(self) -> Any:  # noqa: ANN401
         import psycopg2
         from pgvector.psycopg2 import register_vector  # type: ignore[import-untyped]
 
@@ -195,7 +197,8 @@ class PgVectorBackend:
                     domain_id           TEXT,
                     session_fingerprint TEXT,
                     embedding           vector({self._embedding_dim}),
-                    fts_vec             tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED
+                    fts_vec             tsvector GENERATED ALWAYS AS
+                                        (to_tsvector('english', content)) STORED
                 )
             """)
             # Additive migrations (safe to re-run)
@@ -419,8 +422,8 @@ class PgVectorBackend:
 
     def add_chunks(
         self,
-        chunks: list,
-        embeddings,
+        chunks: list[DocumentChunk],
+        embeddings: np.ndarray,
         namespace: str | None = None,
         source_id: str | None = None,
         domain_id: str | None = None,
@@ -446,11 +449,8 @@ class PgVectorBackend:
             chunk_id = self._generate_chunk_id(
                 chunk.document_name, chunk.chunk_index, embed_content
             )
-            chunk_type = (
-                chunk.chunk_type.value
-                if hasattr(chunk, "chunk_type") and hasattr(chunk.chunk_type, "value")
-                else getattr(chunk, "chunk_type", "document") or "document"
-            )
+            _ct = getattr(chunk, "chunk_type", "document")
+            chunk_type = getattr(_ct, "value", None) if hasattr(_ct, "value") else _ct or "document"
             raw_section = getattr(chunk, "section", []) or []
             section_str = json.dumps(raw_section) if isinstance(raw_section, list) else raw_section
             raw_detail = getattr(chunk, "source_detail", None)
@@ -500,7 +500,7 @@ class PgVectorBackend:
 
     def search(
         self,
-        query_embedding,
+        query_embedding: np.ndarray,
         limit: int = 5,
         query_text: str | None = None,
         include_breadcrumbs: bool = True,
@@ -508,7 +508,7 @@ class PgVectorBackend:
         chunk_types: list[str] | None = None,
         domain_ids: list[str] | None = None,
         session_fingerprint: str | None = None,
-    ) -> list[tuple[str, float, object]]:
+    ) -> list[tuple[str, float, DocumentChunk]]:
         """Hybrid (BM25 + vector) or pure vector search via pgvector HNSW index.
 
         When ``query_text`` is provided a reciprocal-rank fusion of the
@@ -530,7 +530,7 @@ class PgVectorBackend:
 
         t = self._table
         clauses: list[str] = []
-        filter_params: list = []
+        filter_params: list[Any] = []
 
         if namespaces is not None:
             clauses.append("namespace = ANY(%s)")
@@ -605,13 +605,13 @@ class PgVectorBackend:
 
     def _search_hybrid(
         self,
-        query_vec,
+        query_vec: np.ndarray,
         query_text: str,
         where: str,
-        filter_params: list,
+        filter_params: list[Any],
         limit: int,
         t: str,
-    ) -> list:
+    ) -> list[tuple[Any, ...]]:
         """RRF merge of BM25 and vector results."""
         rrf_k = 60
         candidate_limit = limit * 4
@@ -632,13 +632,19 @@ class PgVectorBackend:
 
         # BM25 ranking
         safe_query = query_text.replace("'", "''")
-        bm25_where = (where + " AND " if where else "WHERE ") + f"fts_vec @@ plainto_tsquery('english', '{safe_query}')"
+        bm25_where = (
+            where + " AND " if where else "WHERE "
+        ) + f"fts_vec @@ plainto_tsquery('english', '{safe_query}')"
         bm25_params = filter_params + [candidate_limit]
         with self._pgconn.cursor() as cur:
             cur.execute(
                 f"""
                 SELECT chunk_id,
-                       ROW_NUMBER() OVER (ORDER BY ts_rank(fts_vec, plainto_tsquery('english', '{safe_query}')) DESC) AS rank
+                       ROW_NUMBER() OVER (
+                           ORDER BY ts_rank(
+                               fts_vec, plainto_tsquery('english', '{safe_query}')
+                           ) DESC
+                       ) AS rank
                 FROM {t} {bm25_where}
                 LIMIT %s
                 """,
@@ -650,7 +656,7 @@ class PgVectorBackend:
         all_ids = set(vec_ranks) | set(bm25_ranks)
         scores = {
             cid: 1.0 / (rrf_k + vec_ranks.get(cid, candidate_limit + rrf_k))
-                 + 1.0 / (rrf_k + bm25_ranks.get(cid, candidate_limit + rrf_k))
+            + 1.0 / (rrf_k + bm25_ranks.get(cid, candidate_limit + rrf_k))
             for cid in all_ids
         }
         top_ids = sorted(scores, key=scores.__getitem__, reverse=True)[:limit]
@@ -719,7 +725,7 @@ class PgVectorBackend:
     # get_all_chunks
     # ------------------------------------------------------------------
 
-    def get_all_chunks(self) -> list:
+    def get_all_chunks(self) -> list[DocumentChunk]:
         """Return all stored chunks as DocumentChunk objects (server-side cursor)."""
         from ..models import DocumentChunk
 
@@ -736,19 +742,31 @@ class PgVectorBackend:
                 """
             )
             for row in cur:
-                doc_name, content, section, chunk_idx, src_off, src_len, breadcrumb, src_detail, chunk_type = row
-                chunks.append(DocumentChunk(
-                    document_name=doc_name,
-                    content=content,
-                    section=_deserialize_section(section),
-                    chunk_index=chunk_idx,
-                    source_offset=src_off,
-                    source_length=src_len,
-                    breadcrumb=breadcrumb,
-                    embedding_content=f"{breadcrumb}\n\n{content}" if breadcrumb else content,
-                    source_detail=json.loads(src_detail) if src_detail else None,
-                    chunk_type=chunk_type or "document",
-                ))
+                (
+                    doc_name,
+                    content,
+                    section,
+                    chunk_idx,
+                    src_off,
+                    src_len,
+                    breadcrumb,
+                    src_detail,
+                    chunk_type,
+                ) = row
+                chunks.append(
+                    DocumentChunk(
+                        document_name=doc_name,
+                        content=content,
+                        section=_deserialize_section(section),
+                        chunk_index=chunk_idx,
+                        source_offset=src_off,
+                        source_length=src_len,
+                        breadcrumb=breadcrumb,
+                        embedding_content=f"{breadcrumb}\n\n{content}" if breadcrumb else content,
+                        source_detail=json.loads(src_detail) if src_detail else None,
+                        chunk_type=chunk_type or "document",
+                    )
+                )
         return chunks
 
     # ------------------------------------------------------------------
@@ -790,7 +808,7 @@ class PgVectorBackend:
             row = cur.fetchone()
         return row[0] if row else None
 
-    def list_documents(self) -> list[dict]:
+    def list_documents(self) -> list[dict[str, Any]]:
         self._ensure_connection()
         dt = self._docs_table
         with self._pgconn.cursor() as cur:
@@ -800,8 +818,13 @@ class PgVectorBackend:
             )
             rows = cur.fetchall()
         return [
-            {"document_name": r[0], "content_hash": r[1], "source_uri": r[2],
-             "indexed_at": r[3], "chunk_count": r[4]}
+            {
+                "document_name": r[0],
+                "content_hash": r[1],
+                "source_uri": r[2],
+                "indexed_at": r[3],
+                "chunk_count": r[4],
+            }
             for r in rows
         ]
 
@@ -809,7 +832,7 @@ class PgVectorBackend:
     # SVO triples
     # ------------------------------------------------------------------
 
-    def store_svo_triples(self, triples: list, namespace: str | None = None) -> int:
+    def store_svo_triples(self, triples: list[SVOTriple], namespace: str | None = None) -> int:
         """Insert SVO triples into the svo_triples table. Returns count inserted.
 
         Args:
@@ -830,14 +853,16 @@ class PgVectorBackend:
                     )
                     row = cur.fetchone()
                     ns = row[0] if row else None
-            rows.append((
-                t.source_chunk_id,
-                t.subject_id,
-                t.verb,
-                t.object_id,
-                float(t.confidence),
-                ns,
-            ))
+            rows.append(
+                (
+                    t.source_chunk_id,
+                    t.subject_id,
+                    t.verb,
+                    t.object_id,
+                    float(t.confidence),
+                    ns,
+                )
+            )
         with self._pgconn.cursor() as cur:
             for row in rows:
                 cur.execute(
@@ -851,7 +876,7 @@ class PgVectorBackend:
         self._pgconn.commit()
         return len(rows)
 
-    def get_svo_triples(self, namespace: str | None = None) -> list[tuple]:
+    def get_svo_triples(self, namespace: str | None = None) -> list[tuple[Any, ...]]:
         """Return all svo_triples rows, optionally filtered by namespace."""
         self._ensure_connection()
         with self._pgconn.cursor() as cur:
@@ -890,5 +915,5 @@ class PgVectorBackend:
     def __enter__(self) -> PgVectorBackend:
         return self
 
-    def __exit__(self, *_) -> None:
+    def __exit__(self, *_: object) -> None:
         self.close()

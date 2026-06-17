@@ -10,6 +10,10 @@
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from chonk.models import DocumentChunk
 
 # Matches a YAML frontmatter block at the very start of the file
 _FRONTMATTER_RE = re.compile(r"\A---\r?\n.*?\n---\r?\n?", re.DOTALL)
@@ -31,5 +35,7 @@ class MarkdownExtractor:
 
         return _FRONTMATTER_RE.sub("", text).lstrip("\n")
 
-    def annotate(self, chunks: list, data: bytes, source_path: str | None = None) -> list:
+    def annotate(
+        self, chunks: list[DocumentChunk], data: bytes, source_path: str | None = None
+    ) -> list[DocumentChunk]:
         return chunks

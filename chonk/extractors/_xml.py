@@ -10,8 +10,12 @@
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
+from typing import TYPE_CHECKING
 
 from ._renderer import Renderer
+
+if TYPE_CHECKING:
+    from chonk.models import DocumentChunk
 
 
 def _tag(element: ET.Element) -> str:
@@ -39,12 +43,12 @@ def _walk(element: ET.Element, lines: list[str], depth: int, path: str) -> None:
         lines.append(tail)
 
 
-def _to_dict(element: ET.Element) -> dict:
+def _to_dict(element: ET.Element) -> dict[str, object]:
     """Convert an ElementTree element to a plain dict for renderer dispatch."""
-    result: dict = {"_tag": _tag(element), **element.attrib}
+    result: dict[str, object] = {"_tag": _tag(element), **element.attrib}
     children = list(element)
     if children:
-        child_dicts: dict[str, list] = {}
+        child_dicts: dict[str, list[dict[str, object]]] = {}
         for child in children:
             key = _tag(child)
             child_dicts.setdefault(key, []).append(_to_dict(child))
@@ -100,7 +104,9 @@ class XmlExtractor:
         _walk(root, lines, depth=1, path="")
         return "\n\n".join(lines)
 
-    def annotate(self, chunks: list, data: bytes, source_path: str | None = None) -> list:
+    def annotate(
+        self, chunks: list[DocumentChunk], data: bytes, source_path: str | None = None
+    ) -> list[DocumentChunk]:
         root = self._parse(data, source_path)
         obj = _to_dict(root)
         renderer = self._find_renderer(source_path, obj)

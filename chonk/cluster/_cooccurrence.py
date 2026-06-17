@@ -33,7 +33,7 @@ class CooccurrenceMatrix:
         entity_index: EntityIndex,
         normalization: str = "pmi",
         min_cooccurrence: int = 2,
-    ):
+    ) -> None:
         self._index = entity_index
         self._normalization = normalization
         self._min_cooccurrence = min_cooccurrence

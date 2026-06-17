@@ -12,6 +12,10 @@ from __future__ import annotations
 import hashlib
 from collections import defaultdict
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    pass
 
 
 @dataclass
@@ -37,7 +41,7 @@ def _chunk_fingerprint(chunk_ids: list[str]) -> str:
 
 
 def build_chunk_clusters(
-    conn,
+    conn: Any,  # noqa: ANN401
     namespace: str = "global",
     algorithm: str = "agglomerative",
     min_chunks: int = 10,
@@ -58,12 +62,12 @@ def build_chunk_clusters(
 
     if not force:
         cache_row = conn.execute(
-            "SELECT chunk_fingerprint FROM context_graph_cache WHERE COALESCE(namespace, 'global') = ?",
+            "SELECT chunk_fingerprint FROM context_graph_cache WHERE COALESCE(namespace, 'global') = ?",  # noqa: E501
             [namespace],
         ).fetchone()
         if cache_row and cache_row[0] == fingerprint:
             existing = conn.execute(
-                "SELECT chunk_id, cluster_id FROM chunk_clusters WHERE COALESCE(namespace, 'global') = ?",
+                "SELECT chunk_id, cluster_id FROM chunk_clusters WHERE COALESCE(namespace, 'global') = ?",  # noqa: E501
                 [namespace],
             ).fetchall()
             if existing:
@@ -85,7 +89,7 @@ def build_chunk_clusters(
         for eid in entity_ids:
             entity_to_chunks[eid].append(chunk_id)
 
-    for eid, chunks in entity_to_chunks.items():
+    for _, chunks in entity_to_chunks.items():
         for i in range(len(chunks)):
             for j in range(i + 1, len(chunks)):
                 a, b = min(chunks[i], chunks[j]), max(chunks[i], chunks[j])
@@ -116,7 +120,7 @@ def build_chunk_clusters(
 
 
 def build_context_graph_edges(
-    conn,
+    conn: Any,  # noqa: ANN401
     namespace: str = "global",
     min_weight: float = 0.1,
     force: bool = False,
@@ -132,16 +136,17 @@ def build_context_graph_edges(
     fingerprint = _chunk_fingerprint(chunk_ids)
 
     try:
-        svo_count = conn.execute(
+        _row = conn.execute(
             "SELECT COUNT(*) FROM svo_triples WHERE COALESCE(namespace, 'global') = ?",
             [namespace],
-        ).fetchone()[0]
+        ).fetchone()
+        if _row is None:
+            raise RuntimeError("COUNT(*) returned no rows")
+        svo_count = _row[0]
     except Exception:
         svo_count = 0
 
-    full_fingerprint = hashlib.sha256(
-        f"{fingerprint}:{svo_count}".encode()
-    ).hexdigest()[:16]
+    full_fingerprint = hashlib.sha256(f"{fingerprint}:{svo_count}".encode()).hexdigest()[:16]
 
     if not force:
         cache_row = conn.execute(
@@ -210,7 +215,9 @@ def build_context_graph_edges(
             if clusters_a or clusters_b:
                 shared_clusters = len(clusters_a & clusters_b)
                 union_clusters = len(clusters_a | clusters_b)
-                cluster_signal = 0.4 * (shared_clusters / union_clusters) if union_clusters > 0 else 0.0
+                cluster_signal = (
+                    0.4 * (shared_clusters / union_clusters) if union_clusters > 0 else 0.0
+                )
             else:
                 cluster_signal = 0.0
 
@@ -243,7 +250,7 @@ def build_context_graph_edges(
     if rows_to_insert:
         conn.executemany(
             "INSERT INTO context_graph_edges "
-            "(source_entity_id, target_entity_id, namespace, weight, svo_signal, cooccur_signal, cluster_signal) "
+            "(source_entity_id, target_entity_id, namespace, weight, svo_signal, cooccur_signal, cluster_signal) "  # noqa: E501
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             rows_to_insert,
         )
@@ -273,7 +280,7 @@ def build_context_graph_edges(
 
 
 def build_context_graph_all_namespaces(
-    conn,
+    conn: Any,  # noqa: ANN401
     min_weight: float = 0.1,
     force: bool = False,
     algorithm: str = "agglomerative",
@@ -290,14 +297,18 @@ def build_context_graph_all_namespaces(
     results: dict[str, ContextGraphStats] = {}
     for ns in namespaces:
         results[ns] = build_context_graph_edges(
-            conn, namespace=ns, min_weight=min_weight,
-            force=force, algorithm=algorithm, min_chunks=min_chunks,
+            conn,
+            namespace=ns,
+            min_weight=min_weight,
+            force=force,
+            algorithm=algorithm,
+            min_chunks=min_chunks,
         )
     return results
 
 
 def get_context_graph_edges(
-    conn,
+    conn: Any,  # noqa: ANN401
     entity_id: str,
     namespace: str = "global",
     min_weight: float = 0.1,

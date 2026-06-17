@@ -30,6 +30,16 @@ htmlcov/
 !/work/fang2026/data/fang2026_questions.jsonl
 !/work/fang2026/data/fang2026_gold_schemas.jsonl
 
+# DuckDB
+*.duckdb
+*.duckdb.wal
+
+# AIPA server registry (local MCP config — may contain credentials)
+.aipa/
+
+# Together AI run state (contains file/job IDs tied to account)
+training/run_metadata.json
+
 # LaTeX build artifacts
 *.log
 *.aux

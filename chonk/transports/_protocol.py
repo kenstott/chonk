@@ -9,8 +9,24 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
+
+
+@dataclass
+class FetchOptions:
+    """Options forwarded to Transport.fetch()."""
+
+    sql: str | None = None
+    headers: dict[str, str] = field(default_factory=dict)
+    timeout: int = 30
+    profile: str | None = None
+    region: str | None = None
+    endpoint_url: str | None = None
+    port: int | None = None
+    username: str | None = None
+    password: str | None = None
+    key_path: str | None = None
 
 
 @dataclass
@@ -24,5 +40,5 @@ class FetchResult:
 
 @runtime_checkable
 class Transport(Protocol):
-    def fetch(self, uri: str, **kwargs) -> FetchResult: ...
+    def fetch(self, uri: str, options: FetchOptions | None = None) -> FetchResult: ...
     def can_handle(self, uri: str) -> bool: ...

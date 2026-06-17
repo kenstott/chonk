@@ -19,6 +19,8 @@ A spaCy language model must also be downloaded, e.g.::
 
 from __future__ import annotations
 
+from typing import Any
+
 from ._spacy_labels import ALL_SPACY_LABELS, SpacyLabel
 from ._vocabulary import EntityMatch, _auto_id
 
@@ -43,7 +45,7 @@ class SpacyMatcher:
         model: str = "en_core_web_sm",
         entity_types: list[SpacyLabel] | list[str] | None = None,
         strip_numeric: bool = False,
-    ):
+    ) -> None:
         try:
             import spacy  # noqa: F401
         except ImportError as exc:
@@ -54,7 +56,7 @@ class SpacyMatcher:
 
         self._nlp = _spacy.load(model)
         # Default to all standard labels; accept None as alias for same.
-        # isinstance narrows SpacyLabel from str in union; .value gives e.g. "ORG" not "SpacyLabel.ORG"
+        # isinstance narrows SpacyLabel from str in union; .value gives e.g. "ORG" not "SpacyLabel.ORG"  # noqa: E501
         self._types: set[str] = {
             t.value if isinstance(t, SpacyLabel) else t
             for t in (entity_types if entity_types is not None else ALL_SPACY_LABELS)
@@ -81,7 +83,7 @@ class SpacyMatcher:
         doc = self._nlp(text)
 
         # entity_id -> accumulated data
-        found: dict[str, dict] = {}
+        found: dict[str, dict[str, Any]] = {}
 
         for ent in doc.ents:
             if ent.label_ not in self._types:

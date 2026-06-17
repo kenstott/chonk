@@ -27,30 +27,30 @@ from __future__ import annotations
 from enum import Enum
 
 
-class SpacyLabel(str, Enum):
+class SpacyLabel(str, Enum):  # noqa: UP042
     """Named-entity label strings for standard spaCy English models.
 
     Inherits from ``str`` so values can be passed directly wherever a
     plain string label is expected (e.g. ``ent.label_``).
     """
 
-    CARDINAL   = "CARDINAL"    # Numerals not covered by another type
-    DATE       = "DATE"        # Absolute or relative dates / periods
-    EVENT      = "EVENT"       # Hurricanes, battles, sports events, etc.
-    FAC        = "FAC"         # Buildings, airports, highways, bridges
-    GPE        = "GPE"         # Geopolitical entities: countries, cities, states
-    LANGUAGE   = "LANGUAGE"    # Any named language
-    LAW        = "LAW"         # Named documents enacted as laws
-    LOC        = "LOC"         # Non-GPE locations: mountain ranges, bodies of water
-    MONEY      = "MONEY"       # Monetary values, including unit
-    NORP       = "NORP"        # Nationalities, religious or political groups
-    ORDINAL    = "ORDINAL"     # "first", "second", etc.
-    ORG        = "ORG"         # Companies, agencies, institutions
-    PERCENT    = "PERCENT"     # Percentage values
-    PERSON     = "PERSON"      # People, including fictional
-    PRODUCT    = "PRODUCT"     # Objects, vehicles, foods (not services)
-    QUANTITY   = "QUANTITY"    # Measurements of weight, distance, etc.
-    TIME       = "TIME"        # Times smaller than a day
+    CARDINAL = "CARDINAL"  # Numerals not covered by another type
+    DATE = "DATE"  # Absolute or relative dates / periods
+    EVENT = "EVENT"  # Hurricanes, battles, sports events, etc.
+    FAC = "FAC"  # Buildings, airports, highways, bridges
+    GPE = "GPE"  # Geopolitical entities: countries, cities, states
+    LANGUAGE = "LANGUAGE"  # Any named language
+    LAW = "LAW"  # Named documents enacted as laws
+    LOC = "LOC"  # Non-GPE locations: mountain ranges, bodies of water
+    MONEY = "MONEY"  # Monetary values, including unit
+    NORP = "NORP"  # Nationalities, religious or political groups
+    ORDINAL = "ORDINAL"  # "first", "second", etc.
+    ORG = "ORG"  # Companies, agencies, institutions
+    PERCENT = "PERCENT"  # Percentage values
+    PERSON = "PERSON"  # People, including fictional
+    PRODUCT = "PRODUCT"  # Objects, vehicles, foods (not services)
+    QUANTITY = "QUANTITY"  # Measurements of weight, distance, etc.
+    TIME = "TIME"  # Times smaller than a day
     WORK_OF_ART = "WORK_OF_ART"  # Titles of books, songs, etc.
 
 

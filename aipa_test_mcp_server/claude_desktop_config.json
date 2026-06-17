@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "aipa-test": {
+      "command": "python",
+      "args": ["/Volumes/main/Users/kennethstott/PycharmProjects/chonk/aipa_test_mcp_server/server.py"],
+      "env": {
+        "CHONK_EMBED_MODEL": "BAAI/bge-large-en-v1.5",
+        "CHONK_EMBEDDING_DIM": "1024"
+      }
+    }
+  }
+}

@@ -24,4 +24,21 @@ from ._index import RelationshipIndex
 from ._llm import LLMClient
 from ._svo import VERB_SET, SVOTriple
 
-__all__ = ["SVOTriple", "VERB_SET", "RelationshipIndex", "LLMClient", "SVOExtractor", "RelationshipIndexBuilder", "EntityGraphPipeline", "EntityGraphStats", "PHASE_LOAD", "PHASE_EXTRACT", "PHASE_PERSIST_TRIPLES", "PHASE_PERSIST_DESCRIPTIONS", "PHASE_PERSIST_ALIASES", "PHASE_EMBED_ENTITIES", "ContextEdge", "ContextGraphStats"]
+__all__ = [  # noqa: E501
+    "SVOTriple",
+    "VERB_SET",
+    "RelationshipIndex",
+    "LLMClient",
+    "SVOExtractor",
+    "RelationshipIndexBuilder",
+    "EntityGraphPipeline",
+    "EntityGraphStats",
+    "PHASE_LOAD",
+    "PHASE_EXTRACT",
+    "PHASE_PERSIST_TRIPLES",
+    "PHASE_PERSIST_DESCRIPTIONS",
+    "PHASE_PERSIST_ALIASES",
+    "PHASE_EMBED_ENTITIES",
+    "ContextEdge",
+    "ContextGraphStats",
+]

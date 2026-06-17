@@ -10,12 +10,15 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ._renderer import Renderer
 
+if TYPE_CHECKING:
+    from chonk.models import DocumentChunk
 
-def _walk(obj: Any, lines: list[str], depth: int, path: str) -> None:
+
+def _walk(obj: Any, lines: list[str], depth: int, path: str) -> None:  # noqa: ANN401
     heading = "#" * min(depth, 6)
     if isinstance(obj, dict):
         for key, val in obj.items():
@@ -142,7 +145,9 @@ class JsonExtractor:
         _walk(obj, lines, depth=1, path="")
         return "\n\n".join(lines)
 
-    def annotate(self, chunks: list, data: bytes, source_path: str | None = None) -> list:
+    def annotate(
+        self, chunks: list[DocumentChunk], data: bytes, source_path: str | None = None
+    ) -> list[DocumentChunk]:
         text = _decode(data)
         try:
             obj = json.loads(text)

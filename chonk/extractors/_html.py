@@ -11,6 +11,10 @@ from __future__ import annotations
 
 import re
 from html.parser import HTMLParser
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from chonk.models import DocumentChunk
 
 
 def _strip_html_chrome(html: str) -> str:
@@ -23,7 +27,9 @@ def _strip_html_chrome(html: str) -> str:
     for tag in ("nav", "aside", "header", "footer", "noscript", "script", "style"):
         html = re.sub(
             rf"<{tag}[\s>].*?</{tag}>",
-            "", html, flags=re.DOTALL | re.IGNORECASE,
+            "",
+            html,
+            flags=re.DOTALL | re.IGNORECASE,
         )
     _NAV_ATTR_RE = re.compile(
         r"<(div|section|ul|table)[^>]*?"
@@ -37,15 +43,16 @@ def _strip_html_chrome(html: str) -> str:
         re.DOTALL | re.IGNORECASE,
     )
     html = _NAV_ATTR_RE.sub("", html)
-    html = re.sub(
+    return re.sub(
         r"<sup[^>]*class=[\"'][^\"']*reference[^\"']*[\"'][^>]*>.*?</sup>",
-        "", html, flags=re.DOTALL | re.IGNORECASE,
+        "",
+        html,
+        flags=re.DOTALL | re.IGNORECASE,
     )
-    return html
 
 
 class _MarkdownConverter(HTMLParser):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self._output: list[str] = []
         self._tag_stack: list[str] = []
@@ -66,7 +73,7 @@ class _MarkdownConverter(HTMLParser):
         else:
             self._output.append(text)
 
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]):
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         tag = tag.lower()
         self._tag_stack.append(tag)
         if tag in ("h1", "h2", "h3", "h4", "h5", "h6"):
@@ -109,7 +116,7 @@ class _MarkdownConverter(HTMLParser):
             self._in_cell = True
             self._cell_buf = []
 
-    def handle_endtag(self, tag: str):
+    def handle_endtag(self, tag: str) -> None:
         tag = tag.lower()
         if self._tag_stack and self._tag_stack[-1] == tag:
             self._tag_stack.pop()
@@ -166,7 +173,7 @@ class _MarkdownConverter(HTMLParser):
                 sep = "| " + " | ".join(["---"] * self._last_row_col_count) + " |"
                 self._output.append(f"\n{sep}")
 
-    def handle_data(self, data: str):
+    def handle_data(self, data: str) -> None:
         if self._in_link:
             self._link_text.append(data)
             return
@@ -197,7 +204,7 @@ def _convert_html_to_markdown(html: str) -> str:
 class _HeadingScanner(HTMLParser):
     """Collects heading level, id-attribute, and text from HTML."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.records: list[tuple[int, str | None, str]] = []
         self._level: int | None = None
@@ -236,7 +243,9 @@ class HtmlExtractor:
         text = data.decode("utf-8", errors="replace")
         return _convert_html_to_markdown(text)
 
-    def annotate(self, chunks: list, data: bytes, source_path: str | None = None) -> list:
+    def annotate(
+        self, chunks: list[DocumentChunk], data: bytes, source_path: str | None = None
+    ) -> list[DocumentChunk]:
         html = data.decode("utf-8", errors="replace")
 
         scanner = _HeadingScanner()
@@ -248,7 +257,7 @@ class HtmlExtractor:
         heading_stack: list[tuple[int, str | None, str]] = []
         section_anchors: list[tuple[str | None, list[str]]] = []
         for level, anchor, text in scanner.records:
-            heading_stack = [(l, a, t) for l, a, t in heading_stack if l < level]
+            heading_stack = [(line, a, t) for line, a, t in heading_stack if line < level]
             heading_stack.append((level, anchor, text))
             path = [t for _, _, t in heading_stack]
             top_anchor = next((a for _, a, _ in reversed(heading_stack) if a), None)
@@ -278,12 +287,8 @@ class HtmlExtractor:
         for chunk in chunks:
             content = chunk.content
             for anchor, path, seg_text in segments:
-                if any(
-                    frag in seg_text
-                    for frag in content.split("\n")
-                    if len(frag.strip()) > 20
-                ):
-                    detail: dict = {"heading_path": path}
+                if any(frag in seg_text for frag in content.split("\n") if len(frag.strip()) > 20):
+                    detail: dict[str, object] = {"heading_path": path}
                     if anchor:
                         detail["anchor"] = anchor
                     chunk.source_detail = detail

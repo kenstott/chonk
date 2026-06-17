@@ -216,7 +216,7 @@ class WebCrawler:
         exclude_patterns: list[str] | None = None,
         include_pattern: str | None = None,
         wiki_mode: bool = False,
-    ):
+    ) -> None:
         self.max_pages = max_pages
         self.max_depth = max_depth
         self.same_domain = same_domain
@@ -231,7 +231,7 @@ class WebCrawler:
     def can_handle(self, uri: str) -> bool:
         return uri.startswith("http://") or uri.startswith("https://")
 
-    def crawl(self, uri: str, **kwargs) -> list[str]:
+    def crawl(self, uri: str, **kwargs: object) -> list[str]:
         """BFS crawl starting at *uri*.  Returns list of discovered page URLs.
 
         All kwargs are ignored (use constructor params).  The signature

@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from ..models import DocumentChunk
@@ -35,7 +35,7 @@ _RENDERABLE_TYPES = frozenset(
 )
 
 
-def _iter_resources(obj: object) -> list[dict]:
+def _iter_resources(obj: object) -> list[dict[str, Any]]:
     if isinstance(obj, dict):
         rtype = obj.get("resourceType", "")
         if rtype == "Bundle":
@@ -51,7 +51,7 @@ def _iter_resources(obj: object) -> list[dict]:
     return []
 
 
-def _coding_display(coding_list: list[dict]) -> str:
+def _coding_display(coding_list: list[dict[str, Any]]) -> str:
     for c in coding_list:
         d = c.get("display") or c.get("code")
         if d:
@@ -59,19 +59,19 @@ def _coding_display(coding_list: list[dict]) -> str:
     return ""
 
 
-def _code_text(code_obj: dict | None) -> str:
+def _code_text(code_obj: dict[str, Any] | None) -> str:
     if not code_obj:
         return ""
     return code_obj.get("text") or _coding_display(code_obj.get("coding", []))
 
 
-def _reference_display(ref: dict | None) -> str:
+def _reference_display(ref: dict[str, Any] | None) -> str:
     if not ref:
         return ""
     return ref.get("display") or ref.get("reference") or ""
 
 
-def _render_patient(res: dict) -> str:
+def _render_patient(res: dict[str, Any]) -> str:
     rid = res.get("id", "UNKNOWN")
     names = res.get("name", [])
     name_str = ""
@@ -100,14 +100,14 @@ def _render_patient(res: dict) -> str:
     return "\n".join(lines)
 
 
-def _extract_status(res: dict) -> str:
+def _extract_status(res: dict[str, Any]) -> str:
     status = res.get("status") or res.get("clinicalStatus", {})
     if isinstance(status, dict):
         status = _code_text(status)
     return str(status) if status else ""
 
 
-def _extract_date(res: dict) -> str:
+def _extract_date(res: dict[str, Any]) -> str:
     return (
         res.get("recordedDate")
         or res.get("effectiveDateTime")
@@ -120,7 +120,7 @@ def _extract_date(res: dict) -> str:
     )
 
 
-def _extract_category(res: dict) -> str:
+def _extract_category(res: dict[str, Any]) -> str:
     category_list = res.get("category", [])
     if not category_list:
         return ""
@@ -141,7 +141,7 @@ def _render_meta_lines(status: str, subject: str, date: str, category: str) -> l
     return meta
 
 
-def _render_observation_lines(res: dict) -> list[str]:
+def _render_observation_lines(res: dict[str, Any]) -> list[str]:
     lines: list[str] = []
     val = res.get("valueQuantity")
     if val:
@@ -165,7 +165,7 @@ def _render_observation_lines(res: dict) -> list[str]:
     return lines
 
 
-def _render_diagnostic_report_lines(res: dict) -> list[str]:
+def _render_diagnostic_report_lines(res: dict[str, Any]) -> list[str]:
     results = res.get("result", [])
     if not results:
         return []
@@ -175,7 +175,7 @@ def _render_diagnostic_report_lines(res: dict) -> list[str]:
     return lines
 
 
-def _render_note_lines(res: dict) -> list[str]:
+def _render_note_lines(res: dict[str, Any]) -> list[str]:
     note_list = res.get("note", [])
     notes = [n.get("text", "") for n in note_list if n.get("text")]
     if not notes:
@@ -189,7 +189,7 @@ _RTYPE_EXTRA_RENDERERS: dict[str, object] = {
 }
 
 
-def _render_generic(res: dict) -> str:
+def _render_generic(res: dict[str, Any]) -> str:
     rtype = res.get("resourceType", "Resource")
     rid = res.get("id", "UNKNOWN")
 
@@ -211,7 +211,7 @@ def _render_generic(res: dict) -> str:
     return "\n".join(lines)
 
 
-def _render_one(res: dict) -> str:
+def _render_one(res: dict[str, Any]) -> str:
     rtype = res.get("resourceType", "")
     if rtype == "Patient":
         return _render_patient(res)
@@ -252,7 +252,7 @@ class FhirRenderer:
         chunks: list[DocumentChunk],
         obj: object,
     ) -> list[DocumentChunk]:
-        meta: dict[str, dict] = {}
+        meta: dict[str, dict[str, Any]] = {}
         rendered: dict[str, str] = {}
         for res in _iter_resources(obj):
             rtype = res.get("resourceType", "")

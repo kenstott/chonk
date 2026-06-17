@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import TYPE_CHECKING, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -73,7 +74,7 @@ class CommunityIndexBuilder:
         content_vecs: np.ndarray,
         *,
         on_complete: Callable[[CommunityIndex], None] | None = None,
-        **kwargs,
+        **kwargs: Any,  # noqa: ANN401
     ) -> None:
         """Start a background build. Hot-swaps the ref when complete.
 
@@ -83,12 +84,17 @@ class CommunityIndexBuilder:
             on_complete: Optional callback fired with the new index (on build thread).
             **kwargs: Forwarded verbatim to :meth:`CommunityIndex.build`.
         """
+
         def _run() -> None:
             try:
                 idx = CommunityIndex.build(chunk_ids, content_vecs, **kwargs)
                 new_version = self.ref.update(idx)
-                logger.debug("CommunityIndex version %d ready (%d levels, %d chunks)",
-                             new_version, idx.level_count(), idx.chunk_count())
+                logger.debug(
+                    "CommunityIndex version %d ready (%d levels, %d chunks)",
+                    new_version,
+                    idx.level_count(),
+                    idx.chunk_count(),
+                )
                 if on_complete is not None:
                     on_complete(idx)
             except Exception:

@@ -43,13 +43,14 @@ Usage::
 
 Requires: requests>=2.28  (``pip install requests``)
 """
+
 from __future__ import annotations
 
 import json
 import logging
 from typing import Any
 
-from ._protocol import FetchResult
+from ._protocol import FetchOptions, FetchResult
 
 _log = logging.getLogger(__name__)
 
@@ -83,18 +84,18 @@ class ElasticsearchCrawler:
         api_key: str | None = None,
         username: str | None = None,
         password: str | None = None,
-        query: dict | None = None,
+        query: dict[str, object] | None = None,
         source_fields: list[str] | None = None,
         page_size: int = 200,
         verify_ssl: bool = True,
         field_aliases: dict[str, str] | None = None,
-    ):
+    ) -> None:
         self._base_url = base_url.rstrip("/")
         self._index = index
         self._api_key = api_key
         self._username = username
         self._password = password
-        self._query: dict = query or {"match_all": {}}
+        self._query: dict[str, object] = query or {"match_all": {}}
         self._source_fields = source_fields
         self._page_size = page_size
         self._verify_ssl = verify_ssl
@@ -107,16 +108,14 @@ class ElasticsearchCrawler:
     def can_handle(self, uri: str) -> bool:
         return uri.startswith(self._base_url)
 
-    def fetch(self, uri: str, **__) -> FetchResult:
+    def fetch(self, uri: str, options: FetchOptions | None = None) -> FetchResult:
         if uri not in self._cache:
-            raise KeyError(
-                f"ElasticsearchCrawler: unknown URI {uri!r} — call crawl() first"
-            )
+            raise KeyError(f"ElasticsearchCrawler: unknown URI {uri!r} — call crawl() first")
         return self._cache[uri]
 
     # ── Crawler protocol ──────────────────────────────────────────────────────
 
-    def crawl(self, uri: str = "", **__) -> list[str]:
+    def crawl(self, uri: str = "", **__: object) -> list[str]:
         """Paginate through the index using search_after, cache all documents, and emit schema.
 
         Args:
@@ -127,11 +126,10 @@ class ElasticsearchCrawler:
         """
         try:
             import requests
-        except ImportError:
+        except ImportError as exc:
             raise ImportError(
-                "requests is required for ElasticsearchCrawler. "
-                "Install with: pip install requests"
-            )
+                "requests is required for ElasticsearchCrawler. Install with: pip install requests"
+            ) from exc
 
         session = requests.Session()
         session.verify = self._verify_ssl
@@ -147,7 +145,7 @@ class ElasticsearchCrawler:
         total = 0
 
         while True:
-            body: dict = {
+            body: dict[str, object] = {
                 "size": self._page_size,
                 "query": self._query,
                 "sort": [{"_id": "asc"}],
@@ -215,7 +213,7 @@ class ElasticsearchCrawler:
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
-    def _fetch_mapping_schema(self, session: Any) -> str:
+    def _fetch_mapping_schema(self, session: Any) -> str:  # noqa: ANN401
         try:
             resp = session.get(f"{self._base_url}/{self._index}/_mapping")
             resp.raise_for_status()
@@ -233,7 +231,7 @@ class ElasticsearchCrawler:
 
         return "\n".join(lines) + "\n"
 
-    def _walk_mapping(self, props: dict, lines: list[str], prefix: str) -> None:
+    def _walk_mapping(self, props: dict[str, Any], lines: list[str], prefix: str) -> None:
         for name, meta in sorted(props.items()):
             path = f"{prefix}.{name}" if prefix else name
             ftype = meta.get("type", "object")
@@ -245,4 +243,6 @@ class ElasticsearchCrawler:
             for subname, submeta in meta.get("fields", {}).items():
                 subpath = f"{path}.{subname}"
                 self._known_fields.add(subpath)
-                lines.append(f"  {indent}  {subpath:<46}  {submeta.get('type', 'unknown')}  (multi-field)")
+                lines.append(
+                    f"  {indent}  {subpath:<46}  {submeta.get('type', 'unknown')}  (multi-field)"
+                )

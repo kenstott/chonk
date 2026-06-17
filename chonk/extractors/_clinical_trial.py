@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from ..models import DocumentChunk
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 _NCT_ID_RE = re.compile(r"\bNCT\d{8}\b", re.IGNORECASE)
 
 
-def _iter_studies(obj: object) -> list[dict]:
+def _iter_studies(obj: object) -> list[dict[str, Any]]:
     if isinstance(obj, dict):
         if "studies" in obj:
             return [s for s in obj["studies"] if isinstance(s, dict)]
@@ -30,7 +30,7 @@ def _iter_studies(obj: object) -> list[dict]:
     return []
 
 
-def _render_one(study: dict) -> str:
+def _render_one(study: dict[str, Any]) -> str:
     ps = study.get("protocolSection", {})
 
     ident = ps.get("identificationModule", {})
@@ -130,7 +130,7 @@ class ClinicalTrialRenderer:
         chunks: list[DocumentChunk],
         obj: object,
     ) -> list[DocumentChunk]:
-        meta: dict[str, dict] = {}
+        meta: dict[str, dict[str, Any]] = {}
         rendered: dict[str, str] = {}
         for study in _iter_studies(obj):
             ps = study.get("protocolSection", {})

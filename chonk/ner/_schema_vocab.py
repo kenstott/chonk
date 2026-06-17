@@ -35,16 +35,20 @@ Typical two-pass usage::
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING, Any
 
 from ._schema import SchemaMatcher
 from ._vocabulary import VocabularyMatcher, _auto_id
+
+if TYPE_CHECKING:
+    pass
 
 # ---------------------------------------------------------------------------
 # DB connection helpers
 # ---------------------------------------------------------------------------
 
 
-def _resolve_connection(connection):
+def _resolve_connection(connection: Any) -> Any:  # noqa: ANN401
     """Return a usable connection object from a URL string or engine/connection."""
     if isinstance(connection, str):
         try:
@@ -67,7 +71,7 @@ def _resolve_connection(connection):
     )
 
 
-def _execute(conn, sql: str) -> list[str]:
+def _execute(conn: Any, sql: str) -> list[str]:  # noqa: ANN401
     """Execute *sql*, validate single-column result, deduplicate, drop nulls.
 
     Raises:
@@ -75,6 +79,7 @@ def _execute(conn, sql: str) -> list[str]:
     """
     try:
         import sqlalchemy as sa
+
         result = conn.execute(sa.text(sql))
     except ImportError:
         result = conn.execute(sql)
@@ -107,7 +112,7 @@ def _execute(conn, sql: str) -> list[str]:
     return values
 
 
-def _maybe_close(conn, original) -> None:
+def _maybe_close(conn: Any, original: Any) -> None:  # noqa: ANN401
     """Close conn only if we created it (i.e. original was a URL string or Engine)."""
     if isinstance(original, str) or (
         hasattr(original, "connect") and not hasattr(original, "execute")
@@ -232,7 +237,7 @@ class SchemaVocabBuilder:
             (default 2 — filters out single-letter columns like ``i`` or ``n``).
     """
 
-    def __init__(self, min_term_length: int = 2):
+    def __init__(self, min_term_length: int = 2) -> None:
         self._min = min_term_length
         self._tables: set[str] = set()
         self._columns: set[str] = set()
@@ -246,7 +251,7 @@ class SchemaVocabBuilder:
     # Ingestion
     # ------------------------------------------------------------------
 
-    def add_tables(self, tables: list) -> SchemaVocabBuilder:
+    def add_tables(self, tables: list[object]) -> SchemaVocabBuilder:
         """Add terms from a list of TableMeta objects (and their ColumnMeta).
 
         Accepts any object with a ``.name`` attribute and an optional
@@ -262,7 +267,7 @@ class SchemaVocabBuilder:
                     self._columns.add(col_name)
         return self
 
-    def add_endpoints(self, endpoints: list) -> SchemaVocabBuilder:
+    def add_endpoints(self, endpoints: list[object]) -> SchemaVocabBuilder:
         """Add terms from a list of EndpointMeta / FieldMeta objects."""
         for ep in endpoints:
             path = getattr(ep, "path", None)
@@ -285,7 +290,7 @@ class SchemaVocabBuilder:
                 self._columns.add(c)
         return self
 
-    def add_chunks(self, chunks: list) -> SchemaVocabBuilder:
+    def add_chunks(self, chunks: list[Any]) -> SchemaVocabBuilder:  # noqa: ANN401
         """Extract terms from DocumentChunk objects produced by load_schema() / load_api().
 
         Document names follow the pattern:
@@ -357,7 +362,7 @@ class SchemaVocabBuilder:
 
     def add_from_db(
         self,
-        connection,
+        connection: Any,  # noqa: ANN401
         queries: dict[str, str] | list[str] | list[tuple[str, str]],
         entity_type: str = "term",
         row_limit: int = 10_000,

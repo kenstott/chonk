@@ -101,7 +101,7 @@ class PythonExtractor:
 
         tree = ast.parse(source, filename=source_path or "<unknown>")
 
-        section_map: dict[tuple[str, ...], dict] = {}
+        section_map: dict[tuple[str, ...], dict[str, object]] = {}
 
         import_nodes = [
             node

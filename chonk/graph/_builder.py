@@ -11,9 +11,10 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Callable
+from collections.abc import Callable
 
 from .._versioning import VersionedRef
+from ._extractor import SVOExtractor
 from ._index import RelationshipIndex
 from ._svo import SVOTriple
 
@@ -67,7 +68,7 @@ class RelationshipIndexBuilder:
 
     def build(
         self,
-        extractor,
+        extractor: SVOExtractor,
         chunks: list[tuple[str, str]],
         *,
         on_complete: Callable[[RelationshipIndex], None] | None = None,
@@ -79,6 +80,7 @@ class RelationshipIndexBuilder:
             chunks: List of ``(chunk_id, chunk_text)`` pairs to extract from.
             on_complete: Optional callback fired with the new index (on build thread).
         """
+
         def _run() -> None:
             try:
                 idx = RelationshipIndex()
@@ -86,8 +88,9 @@ class RelationshipIndexBuilder:
                     for triple in extractor.extract(chunk_id, text):
                         idx.add(triple)
                 new_version = self.ref.update(idx)
-                logger.debug("RelationshipIndex version %d ready (%d triples)",
-                             new_version, len(idx))
+                logger.debug(
+                    "RelationshipIndex version %d ready (%d triples)", new_version, len(idx)
+                )
                 if on_complete is not None:
                     on_complete(idx)
             except Exception:
@@ -116,14 +119,18 @@ class RelationshipIndexBuilder:
             triples: Pre-extracted :class:`SVOTriple` objects.
             on_complete: Optional callback fired with the new index (on build thread).
         """
+
         def _run() -> None:
             try:
                 idx = RelationshipIndex()
                 for triple in triples:
                     idx.add(triple)
                 new_version = self.ref.update(idx)
-                logger.debug("RelationshipIndex version %d ready (%d triples from pre-extracted)",
-                             new_version, len(idx))
+                logger.debug(
+                    "RelationshipIndex version %d ready (%d triples from pre-extracted)",
+                    new_version,
+                    len(idx),
+                )
                 if on_complete is not None:
                     on_complete(idx)
             except Exception:

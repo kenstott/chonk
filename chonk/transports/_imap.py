@@ -26,7 +26,7 @@ import logging
 from collections.abc import Iterator
 from urllib.parse import parse_qs, unquote, urlparse
 
-from ._protocol import FetchResult
+from ._protocol import FetchOptions, FetchResult
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ class ImapTransport:
     def can_handle(self, uri: str) -> bool:
         return uri.startswith("imap://") or uri.startswith("imaps://")
 
-    def fetch(self, uri: str, **kwargs) -> FetchResult:
+    def fetch(self, uri: str, options: FetchOptions | None = None) -> FetchResult:
         """Return the single most-recent message matching the URI."""
         results = list(self.fetch_messages(uri, limit=1))
         if not results:

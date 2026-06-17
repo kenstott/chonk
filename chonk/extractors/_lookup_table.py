@@ -88,7 +88,7 @@ class LookupTableExtractor:
                 continue
 
             lines = [f"## {key_val}"]
-            for i, (header, value) in enumerate(zip(headers, row)):
+            for i, (header, value) in enumerate(zip(headers, row, strict=False)):
                 if i == key_idx:
                     continue
                 v = value.strip()

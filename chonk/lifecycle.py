@@ -14,6 +14,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from ._types import EmbedModel
 from .community import build_community
 from .indexer import IndexHandle
 from .storage._store import Store
@@ -22,7 +23,7 @@ from .storage._store import Store
 def build_namespace_async(
     namespace_id: str,
     db_path: str | Path,
-    embed_model: str | Any,
+    embed_model: EmbedModel,
     *,
     on_progress: Callable[[str, int, int], None] | None = None,
     on_complete: Callable[[int], None] | None = None,
@@ -68,12 +69,13 @@ def build_namespace_async(
 
         try:
             if not force and store.namespace_cache_valid(namespace_id):
-                _on_complete(
-                    store.vector._conn.execute(
-                        "SELECT COUNT(*) FROM embeddings WHERE namespace = ?",
-                        [namespace_id],
-                    ).fetchone()[0]
-                )
+                _count_row = store.vector._conn.execute(
+                    "SELECT COUNT(*) FROM embeddings WHERE namespace = ?",
+                    [namespace_id],
+                ).fetchone()
+                if _count_row is None:
+                    raise RuntimeError("COUNT(*) returned no rows")
+                _on_complete(_count_row[0])
                 return
 
             # ── Phase: crawl / chunk / embed ──────────────────────────────────
@@ -186,10 +188,10 @@ class NamespaceRefresher:
     def __init__(
         self,
         db_path_fn: Callable[[str], str | Path],
-        embed_model: str | Any,
+        embed_model: EmbedModel,
         interval_seconds: int = 3600,
         on_rebuild: Callable[[str], None] | None = None,
-        **build_kwargs: Any,
+        **build_kwargs: Any,  # noqa: ANN401
     ) -> None:
         self._db_path_fn = db_path_fn
         self._embed_model = embed_model

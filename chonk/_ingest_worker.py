@@ -15,15 +15,19 @@ Public symbols (``run_worker``, ``run_coordinator``) are re-exported from
 from __future__ import annotations
 
 import hashlib
+from typing import TYPE_CHECKING, Any
 
 from .loader import DocumentLoader
+
+if TYPE_CHECKING:
+    from .storage._protocol import VectorBackend
 
 # ---------------------------------------------------------------------------
 # Horizontal scale: worker / coordinator
 # ---------------------------------------------------------------------------
 
 
-def _pg_connect(dsn: str):
+def _pg_connect(dsn: str) -> Any:  # noqa: ANN401
     try:
         import psycopg2  # type: ignore[import-untyped]
     except ImportError as exc:
@@ -34,7 +38,7 @@ def _pg_connect(dsn: str):
 
 
 def _process_queue_job(
-    backend,
+    backend: VectorBackend,
     source_uri: str,
     namespace: str,
     embed_model: str,
@@ -75,7 +79,7 @@ def _process_queue_job(
 
         # build_ner expects store.vector; wrap backend in a simple adapter
         class _StoreAdapter:
-            def __init__(self, vector) -> None:
+            def __init__(self, vector: VectorBackend) -> None:
                 self.vector = vector
 
         build_ner(_StoreAdapter(backend), spacy_model=spacy_model)

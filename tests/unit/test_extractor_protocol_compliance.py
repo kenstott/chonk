@@ -46,6 +46,7 @@ _ALL_EXTRACTOR_CLASSES = [
 def test_extractor_has_annotate_method(module_path, class_name):
     """Every extractor class must expose an annotate() method."""
     import importlib
+
     mod = importlib.import_module(module_path)
     cls = getattr(mod, class_name)
     assert hasattr(cls, "annotate"), (
@@ -59,6 +60,7 @@ def test_extractor_has_annotate_method(module_path, class_name):
 def test_annotate_signature_matches_protocol(module_path, class_name):
     """annotate(self, chunks, data, source_path=None) -> list[DocumentChunk]."""
     import importlib
+
     mod = importlib.import_module(module_path)
     cls = getattr(mod, class_name)
     if not hasattr(cls, "annotate"):
@@ -74,6 +76,7 @@ def test_python_extractor_documentchunk_importable():
     """PythonExtractor.annotate uses DocumentChunk — it must be importable."""
     from chonk.extractors._python import PythonExtractor  # noqa: F401
     from chonk.models import DocumentChunk  # noqa: F401
+
     # Verify annotate's annotation references DocumentChunk without NameError
     ext = PythonExtractor()
     chunks = ext.annotate([], b"x = 1\n")
@@ -83,6 +86,7 @@ def test_python_extractor_documentchunk_importable():
 def test_typescript_extractor_documentchunk_importable():
     """TypeScriptExtractor.annotate uses DocumentChunk — it must be importable."""
     from chonk.extractors._typescript import TypeScriptExtractor  # noqa: F401
+
     ext = TypeScriptExtractor()
     chunks = ext.annotate([], b"const x = 1;\n")
     assert isinstance(chunks, list)
@@ -91,6 +95,7 @@ def test_typescript_extractor_documentchunk_importable():
 def test_java_extractor_documentchunk_importable():
     """JavaExtractor.annotate uses DocumentChunk — it must be importable."""
     from chonk.extractors._java import JavaExtractor  # noqa: F401
+
     ext = JavaExtractor()
     chunks = ext.annotate([], b"public class Foo {}\n")
     assert isinstance(chunks, list)
@@ -100,8 +105,66 @@ def test_xlsx_extractor_documentchunk_importable():
     """XlsxExtractor.annotate uses DocumentChunk — it must be importable."""
     pytest.importorskip("openpyxl")
     from chonk.extractors._xlsx import XlsxExtractor
+
     ext = XlsxExtractor()
     assert callable(ext.annotate)
+
+
+@pytest.mark.parametrize("module_path,class_name", _ALL_EXTRACTOR_CLASSES)
+def test_annotate_return_type_is_list_of_document_chunk(module_path, class_name):
+    """annotate() must declare list[DocumentChunk] return type, not bare list.
+
+    This test would FAIL before the fix because extractors like CsvExtractor,
+    DocxExtractor, EdgarExtractor, EmailExtractor, HtmlExtractor, JsonExtractor,
+    MarkdownExtractor, OdfExtractor, ParquetExtractor, TextExtractor, XmlExtractor,
+    and YamlExtractor declared 'list' (untyped) for both the chunks parameter and
+    the return type — violating the Extractor protocol signature.
+
+    With the fix, all annotate() signatures use list[DocumentChunk].
+    """
+    import importlib
+
+    mod = importlib.import_module(module_path)
+    cls = getattr(mod, class_name)
+    if not hasattr(cls, "annotate"):
+        pytest.skip(f"{class_name} has no annotate (caught by other test)")
+
+    # Get type hints; on Python 3.10+ get_type_hints resolves forward refs.
+    import typing
+
+    # We need to resolve TYPE_CHECKING imports; inject DocumentChunk into the
+    # module's namespace temporarily so get_type_hints() can resolve it.
+    from chonk.models import DocumentChunk
+
+    mod_globals = vars(mod)
+    injected = "DocumentChunk" not in mod_globals
+    if injected:
+        mod_globals["DocumentChunk"] = DocumentChunk
+
+    try:
+        hints = typing.get_type_hints(cls.annotate)
+    except Exception:
+        # If resolution fails for any reason, skip rather than false-fail
+        if injected:
+            mod_globals.pop("DocumentChunk", None)
+        pytest.skip(f"Could not resolve type hints for {class_name}.annotate")
+
+    if injected:
+        mod_globals.pop("DocumentChunk", None)
+
+    return_hint = hints.get("return")
+    assert return_hint is not None, f"{class_name}.annotate has no return type annotation"
+    # Accept list[DocumentChunk] (generic alias) or typing.List[DocumentChunk]
+    args = getattr(return_hint, "__args__", None)
+    origin = getattr(return_hint, "__origin__", None)
+    assert origin is list, (
+        f"{class_name}.annotate return type is {return_hint!r}, expected list[DocumentChunk]. "
+        "Fix: add TYPE_CHECKING import and use list[DocumentChunk] as the return type."
+    )
+    assert args == (DocumentChunk,), (
+        f"{class_name}.annotate return type is list[{args}], expected list[DocumentChunk]. "
+        "Fix: add TYPE_CHECKING import and use list[DocumentChunk] as the return type."
+    )
 
 
 def test_loader_calls_annotate_unconditionally(monkeypatch):
@@ -112,10 +175,10 @@ def test_loader_calls_annotate_unconditionally(monkeypatch):
     """
     import ast
     import inspect
+    import textwrap
 
     from chonk import loader as loader_mod
 
-    import textwrap
     src = textwrap.dedent(inspect.getsource(loader_mod.DocumentLoader.load))
     tree = ast.parse(src)
 
@@ -129,7 +192,7 @@ def test_loader_calls_annotate_unconditionally(monkeypatch):
                     arg1 = args[1]
                     if isinstance(arg1, ast.Constant) and arg1.value == "annotate":
                         pytest.fail(
-                            "loader.DocumentLoader.load() still uses hasattr(extractor, 'annotate') — "
+                            "loader.DocumentLoader.load() still uses hasattr(extractor, 'annotate') — "  # noqa: E501
                             "annotate is part of the protocol and must be called unconditionally"
                         )
 
@@ -144,6 +207,6 @@ def test_loader_calls_annotate_unconditionally(monkeypatch):
                     arg1 = args[1]
                     if isinstance(arg1, ast.Constant) and arg1.value == "annotate":
                         pytest.fail(
-                            "loader.DocumentLoader.load_bytes() still uses hasattr(extractor, 'annotate') — "
+                            "loader.DocumentLoader.load_bytes() still uses hasattr(extractor, 'annotate') — "  # noqa: E501
                             "annotate is part of the protocol and must be called unconditionally"
                         )

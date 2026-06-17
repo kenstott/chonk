@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 from io import BytesIO
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from chonk.models import DocumentChunk
@@ -24,7 +24,7 @@ except ImportError:
     _OPENPYXL_AVAILABLE = False
 
 
-def _extract_xlsx_content(wb) -> str:
+def _extract_xlsx_content(wb: Any) -> str:  # noqa: ANN401
     """Extract text content from an openpyxl Workbook object."""
     sheets = []
 

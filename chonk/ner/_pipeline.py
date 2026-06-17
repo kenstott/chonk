@@ -38,13 +38,14 @@ spacy_entities  Run spaCy NER.  Where both matchers fire on the same span,
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any  # noqa: F401
 
 from ._merge import merge_matches
 from ._schema_vocab import SchemaVocabBuilder
 from ._vocabulary import EntityMatch, VocabularyMatcher
 
 if TYPE_CHECKING:
+    from ..models import DocumentChunk
     from ._index import EntityIndex
     from ._schema import SchemaMatcher
     from ._spacy import SpacyMatcher
@@ -83,7 +84,7 @@ class NerPipeline:
         spacy_model: str = "en_core_web_sm",
         spacy_entity_types: list[str] | list[SpacyLabel] | None = None,
         min_schema_term_length: int = 2,
-    ):
+    ) -> None:
         self._db_enrich = db_enrich
         self._spacy_entities = spacy_entities
         self._spacy_model = spacy_model
@@ -99,13 +100,13 @@ class NerPipeline:
     # Schema identifier vocabulary
     # ------------------------------------------------------------------
 
-    def add_tables(self, tables: list) -> NerPipeline:
+    def add_tables(self, tables: list[object]) -> NerPipeline:
         """Add table/column names from a list of TableMeta objects."""
         self._builder.add_tables(tables)
         self._schema_dirty = True
         return self
 
-    def add_endpoints(self, endpoints: list) -> NerPipeline:
+    def add_endpoints(self, endpoints: list[object]) -> NerPipeline:
         """Add path/field names from a list of EndpointMeta objects."""
         self._builder.add_endpoints(endpoints)
         self._schema_dirty = True
@@ -117,7 +118,7 @@ class NerPipeline:
         self._schema_dirty = True
         return self
 
-    def add_chunks(self, chunks: list) -> NerPipeline:
+    def add_chunks(self, chunks: list[object]) -> NerPipeline:
         """Extract terms from DocumentChunk objects from load_schema()/load_api()."""
         self._builder.add_chunks(chunks)
         self._schema_dirty = True
@@ -148,7 +149,7 @@ class NerPipeline:
 
     def add_from_db(
         self,
-        connection,
+        connection: Any,  # noqa: ANN401
         queries: dict[str, str] | list[str] | list[tuple[str, str]],
         entity_type: str = "term",
         row_limit: int = 10_000,
@@ -205,7 +206,7 @@ class NerPipeline:
 
     def run_on_chunks(
         self,
-        chunks: list,
+        chunks: list[DocumentChunk],
         entity_index: EntityIndex,
         chunk_ids: list[str] | None = None,
     ) -> dict[str, list[EntityMatch]]:

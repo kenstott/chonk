@@ -9,9 +9,10 @@
 
 from __future__ import annotations
 
+from typing import Any
 from urllib.parse import urlparse
 
-from ._protocol import FetchResult
+from ._protocol import FetchOptions, FetchResult
 
 try:
     import boto3 as _boto3
@@ -28,7 +29,7 @@ class S3Transport:
     def can_handle(self, uri: str) -> bool:
         return uri.startswith("s3://") or uri.startswith("s3a://")
 
-    def fetch(self, uri: str, **kwargs) -> FetchResult:
+    def fetch(self, uri: str, options: FetchOptions | None = None) -> FetchResult:
         if not _BOTO3_AVAILABLE:
             raise ImportError("pip install chonk[s3]")
 
@@ -36,11 +37,11 @@ class S3Transport:
         bucket = parsed.netloc
         key = parsed.path.lstrip("/")
 
-        session_kwargs: dict = {}
-        if kwargs.get("profile"):
-            session_kwargs["profile_name"] = kwargs["profile"]
-        if kwargs.get("region"):
-            session_kwargs["region_name"] = kwargs["region"]
+        session_kwargs: dict[str, Any] = {}
+        if options and options.profile:
+            session_kwargs["profile_name"] = options.profile
+        if options and options.region:
+            session_kwargs["region_name"] = options.region
 
         import os
 
@@ -51,8 +52,9 @@ class S3Transport:
 
         assert _boto3 is not None  # guarded by _BOTO3_AVAILABLE check above
         session = _boto3.Session(**session_kwargs)
-        client_kwargs: dict = {}
-        endpoint = kwargs.get("endpoint_url") or os.environ.get("AWS_ENDPOINT_OVERRIDE")
+        client_kwargs: dict[str, Any] = {}
+        opt_endpoint = options.endpoint_url if options else None
+        endpoint = opt_endpoint or os.environ.get("AWS_ENDPOINT_OVERRIDE")
         if endpoint:
             client_kwargs["endpoint_url"] = endpoint
         s3 = session.client("s3", **client_kwargs)

@@ -110,7 +110,7 @@ class ImportCrawler:
         root_path: str | None = None,
         max_depth: int = 3,
         skip_prefixes: list[str] | None = None,
-    ):
+    ) -> None:
         self._root = Path(root_path).resolve() if root_path else None
         self._max_depth = max_depth
         extra = frozenset(f"{p}." if not p.endswith(".") else p for p in (skip_prefixes or []))
@@ -119,7 +119,7 @@ class ImportCrawler:
     def can_handle(self, uri: str) -> bool:
         return Path(uri).suffix.lower() in _CODE_EXTENSIONS
 
-    def crawl(self, uri: str, **kwargs) -> list[str]:
+    def crawl(self, uri: str, **kwargs: object) -> list[str]:
         seed = Path(uri).resolve()
         seen: set[str] = set()
         queue: deque[tuple[Path, int]] = deque([(seed, 0)])

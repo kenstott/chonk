@@ -9,6 +9,11 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from chonk.models import DocumentChunk
+
 
 class TextExtractor:
     """Extract content from text-based formats by decoding bytes."""
@@ -24,6 +29,7 @@ class TextExtractor:
         except UnicodeDecodeError:
             return data.decode("latin-1")
 
-
-    def annotate(self, chunks: list, data: bytes, source_path: str | None = None) -> list:
+    def annotate(
+        self, chunks: list[DocumentChunk], data: bytes, source_path: str | None = None
+    ) -> list[DocumentChunk]:
         return chunks

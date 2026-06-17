@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from ..models import DocumentChunk
 
 
-def _walk(obj: Any, lines: list[str], depth: int, path: str) -> None:
+def _walk(obj: Any, lines: list[str], depth: int, path: str) -> None:  # noqa: ANN401
     heading = "#" * min(depth, 6)
     if isinstance(obj, dict):
         for key, val in obj.items():

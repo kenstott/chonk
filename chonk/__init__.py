@@ -5,7 +5,9 @@
 # machine learning models is strictly prohibited without explicit written
 # permission from the copyright holder.
 
-"""Chunky Monkey — a dairy-free RAG pipeline for delicious semantic similarity, clustering and NER."""
+"""Chunky Monkey — a dairy-free RAG pipeline for delicious semantic similarity, clustering and NER."""  # noqa: E501
+
+from ._config import ChonkConfig, EmbedConfig, IndexConfig, LoaderConfig
 from ._struct_inference import infer_csv, infer_json, infer_jsonl, infer_parquet
 from ._versioning import VersionedRef
 from .chunking import (
@@ -116,6 +118,10 @@ __all__ = [
     "IndexHandle",
     "get_indexer",
     "release_indexer",
+    "ChonkConfig",
+    "EmbedConfig",
+    "LoaderConfig",
+    "IndexConfig",
     "build",
     "Index",
     "build_namespace_async",

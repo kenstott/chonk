@@ -23,7 +23,7 @@ from ._imap import ImapTransport
 from ._import_crawler import ImportCrawler
 from ._local import LocalTransport
 from ._mongodb import MongoCrawler
-from ._protocol import FetchResult, Transport
+from ._protocol import FetchOptions, FetchResult, Transport
 from ._s3 import S3Transport
 from ._sftp import SftpTransport
 from ._sharepoint import SharePointCrawler
@@ -51,6 +51,7 @@ def detect_transport(uri: str) -> Transport:
 
 __all__ = [
     "Transport",
+    "FetchOptions",
     "FetchResult",
     "Crawler",
     "CassandraCrawler",

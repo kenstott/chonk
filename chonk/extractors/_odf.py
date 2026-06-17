@@ -18,15 +18,20 @@ Requires: odfpy>=1.4
 from __future__ import annotations
 
 from io import BytesIO
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from chonk.models import DocumentChunk
 
 try:
     import odf  # noqa: F401
+
     _ODF_AVAILABLE = True
 except ImportError:
     _ODF_AVAILABLE = False
 
 
-def _extract_odt(doc) -> str:
+def _extract_odt(doc: Any) -> str:  # noqa: ANN401
     from odf import teletype
 
     lines: list[str] = []
@@ -44,9 +49,9 @@ def _extract_odt(doc) -> str:
     return "\n\n".join(lines)
 
 
-def _extract_ods(doc) -> str:
-    from odf.table import Table, TableRow, TableCell
+def _extract_ods(doc: Any) -> str:  # noqa: ANN401
     from odf import teletype
+    from odf.table import Table, TableCell, TableRow
 
     sheets: list[str] = []
     for table in doc.spreadsheet.getElementsByType(Table):
@@ -54,8 +59,7 @@ def _extract_ods(doc) -> str:
         rows: list[str] = []
         for row in table.getElementsByType(TableRow):
             cells = [
-                teletype.extractText(cell).strip()
-                for cell in row.getElementsByType(TableCell)
+                teletype.extractText(cell).strip() for cell in row.getElementsByType(TableCell)
             ]
             if any(cells):
                 rows.append(" | ".join(cells))
@@ -64,9 +68,9 @@ def _extract_ods(doc) -> str:
     return "\n\n".join(sheets)
 
 
-def _extract_odp(doc) -> str:
-    from odf.draw import Page
+def _extract_odp(doc: Any) -> str:  # noqa: ANN401
     from odf import teletype
+    from odf.draw import Page
 
     slides: list[str] = []
     for i, page in enumerate(doc.presentation.getElementsByType(Page), 1):
@@ -92,8 +96,7 @@ class OdfExtractor:
     def extract(self, data: bytes, source_path: str | None = None) -> str:
         if not _ODF_AVAILABLE:
             raise ImportError(
-                "odfpy is required for ODF extraction. "
-                "Install it with: pip install chonk[odf]"
+                "odfpy is required for ODF extraction. Install it with: pip install chonk[odf]"
             )
 
         from odf.opendocument import load as odf_load
@@ -108,6 +111,7 @@ class OdfExtractor:
         # Default: treat as text/writer (ODT)
         return _extract_odt(doc)
 
-
-    def annotate(self, chunks: list, data: bytes, source_path: str | None = None) -> list:
+    def annotate(
+        self, chunks: list[DocumentChunk], data: bytes, source_path: str | None = None
+    ) -> list[DocumentChunk]:
         return chunks

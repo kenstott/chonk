@@ -66,6 +66,60 @@ from chonk.storage import Store
 
 _DEFAULT_DIM = 1024
 
+# Together.ai chat config for the `ask` (RAG synthesis) tool.
+_CHAT_MODEL = os.environ.get("CHONK_CHAT_MODEL", "Qwen/Qwen3.5-9B")
+_TOGETHER_BASE_URL = os.environ.get("TOGETHER_BASE_URL", "https://api.together.xyz/v1")
+_ANSWER_TOKEN_BUDGET = int(os.environ.get("CHONK_ANSWER_TOKEN_BUDGET", "4096"))
+_ANSWER_MAX_TOKENS = int(os.environ.get("CHONK_ANSWER_MAX_TOKENS", "2048"))
+
+
+def _together_chat(prompt: str) -> str:
+    """Synchronous Together.ai chat completion. Returns the answer text.
+
+    Raises (no fallback) if the API key is missing, the request fails, or the
+    response carries no choices.
+    """
+    import httpx
+
+    api_key = os.environ.get("TOGETHER_API_KEY")
+    if not api_key:
+        raise RuntimeError("TOGETHER_API_KEY is not set; the ask tool requires it.")
+
+    resp = httpx.post(
+        f"{_TOGETHER_BASE_URL}/chat/completions",
+        headers={"Authorization": f"Bearer {api_key}"},
+        json={
+            "model": _CHAT_MODEL,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "Answer concisely. Lead with the direct answer, then only the "
+                        "supporting detail the question needs. Prefer tight prose or a "
+                        "short list over long exposition. Do not pad, restate the "
+                        "question, or add a preamble. Ground every claim in the "
+                        "provided context, but synthesize in your own words — the "
+                        "sources are returned to the caller as citations, so do not "
+                        "reproduce source text verbatim or quote long passages."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            "max_tokens": _ANSWER_MAX_TOKENS,
+            "temperature": 0,
+            # Qwen3.5 is a thinking model; disable CoT so the answer lands in
+            # message.content rather than a separate reasoning field.
+            "chat_template_kwargs": {"enable_thinking": False},
+        },
+        timeout=120.0,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    choices = data.get("choices")
+    if not choices:
+        raise RuntimeError(f"Together response had no choices: {data}")
+    return choices[0]["message"]["content"]
+
 
 def _load_stores() -> dict[str, Store]:
     config_json = os.environ.get("CHONK_DB_CONFIG")
@@ -97,7 +151,7 @@ SERVER = Server("chonk-search")
 # ---------------------------------------------------------------------------
 
 
-def _serialize_chunk(chunk_id: str, score: float, chunk: Any) -> dict[str, Any]:
+def _serialize_chunk(chunk_id: str, score: float, chunk: Any) -> dict[str, Any]:  # noqa: ANN401
     return {
         "chunk_id": chunk_id,
         "score": float(score),
@@ -288,6 +342,53 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="ask",
+            description=(
+                "RAG answer synthesis. Retrieves the most relevant chunks, then generates "
+                f"a grounded natural-language answer with source citations via the Together.ai "
+                f"chat model ({_CHAT_MODEL}). Use this when you want a ready-made answer rather "
+                "than raw chunks. This server does not embed text itself: supply query_embedding "
+                "(the embedded form of query_text) just as for search_chunks. "
+                f"Available DBs: {db_names}. Omit 'db' to retrieve across all and merge by score."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query_text": {
+                        "type": "string",
+                        "description": "The natural-language question to answer.",
+                    },
+                    "query_embedding": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "description": "Embedding vector for query_text, shape (dim,).",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 50,
+                        "default": 8,
+                        "description": "Number of chunks to retrieve as context.",
+                    },
+                    "db": {
+                        "type": "string",
+                        "description": (
+                            f"Target a specific DB by name. One of: {db_names}. Omit to use all."
+                        ),
+                    },
+                    "namespaces": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                    "chunk_types": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                },
+                "required": ["query_text", "query_embedding"],
+            },
+        ),
+        Tool(
             name="get_chunk",
             description="Fetch a specific chunk by chunk_id, optionally with neighbors.",
             inputSchema={
@@ -338,11 +439,13 @@ async def list_tools() -> list[Tool]:
 
 
 @SERVER.call_tool()
-async def handle_call_tool(name: str, arguments: dict | None) -> list[TextContent]:
+async def handle_call_tool(name: str, arguments: dict[str, Any] | None) -> list[TextContent]:
     args = arguments or {}
 
     if name == "search_chunks":
         return await _search_chunks(args)
+    if name == "ask":
+        return await _ask(args)
     if name == "get_chunk":
         return await _get_chunk(args)
     if name == "expand_chunk_graph":
@@ -402,6 +505,79 @@ async def _search_chunks(args: dict[str, Any]) -> list[TextContent]:
         },
     }
     return [TextContent(type="text", text=json.dumps(wrapper))]
+
+
+async def _ask(args: dict[str, Any]) -> list[TextContent]:
+    from chonk.generation import AnswerContext, AnswerGenerator
+    from chonk.models import ScoredChunk
+
+    query_text = (args.get("query_text") or "").strip()
+    if not query_text:
+        raise ValueError("query_text is required")
+    raw = args.get("query_embedding")
+    if raw is None:
+        raise ValueError("query_embedding is required")
+
+    query_embedding = np.asarray(raw, dtype="float32")
+    if query_embedding.ndim == 2 and query_embedding.shape[0] == 1:
+        query_embedding = query_embedding[0]
+    if query_embedding.ndim != 1:
+        raise ValueError("query_embedding must be shape (dim,) or (1, dim)")
+
+    limit = int(args.get("limit", 8))
+    namespaces: list[str] | None = args.get("namespaces")
+    chunk_types: list[str] | None = args.get("chunk_types")
+    target_db: str | None = args.get("db")
+
+    if target_db and target_db not in STORES:
+        raise ValueError(f"Unknown db {target_db!r}. Available: {list(STORES)}")
+    target_stores = {target_db: STORES[target_db]} if target_db else STORES
+
+    ranked: list[tuple[float, str, ScoredChunk]] = []
+    for db_name, store in target_stores.items():
+        for cid, score, chunk in store.search(
+            query_embedding=query_embedding,
+            limit=limit,
+            query_text=query_text,
+            namespaces=namespaces,
+            chunk_types=chunk_types,
+        ):
+            ranked.append(
+                (
+                    score,
+                    db_name,
+                    ScoredChunk(chunk_id=cid, chunk=chunk, score=score, provenance=db_name),
+                )
+            )
+
+    ranked.sort(key=lambda r: r[0], reverse=True)
+    ranked = ranked[:limit]
+    db_by_chunk = {sc.chunk_id: db_name for _, db_name, sc in ranked}
+    scored = [sc for _, _, sc in ranked]
+
+    context = AnswerContext(chunks=scored, query=query_text)
+    generator = AnswerGenerator(_together_chat, token_budget=_ANSWER_TOKEN_BUDGET)
+    # generate() builds the prompt and makes a blocking HTTP call; run off-loop.
+    answer = await asyncio.get_event_loop().run_in_executor(None, generator.generate, context)
+
+    citations = []
+    for c in answer.citations:
+        row = _serialize_chunk(c.chunk_id, c.score, c.chunk)
+        row["db"] = db_by_chunk.get(c.chunk_id, "")
+        citations.append(row)
+
+    payload = {
+        "answer": answer.text,
+        "citations": citations,
+        "meta": {
+            "query": query_text,
+            "db_filter": target_db,
+            "model": _CHAT_MODEL,
+            "chunks_retrieved": len(scored),
+            "chunks_cited": len(answer.citations),
+        },
+    }
+    return [TextContent(type="text", text=json.dumps(payload))]
 
 
 async def _get_chunk(args: dict[str, Any]) -> list[TextContent]:
@@ -473,7 +649,7 @@ async def _run_http() -> None:
         await _manager.handle_request(scope, receive, send)
 
     @asynccontextmanager
-    async def lifespan(_app):
+    async def lifespan(_app):  # noqa: ANN001, ANN202
         async with _manager.run():
             yield
 

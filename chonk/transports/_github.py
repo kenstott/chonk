@@ -35,11 +35,13 @@ Usage::
     )
     sha = crawler.current_sha
 """
+
 from __future__ import annotations
 
 import logging
 import os
 import re
+from typing import Any
 from urllib.parse import urlparse
 
 _log = logging.getLogger(__name__)
@@ -49,10 +51,30 @@ _RAW_BASE = "https://raw.githubusercontent.com"
 
 _DEFAULT_EXTENSIONS: frozenset[str] = frozenset(
     {
-        ".md", ".txt", ".rst", ".html", ".htm",
-        ".pdf", ".docx", ".xlsx", ".pptx",
-        ".csv", ".json", ".xml", ".yaml", ".yml", ".toml",
-        ".py", ".pyw", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".java", ".sql",
+        ".md",
+        ".txt",
+        ".rst",
+        ".html",
+        ".htm",
+        ".pdf",
+        ".docx",
+        ".xlsx",
+        ".pptx",
+        ".csv",
+        ".json",
+        ".xml",
+        ".yaml",
+        ".yml",
+        ".toml",
+        ".py",
+        ".pyw",
+        ".ts",
+        ".tsx",
+        ".js",
+        ".jsx",
+        ".mjs",
+        ".java",
+        ".sql",
     }
 )
 
@@ -96,7 +118,7 @@ class GitHubCrawler:
         max_files: int = 2000,
         repo_include: str | None = None,
         repo_exclude: str | None = None,
-    ):
+    ) -> None:
         self._token = token or os.environ.get("GITHUB_TOKEN")
         self.extensions: frozenset[str] = (
             frozenset(e if e.startswith(".") else f".{e}" for e in extensions)
@@ -133,8 +155,10 @@ class GitHubCrawler:
         """
         try:
             import requests as _requests
-        except ImportError:
-            raise ImportError("pip install chonk[http]  # requests required for GitHubCrawler")
+        except ImportError as exc:
+            raise ImportError(
+                "pip install chonk[http]  # requests required for GitHubCrawler"
+            ) from exc  # noqa: E501
 
         session = self._make_session(_requests)
         urls: list[str] = []
@@ -192,7 +216,7 @@ class GitHubCrawler:
                 _log.warning("GitHubCrawler.crawl_all: skipping %s: %s", repo_url, exc)
         return all_urls, current_shas
 
-    def crawl(self, uri: str, since_sha: str | None = None, **_kw) -> list[str]:  # noqa: ARG002
+    def crawl(self, uri: str, since_sha: object = None, **_kw: object) -> list[str]:  # noqa: ARG002
         """Return raw.githubusercontent.com URLs for files in the repo.
 
         Args:
@@ -205,10 +229,13 @@ class GitHubCrawler:
         Returns:
             List of raw content URLs, each fetchable by ``HttpTransport``.
         """
+        _since: str | None = since_sha if isinstance(since_sha, str) else None
         try:
             import requests as _requests
-        except ImportError:
-            raise ImportError("pip install chonk[http]  # requests required for GitHubCrawler")
+        except ImportError as exc:
+            raise ImportError(
+                "pip install chonk[http]  # requests required for GitHubCrawler"
+            ) from exc  # noqa: E501
 
         owner, repo = _parse_repo_url(uri)
         session = self._make_session(_requests)
@@ -217,22 +244,18 @@ class GitHubCrawler:
         head_sha = self._resolve_sha(session, owner, repo, branch)
         self.current_sha = head_sha
 
-        if since_sha and since_sha != head_sha:
-            paths = self._changed_paths(session, owner, repo, since_sha, head_sha)
+        if _since and _since != head_sha:
+            paths = self._changed_paths(session, owner, repo, _since, head_sha)
         else:
             paths = self._tree_paths(session, owner, repo, head_sha)
 
-        urls = [
-            f"{_RAW_BASE}/{owner}/{repo}/{head_sha}/{p}"
-            for p in paths
-            if self._accept(p)
-        ]
+        urls = [f"{_RAW_BASE}/{owner}/{repo}/{head_sha}/{p}" for p in paths if self._accept(p)]
         _log.info("GitHubCrawler: %d file(s) from %s@%s", len(urls), uri, head_sha[:7])
         return urls[: self.max_files]
 
     # ── Internal ─────────────────────────────────────────────────────────────
 
-    def _make_session(self, requests_mod):  # type: ignore[return]
+    def _make_session(self, requests_mod: Any) -> Any:  # noqa: ANN401
         session = requests_mod.Session()
         session.headers["Accept"] = "application/vnd.github+json"
         session.headers["X-GitHub-Api-Version"] = "2022-11-28"
@@ -240,12 +263,12 @@ class GitHubCrawler:
             session.headers["Authorization"] = f"Bearer {self._token}"
         return session
 
-    def _default_branch(self, session, owner: str, repo: str) -> str:
+    def _default_branch(self, session: Any, owner: str, repo: str) -> str:  # noqa: ANN401
         resp = session.get(f"{_API_BASE}/repos/{owner}/{repo}", timeout=15)
         resp.raise_for_status()
         return resp.json()["default_branch"]
 
-    def _resolve_sha(self, session, owner: str, repo: str, branch: str) -> str:
+    def _resolve_sha(self, session: Any, owner: str, repo: str, branch: str) -> str:  # noqa: ANN401
         resp = session.get(
             f"{_API_BASE}/repos/{owner}/{repo}/commits/{branch}",
             timeout=15,
@@ -253,7 +276,7 @@ class GitHubCrawler:
         resp.raise_for_status()
         return resp.json()["sha"]
 
-    def _tree_paths(self, session, owner: str, repo: str, sha: str) -> list[str]:
+    def _tree_paths(self, session: Any, owner: str, repo: str, sha: str) -> list[str]:  # noqa: ANN401
         """Return all blob paths in the repo tree."""
         resp = session.get(
             f"{_API_BASE}/repos/{owner}/{repo}/git/trees/{sha}",
@@ -272,7 +295,12 @@ class GitHubCrawler:
         return [item["path"] for item in data.get("tree", []) if item["type"] == "blob"]
 
     def _changed_paths(
-        self, session, owner: str, repo: str, base_sha: str, head_sha: str
+        self,
+        session: Any,  # noqa: ANN401
+        owner: str,
+        repo: str,
+        base_sha: str,
+        head_sha: str,
     ) -> list[str]:
         """Return paths added or modified between base_sha and head_sha."""
         resp = session.get(

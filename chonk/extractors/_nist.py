@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from ..models import DocumentChunk
@@ -19,22 +19,22 @@ if TYPE_CHECKING:
 _CTRL_ID_RE = re.compile(r"\b([a-z]{2}-\d+(?:\.\d+)?)\b", re.IGNORECASE)
 
 
-def _iter_controls(obj: dict) -> list[dict]:
+def _iter_controls(obj: dict[str, Any]) -> list[dict[str, Any]]:
     """Flatten OSCAL catalog groups[] → controls[] (with nested controls)."""
     catalog = obj.get("catalog", obj)
-    controls: list[dict] = []
+    controls: list[dict[str, Any]] = []
     for group in catalog.get("groups", []):
         _collect_controls(group, controls)
     return controls
 
 
-def _collect_controls(node: dict, out: list[dict]) -> None:
+def _collect_controls(node: dict[str, Any], out: list[dict[str, Any]]) -> None:
     for ctrl in node.get("controls", []):
         out.append(ctrl)
         _collect_controls(ctrl, out)
 
 
-def _parts_text(parts: list[dict], depth: int = 0) -> list[str]:
+def _parts_text(parts: list[dict[str, Any]], depth: int = 0) -> list[str]:
     """Recursively extract prose from OSCAL part trees."""
     lines: list[str] = []
     for part in parts:
@@ -48,7 +48,7 @@ def _parts_text(parts: list[dict], depth: int = 0) -> list[str]:
     return lines
 
 
-def _render_one(ctrl: dict) -> str:
+def _render_one(ctrl: dict[str, Any]) -> str:
     ctrl_id = ctrl.get("id", "UNKNOWN").upper()
     title = ctrl.get("title", "")
     parts = ctrl.get("parts", [])
@@ -128,7 +128,7 @@ class NistRenderer:
                 if cid:
                     group_map[cid] = gtitle
 
-        meta: dict[str, dict] = {}
+        meta: dict[str, dict[str, Any]] = {}
         rendered: dict[str, str] = {}
         for ctrl in _iter_controls(obj):
             cid = (ctrl.get("id") or "").upper()

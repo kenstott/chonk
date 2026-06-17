@@ -37,13 +37,14 @@ Usage::
 
 Requires: google-cloud-firestore>=2.11  (``pip install google-cloud-firestore``)
 """
+
 from __future__ import annotations
 
 import json
 import logging
 from typing import Any
 
-from ._protocol import FetchResult
+from ._protocol import FetchOptions, FetchResult
 from ._schema_infer import DEFAULT_SCHEMA_SAMPLE_SIZE, collect_field_paths, infer_schema_text
 
 _log = logging.getLogger(__name__)
@@ -51,8 +52,9 @@ _log = logging.getLogger(__name__)
 _SCHEMA_SAMPLE_SIZE = DEFAULT_SCHEMA_SAMPLE_SIZE
 
 
-def _default(obj: Any) -> Any:
+def _default(obj: Any) -> Any:  # noqa: ANN401
     from datetime import date, datetime
+
     if isinstance(obj, (datetime, date)):
         return obj.isoformat()
     try:
@@ -84,7 +86,7 @@ class FirestoreCrawler:
         database: str = "(default)",
         schema_sample_size: int = _SCHEMA_SAMPLE_SIZE,
         field_aliases: dict[str, str] | None = None,
-    ):
+    ) -> None:
         self._project = project
         self._collections = collections
         self._credentials_path = credentials_path
@@ -99,14 +101,14 @@ class FirestoreCrawler:
     def can_handle(self, uri: str) -> bool:
         return uri.startswith(f"{self.SCHEME}://")
 
-    def fetch(self, uri: str, **__) -> FetchResult:
+    def fetch(self, uri: str, options: FetchOptions | None = None) -> FetchResult:
         if uri not in self._cache:
             raise KeyError(f"FirestoreCrawler: unknown URI {uri!r} — call crawl() first")
         return self._cache[uri]
 
     # ── Crawler protocol ──────────────────────────────────────────────────────
 
-    def crawl(self, uri: str = "", **__) -> list[str]:
+    def crawl(self, uri: str = "", **__: object) -> list[str]:
         """Stream all documents from the configured collections and emit schema chunks.
 
         Returns:
@@ -117,17 +119,16 @@ class FirestoreCrawler:
             from google.cloud import (
                 firestore as _fs,  # type: ignore[attr-defined]  # google-cloud-firestore stub gap
             )
-        except ImportError:
+        except ImportError as exc:
             raise ImportError(
                 "google-cloud-firestore is required for FirestoreCrawler. "
                 "Install with: pip install google-cloud-firestore"
-            )
+            ) from exc
 
         if self._credentials_path:
             from google.oauth2 import service_account
-            creds = service_account.Credentials.from_service_account_file(
-                self._credentials_path
-            )
+
+            creds = service_account.Credentials.from_service_account_file(self._credentials_path)
             client = _fs.Client(project=self._project, credentials=creds, database=self._database)
         else:
             client = _fs.Client(project=self._project, database=self._database)
@@ -138,7 +139,7 @@ class FirestoreCrawler:
 
         for coll_name in self._collections:
             coll_ref = client.collection(coll_name)
-            sample: list[dict] = []
+            sample: list[dict[str, object]] = []
 
             for doc_snapshot in coll_ref.stream():
                 doc_id = doc_snapshot.id
@@ -167,8 +168,10 @@ class FirestoreCrawler:
             # ── Schema chunk per collection ───────────────────────────────────
             self._known_fields.update(collect_field_paths(sample))
             schema_text = infer_schema_text(
-                sample, f"{self._project}/{coll_name}",
-                total_docs=total, sample_size=len(sample),
+                sample,
+                f"{self._project}/{coll_name}",
+                total_docs=total,
+                sample_size=len(sample),
             )
             schema_uri = f"{self.SCHEME}://{self._project}/{coll_name}/_schema"
             self._cache[schema_uri] = FetchResult(

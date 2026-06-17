@@ -11,10 +11,19 @@ from __future__ import annotations
 
 import hashlib
 import json
+from typing import TYPE_CHECKING, Any
 
 from ._index import EntityIndex
 from ._spacy import SpacyMatcher
 from ._spacy_labels import SpacyLabel
+from ._vocabulary import EntityMatch
+
+if TYPE_CHECKING:
+    import duckdb
+
+    from ..models import DocumentChunk
+    from ._schema import SchemaMatcher
+    from ._vocabulary import VocabularyMatcher
 
 _SPACY_MODEL = "en_core_web_sm"
 _NUMERIC_TYPES = {
@@ -54,7 +63,7 @@ _NER_CACHE_DDL = (
 def _ner_config_fingerprint(
     spacy_model: str,
     use_schema_vocab: bool,
-    vocab_entities: list[dict] | None,
+    vocab_entities: list[dict[str, Any]] | None,
 ) -> str:
     payload = json.dumps(
         {
@@ -69,7 +78,9 @@ def _ner_config_fingerprint(
     return hashlib.md5(payload.encode(), usedforsecurity=False).hexdigest()
 
 
-def _check_cache(con, fingerprint: str, force: bool) -> tuple[bool, bool, set[str]]:
+def _check_cache(
+    con: duckdb.DuckDBPyConnection, fingerprint: str, force: bool
+) -> tuple[bool, bool, set[str]]:
     """Determine incremental mode and skip set.
 
     Returns (should_return_early, incremental, skip_ids).
@@ -97,11 +108,18 @@ def _check_cache(con, fingerprint: str, force: bool) -> tuple[bool, bool, set[st
     return False, False, set()
 
 
-def _all_chunk_id_count(con) -> int:
-    return con.execute("SELECT COUNT(*) FROM embeddings").fetchone()[0]
+def _all_chunk_id_count(con: duckdb.DuckDBPyConnection) -> int:
+    row = con.execute("SELECT COUNT(*) FROM embeddings").fetchone()
+    if row is None:
+        raise RuntimeError("COUNT(*) returned no rows")
+    return row[0]
 
 
-def _build_vocab_matchers(all_chunks, use_schema_vocab: bool, vocab_entities: list[dict] | None):
+def _build_vocab_matchers(
+    all_chunks: list[DocumentChunk],
+    use_schema_vocab: bool,
+    vocab_entities: list[dict[str, Any]] | None,
+) -> tuple[SchemaMatcher | None, VocabularyMatcher | None]:
     """Build schema and data matchers when vocabulary sources are configured.
 
     Returns (schema_matcher, data_matcher) — either may be None.
@@ -125,11 +143,13 @@ def _build_vocab_matchers(all_chunks, use_schema_vocab: bool, vocab_entities: li
     return schema_matcher, data_matcher
 
 
-def _collect_chunks_to_process(all_chunks, skip_ids: set[str]):
+def _collect_chunks_to_process(
+    all_chunks: list[DocumentChunk], skip_ids: set[str]
+) -> list[tuple[str, DocumentChunk]]:
     """Filter all_chunks to those not in skip_ids, returning (chunk_id, chunk) pairs."""
     from chonk.storage._vector import DuckDBVectorBackend
 
-    result = []
+    result: list[tuple[str, DocumentChunk]] = []
     for c in all_chunks:
         embed_content = c.embedding_content if c.embedding_content else c.content
         cid = DuckDBVectorBackend._generate_chunk_id(c.document_name, c.chunk_index, embed_content)
@@ -139,10 +159,10 @@ def _collect_chunks_to_process(all_chunks, skip_ids: set[str]):
 
 
 def _run_ner_on_chunks(
-    chunks_to_process,
+    chunks_to_process: list[tuple[str, DocumentChunk]],
     matcher: SpacyMatcher,
-    schema_matcher,
-    data_matcher,
+    schema_matcher: SchemaMatcher | None,
+    data_matcher: VocabularyMatcher | None,
 ) -> tuple[EntityIndex, dict[str, tuple[str, str, str]]]:
     """Run NER over chunks_to_process, return (entity_index, entity_meta)."""
     from ._merge import merge_matches
@@ -152,7 +172,7 @@ def _run_ner_on_chunks(
 
     for chunk_id, chunk in chunks_to_process:
         if schema_matcher is not None or data_matcher is not None:
-            vocab_hits: list = []
+            vocab_hits: list[EntityMatch] = []
             if schema_matcher is not None:
                 vocab_hits = merge_matches(
                     schema_matcher.match(chunk.content),
@@ -183,7 +203,12 @@ def _run_ner_on_chunks(
     return entity_index, entity_meta
 
 
-def _persist_associations(con, data: dict, entity_meta: dict, incremental: bool) -> None:
+def _persist_associations(
+    con: duckdb.DuckDBPyConnection,
+    data: dict[str, Any],
+    entity_meta: dict[str, tuple[str, str, str]],
+    incremental: bool,
+) -> None:
     """Write associations and entities to the DB, clearing first unless incremental."""
     if not incremental:
         con.execute("DELETE FROM chunk_entities")
@@ -222,11 +247,11 @@ def _persist_associations(con, data: dict, entity_meta: dict, incremental: bool)
 
 
 def build_ner(
-    store,
+    store: Any,  # noqa: ANN401
     *,
     spacy_model: str = _SPACY_MODEL,
     use_schema_vocab: bool = False,
-    vocab_entities: list[dict] | None = None,
+    vocab_entities: list[dict[str, Any]] | None = None,
     force: bool = False,
     build_context_graph: bool = False,
     namespace: str = "global",
@@ -255,7 +280,10 @@ def build_ner(
 
     should_return_early, incremental, skip_ids = _check_cache(con, fingerprint, force)
     if should_return_early:
-        return con.execute("SELECT COUNT(*) FROM chunk_entities").fetchone()[0]
+        _row = con.execute("SELECT COUNT(*) FROM chunk_entities").fetchone()
+        if _row is None:
+            raise RuntimeError("COUNT(*) returned no rows")
+        return _row[0]
 
     label_types = [t for t in SpacyLabel if t not in _NUMERIC_TYPES]
     matcher = SpacyMatcher(model=spacy_model, strip_numeric=True, entity_types=label_types)

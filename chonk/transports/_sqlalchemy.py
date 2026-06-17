@@ -35,9 +35,9 @@ from __future__ import annotations
 
 import csv
 import io
-from urllib.parse import urlparse, parse_qs, unquote_plus
+from urllib.parse import parse_qs, unquote_plus, urlparse
 
-from ._protocol import FetchResult
+from ._protocol import FetchOptions, FetchResult
 
 
 class SqlAlchemyTransport:
@@ -49,12 +49,12 @@ class SqlAlchemyTransport:
         self,
         connection_url: str,
         query: str | None = None,
-        params: dict | None = None,
-    ):
+        params: dict[str, object] | None = None,
+    ) -> None:
         """Args:
-            connection_url: SQLAlchemy connection URL (e.g. ``postgresql://...``).
-            query:          Default SQL query.  Overridden by ``?query=`` in the URI.
-            params:         Optional dict of named bind parameter values.
+        connection_url: SQLAlchemy connection URL (e.g. ``postgresql://...``).
+        query:          Default SQL query.  Overridden by ``?query=`` in the URI.
+        params:         Optional dict of named bind parameter values.
         """
         self._url = connection_url
         self._default_query = query
@@ -63,7 +63,7 @@ class SqlAlchemyTransport:
     def can_handle(self, uri: str) -> bool:
         return uri.startswith(f"{self.SCHEME}://")
 
-    def fetch(self, uri: str, **kwargs) -> FetchResult:
+    def fetch(self, uri: str, options: FetchOptions | None = None) -> FetchResult:
         try:
             import sqlalchemy as sa
         except ImportError as exc:
@@ -82,7 +82,7 @@ class SqlAlchemyTransport:
             sql = self._default_query
         else:
             raise ValueError(
-                f"No SQL query provided. Pass ?query=... in the URI or set query= in the constructor."
+                "No SQL query provided. Pass ?query=... in the URI or set query= in the constructor."  # noqa: E501
             )
 
         # Document name comes from the URI path (strip leading slash)

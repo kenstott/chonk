@@ -24,7 +24,7 @@ except ImportError:
     _PPTX_AVAILABLE = False
 
 
-def _extract_pptx_content(prs) -> str:
+def _extract_pptx_content(prs: Any) -> str:  # noqa: ANN401
     """Extract text content from a python-pptx Presentation object."""
     slides = []
 

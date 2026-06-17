@@ -13,10 +13,11 @@ import hashlib
 import json
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 try:
     import numpy as np
+
     _NUMPY_AVAILABLE = True
 except ImportError:
     _NUMPY_AVAILABLE = False
@@ -24,12 +25,13 @@ except ImportError:
 
 try:
     import duckdb  # noqa: F401 — availability checked at runtime
+
     _DUCKDB_AVAILABLE = True
 except ImportError:
     _DUCKDB_AVAILABLE = False
 
 if TYPE_CHECKING:
-    pass  # only for type hints
+    from ..models import DocumentChunk
 
 try:
     import numpy as _np
@@ -58,7 +60,7 @@ class SyncResult:
     previous_chunk_count: int = 0
 
 
-def _deserialize_section(value) -> list[str]:
+def _deserialize_section(value: Any) -> list[str]:  # noqa: ANN401
     if not value:
         return []
     if isinstance(value, list):
@@ -73,8 +75,7 @@ def _deserialize_section(value) -> list[str]:
 
 
 _MISSING_DEPS_MSG = (
-    "duckdb and numpy are required for storage. "
-    "Install them with: pip install chonk[storage]"
+    "duckdb and numpy are required for storage. Install them with: pip install chonk[storage]"
 )
 
 
@@ -86,14 +87,17 @@ def _require_deps() -> None:
 class DuckDBVectorBackend:
     """Vector operations backed by DuckDB VSS (HNSW) + FTS extensions."""
 
-    def __init__(self, db, embedding_dim: int = 1024):
+    def __init__(self, db: Any, embedding_dim: int = 1024) -> None:  # noqa: ANN401
         _require_deps()
         self._db = db
         self._embedding_dim = embedding_dim
-        self._fts_dirty = True
+        # Read-only stores cannot create/rebuild the FTS index; the persisted
+        # index from build time is queried as-is. Marking clean avoids a DROP
+        # attempt that DuckDB rejects on a read-only database.
+        self._fts_dirty = not getattr(db, "_read_only", False)
         self._global_attached: bool = False
-        self._np_embeddings = None   # preloaded (n, dim) float32
-        self._np_chunk_rows = None   # preloaded metadata rows
+        self._np_embeddings = None  # preloaded (n, dim) float32
+        self._np_chunk_rows = None  # preloaded metadata rows
         self._init_schema()
 
     def preload_embeddings(self) -> None:
@@ -110,12 +114,10 @@ class DuckDBVectorBackend:
             return
         self._np_chunk_rows = rows
         assert _np is not None, "numpy required for preload_embeddings"
-        self._np_embeddings = _np.array(
-            [r[13] for r in rows], dtype="float32"
-        )
+        self._np_embeddings = _np.array([r[13] for r in rows], dtype="float32")
 
     @property
-    def _conn(self):
+    def _conn(self) -> Any:  # noqa: ANN401
         return self._db.conn
 
     @property
@@ -128,6 +130,9 @@ class DuckDBVectorBackend:
 
     def _init_schema(self) -> None:
         from ._schema import VSS_INDEX_DDL, get_ddl
+
+        if getattr(self._db, "_read_only", False):
+            return
 
         # Load extensions — INSTALL may fail when already installed or on read-only
         # filesystems; attempt LOAD regardless. If LOAD fails, vss/fts is unavailable
@@ -152,12 +157,15 @@ class DuckDBVectorBackend:
         # log at WARNING (not silent) but do not raise — vector search falls back to
         # sequential scan, which is functionally correct though slower.
         from ._schema import VSS_DROP_INDEX_DDL
+
         try:
             self._conn.execute(VSS_DROP_INDEX_DDL).fetchall()
             self._conn.execute(VSS_INDEX_DDL).fetchall()
             logger.debug("VSS HNSW cosine index ready")
         except Exception as e:
-            logger.warning(f"VSS HNSW index creation skipped (vector search uses sequential scan): {e}")
+            logger.warning(
+                f"VSS HNSW index creation skipped (vector search uses sequential scan): {e}"
+            )
 
     # ------------------------------------------------------------------
     # Chunk ID
@@ -176,8 +184,8 @@ class DuckDBVectorBackend:
 
     def add_chunks(
         self,
-        chunks: list,
-        embeddings,
+        chunks: list[DocumentChunk],
+        embeddings: Any,  # noqa: ANN401
         namespace: str | None = None,
         source_id: str | None = None,
         domain_id: str | None = None,
@@ -207,32 +215,31 @@ class DuckDBVectorBackend:
                 chunk.document_name, chunk.chunk_index, embed_content
             )
             embedding = embeddings[i].tolist()
-            chunk_type = (
-                chunk.chunk_type.value
-                if hasattr(chunk, "chunk_type") and hasattr(chunk.chunk_type, "value")
-                else getattr(chunk, "chunk_type", "document") or "document"
-            )
+            _ct = getattr(chunk, "chunk_type", "document")
+            chunk_type = getattr(_ct, "value", None) if hasattr(_ct, "value") else _ct or "document"
             raw_section = getattr(chunk, "section", []) or []
             section_str = json.dumps(raw_section) if isinstance(raw_section, list) else raw_section
             raw_detail = getattr(chunk, "source_detail", None)
             source_detail_str = json.dumps(raw_detail) if raw_detail is not None else None
-            records.append((
-                chunk_id,
-                chunk.document_name,
-                section_str,
-                chunk.chunk_index,
-                chunk.content,
-                getattr(chunk, "breadcrumb", None),
-                chunk_type,
-                getattr(chunk, "source_offset", None),
-                getattr(chunk, "source_length", None),
-                namespace,
-                source_detail_str,
-                source_id,
-                domain_id,
-                session_fingerprint,
-                embedding,
-            ))
+            records.append(
+                (
+                    chunk_id,
+                    chunk.document_name,
+                    section_str,
+                    chunk.chunk_index,
+                    chunk.content,
+                    getattr(chunk, "breadcrumb", None),
+                    chunk_type,
+                    getattr(chunk, "source_offset", None),
+                    getattr(chunk, "source_length", None),
+                    namespace,
+                    source_detail_str,
+                    source_id,
+                    domain_id,
+                    session_fingerprint,
+                    embedding,
+                )
+            )
 
         self._conn.executemany(
             """
@@ -259,7 +266,10 @@ class DuckDBVectorBackend:
         if not self._fts_dirty:
             return
         try:
-            count = self._conn.execute("SELECT COUNT(*) FROM embeddings").fetchone()[0]
+            _count_row = self._conn.execute("SELECT COUNT(*) FROM embeddings").fetchone()
+            if _count_row is None:
+                raise RuntimeError("COUNT(*) returned no rows")
+            count = _count_row[0]
             if count == 0:
                 self._fts_dirty = False
                 return
@@ -282,28 +292,61 @@ class DuckDBVectorBackend:
         self,
         query_text: str,
         limit: int = 5,
-    ) -> list[tuple[str, float, object]]:
+        namespaces: list[str] | None = None,
+        chunk_types: list[str] | None = None,
+        domain_ids: list[str] | None = None,
+        session_fingerprint: str | None = None,
+    ) -> list[tuple[str, float, DocumentChunk]]:
         from ..models import DocumentChunk
+
         try:
             self._rebuild_fts_index()
+            # Apply the same filters as the vector branch so hybrid search does not
+            # leak rows from outside the requested namespaces/domains/chunk_types.
+            clauses = ["bm25_score IS NOT NULL"]
+            params: list[Any] = [query_text]
+            for col, values in (
+                ("namespace", namespaces),
+                ("chunk_type", chunk_types),
+                ("domain_id", domain_ids),
+            ):
+                if values is not None:
+                    placeholders = ", ".join("?" * len(values))
+                    clauses.append(f"e.{col} IN ({placeholders})")
+                    params.extend(values)
+            if session_fingerprint is not None:
+                clauses.append("e.session_fingerprint = ?")
+                params.append(session_fingerprint)
+            params.append(limit)
             rows = self._conn.execute(
-                """
+                f"""
                 SELECT e.chunk_id, e.document_name, e.section, e.chunk_index,
                        e.content, e.chunk_type, e.source_offset, e.source_length,
                        e.source_detail,
-                       fts_main_embeddings.match_bm25(e.chunk_id, ?, fields:='content') AS bm25_score
+                       fts_main_embeddings.match_bm25(
+                           e.chunk_id, ?, fields:='content') AS bm25_score
                 FROM embeddings e
-                WHERE bm25_score IS NOT NULL
+                WHERE {" AND ".join(clauses)}
                 ORDER BY bm25_score DESC
                 LIMIT ?
                 """,
-                [query_text, limit],
+                params,
             ).fetchall()
 
             results = []
             for row in rows:
-                (chunk_id, doc_name, section, chunk_idx, content,
-                 _chunk_type, source_offset, source_length, source_detail_str, score) = row
+                (
+                    chunk_id,
+                    doc_name,
+                    section,
+                    chunk_idx,
+                    content,
+                    _chunk_type,
+                    source_offset,
+                    source_length,
+                    source_detail_str,
+                    score,
+                ) = row
                 chunk = DocumentChunk(
                     document_name=doc_name,
                     content=content,
@@ -321,14 +364,14 @@ class DuckDBVectorBackend:
 
     @staticmethod
     def _rrf_merge(
-        vector_results: list[tuple],
-        bm25_results: list[tuple],
+        vector_results: list[tuple[str, float, DocumentChunk]],
+        bm25_results: list[tuple[str, float, DocumentChunk]],
         k: int = 60,
-    ) -> list[tuple]:
+    ) -> list[tuple[str, float, DocumentChunk]]:
         """Reciprocal Rank Fusion of vector and BM25 result lists."""
         max_rrf = 2.0 / (k + 1)
         scores: dict[str, float] = {}
-        chunks: dict[str, tuple] = {}
+        chunks: dict[str, tuple[str, DocumentChunk]] = {}
 
         for rank, (chunk_id, _score, chunk) in enumerate(vector_results, start=1):
             scores[chunk_id] = scores.get(chunk_id, 0.0) + 1.0 / (k + rank)
@@ -354,7 +397,7 @@ class DuckDBVectorBackend:
 
     def search(
         self,
-        query_embedding,
+        query_embedding: Any,  # noqa: ANN401
         limit: int = 5,
         query_text: str | None = None,
         include_breadcrumbs: bool = True,
@@ -362,7 +405,7 @@ class DuckDBVectorBackend:
         chunk_types: list[str] | None = None,
         domain_ids: list[str] | None = None,
         session_fingerprint: str | None = None,
-    ) -> list[tuple[str, float, object]]:
+    ) -> list[tuple[str, float, DocumentChunk]]:
         """Search by vector similarity, with optional BM25 hybrid re-ranking.
 
         Args:
@@ -387,7 +430,9 @@ class DuckDBVectorBackend:
         fetch_limit = limit * 3 if query_text else limit
 
         if self._np_embeddings is not None and _np is not None:
-            assert self._np_chunk_rows is not None  # set together with _np_embeddings in preload_embeddings
+            assert (
+                self._np_chunk_rows is not None
+            )  # set together with _np_embeddings in preload_embeddings
             # Fast numpy path: single matmul, no DuckDB round-trip
             sims = self._np_embeddings @ query_vec  # (n,)
             ns_set = set(namespaces) if namespaces is not None else None
@@ -401,15 +446,22 @@ class DuckDBVectorBackend:
                 top_idx = [i for i in top_idx if self._np_chunk_rows[i][6] in ct_set]
             if di_set is not None:
                 # domain_id is at index 12 in preloaded rows (added after source_id at 11)
-                top_idx = [i for i in top_idx if len(self._np_chunk_rows[i]) > 12 and self._np_chunk_rows[i][12] in di_set]
+                top_idx = [
+                    i
+                    for i in top_idx
+                    if len(self._np_chunk_rows[i]) > 12 and self._np_chunk_rows[i][12] in di_set
+                ]
             # indices: 0=chunk_id,1=doc_name,2=section,3=chunk_idx,4=content,
             #          5=breadcrumb,6=chunk_type,7=source_offset,8=source_length,
             #          9=namespace,10=source_detail
-            rows = [(*self._np_chunk_rows[i][:9], self._np_chunk_rows[i][10], float(sims[i])) for i in top_idx]
+            rows = [
+                (*self._np_chunk_rows[i][:9], self._np_chunk_rows[i][10], float(sims[i]))
+                for i in top_idx
+            ]
         else:
             query = query_vec.tolist()
             clauses: list[str] = []
-            params: list = [query]
+            params: list[Any] = [query]
             if namespaces is not None:
                 placeholders = ", ".join("?" * len(namespaces))
                 clauses.append(f"e.namespace IN ({placeholders})")
@@ -441,7 +493,8 @@ class DuckDBVectorBackend:
                     e.source_offset,
                     e.source_length,
                     e.source_detail,
-                    1.0 - array_cosine_distance(e.embedding, ?::FLOAT[{self._embedding_dim}]) AS similarity
+                    1.0 - array_cosine_distance(
+                        e.embedding, ?::FLOAT[{self._embedding_dim}]) AS similarity
                 FROM {self._read_table} e
                 {where_clause}
                 ORDER BY array_cosine_distance(e.embedding, ?::FLOAT[{self._embedding_dim}]) ASC
@@ -452,13 +505,21 @@ class DuckDBVectorBackend:
 
         vector_results = []
         for row in rows:
-            (chunk_id, doc_name, section, chunk_idx, content,
-             breadcrumb, chunk_type_str, source_offset, source_length,
-             source_detail_str, similarity) = row
+            (
+                chunk_id,
+                doc_name,
+                section,
+                chunk_idx,
+                content,
+                breadcrumb,
+                chunk_type_str,
+                source_offset,
+                source_length,
+                source_detail_str,
+                similarity,
+            ) = row
             displayed = (
-                f"{breadcrumb}\n\n{content}"
-                if include_breadcrumbs and breadcrumb
-                else content
+                f"{breadcrumb}\n\n{content}" if include_breadcrumbs and breadcrumb else content
             )
             chunk = DocumentChunk(
                 document_name=doc_name,
@@ -476,7 +537,14 @@ class DuckDBVectorBackend:
         if not query_text:
             return vector_results
 
-        bm25_results = self._bm25_search(query_text, limit=fetch_limit)
+        bm25_results = self._bm25_search(
+            query_text,
+            limit=fetch_limit,
+            namespaces=namespaces,
+            chunk_types=chunk_types,
+            domain_ids=domain_ids,
+            session_fingerprint=session_fingerprint,
+        )
         if not bm25_results:
             return vector_results[:limit]
 
@@ -487,7 +555,7 @@ class DuckDBVectorBackend:
     # Retrieval helpers
     # ------------------------------------------------------------------
 
-    def get_all_chunks(self) -> list:
+    def get_all_chunks(self) -> list[DocumentChunk]:
         """Return all stored chunks as DocumentChunk objects."""
         from ..models import DocumentChunk
 
@@ -526,12 +594,13 @@ class DuckDBVectorBackend:
             Number of rows updated.
         """
         from ._schema import EMBEDDINGS_MIGRATE_BREADCRUMB
+
         try:
             self._conn.execute(EMBEDDINGS_MIGRATE_BREADCRUMB).fetchall()
         except Exception:
             pass  # column already exists
 
-        result = self._conn.execute("""
+        self._conn.execute("""
             UPDATE embeddings
             SET
                 breadcrumb = regexp_extract(content, '^(\\[[^\\]]+\\])', 1),
@@ -540,10 +609,12 @@ class DuckDBVectorBackend:
               AND content LIKE '[%'
         """).fetchall()
 
-        updated = self._conn.execute(
+        _row = self._conn.execute(
             "SELECT COUNT(*) FROM embeddings WHERE breadcrumb IS NOT NULL"
-        ).fetchone()[0]
-        return updated
+        ).fetchone()
+        if _row is None:
+            raise RuntimeError("COUNT(*) returned no rows")
+        return _row[0]
 
     def count(self) -> int:
         """Return the total number of stored chunks."""
@@ -556,10 +627,13 @@ class DuckDBVectorBackend:
 
     def delete_by_document(self, document_name: str) -> int:
         """Delete all chunks for a document. Returns the number deleted."""
-        count_before = self._conn.execute(
+        _count_row = self._conn.execute(
             "SELECT COUNT(*) FROM embeddings WHERE document_name = ?",
             [document_name],
-        ).fetchone()[0]
+        ).fetchone()
+        if _count_row is None:
+            raise RuntimeError("COUNT(*) returned no rows")
+        count_before = _count_row[0]
         self._conn.execute(
             "DELETE FROM embeddings WHERE document_name = ?",
             [document_name],
@@ -614,7 +688,7 @@ class DuckDBVectorBackend:
             [document_name, content_hash, source_uri, chunk_count],
         ).fetchall()
 
-    def list_documents(self) -> list[dict]:
+    def list_documents(self) -> list[dict[str, Any]]:
         """Return all registered documents as a list of dicts.
 
         Each dict has keys: ``document_name``, ``content_hash``,
