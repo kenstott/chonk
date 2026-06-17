@@ -30,6 +30,10 @@ htmlcov/
 !/work/fang2026/data/fang2026_questions.jsonl
 !/work/fang2026/data/fang2026_gold_schemas.jsonl
 
+# DuckDB
+*.duckdb
+*.duckdb.wal
+
 # LaTeX build artifacts
 *.log
 *.aux
