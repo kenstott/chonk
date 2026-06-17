@@ -129,7 +129,10 @@ class EntityGraphPipeline:
 
         if not force:
             try:
-                n = conn.execute("SELECT COUNT(*) FROM svo_triples").fetchone()[0]
+                _row = conn.execute("SELECT COUNT(*) FROM svo_triples").fetchone()
+                if _row is None:
+                    raise RuntimeError("COUNT(*) returned no rows")
+                n = _row[0]
                 if n > 0:
                     _prog(PHASE_LOAD, 1, 1)
                     return stats

@@ -69,12 +69,13 @@ def build_namespace_async(
 
         try:
             if not force and store.namespace_cache_valid(namespace_id):
-                _on_complete(
-                    store.vector._conn.execute(
-                        "SELECT COUNT(*) FROM embeddings WHERE namespace = ?",
-                        [namespace_id],
-                    ).fetchone()[0]
-                )
+                _count_row = store.vector._conn.execute(
+                    "SELECT COUNT(*) FROM embeddings WHERE namespace = ?",
+                    [namespace_id],
+                ).fetchone()
+                if _count_row is None:
+                    raise RuntimeError("COUNT(*) returned no rows")
+                _on_complete(_count_row[0])
                 return
 
             # ── Phase: crawl / chunk / embed ──────────────────────────────────

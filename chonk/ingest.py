@@ -696,7 +696,10 @@ def _build_svo_phase(
     force: bool,
 ) -> None:
     """Phase: SVO — build subject-verb-object triple graph via LLM."""
-    existing = store.vector._conn.execute("SELECT COUNT(*) FROM svo_triples").fetchone()[0]
+    _row = store.vector._conn.execute("SELECT COUNT(*) FROM svo_triples").fetchone()
+    if _row is None:
+        raise RuntimeError("COUNT(*) returned no rows")
+    existing = _row[0]
     if existing == 0 or force:
         print(f"Building SVO graph via {svo_model!r} (calls LLM API)...")
         from .graph import EntityGraphPipeline, SVOExtractor
@@ -830,7 +833,10 @@ def build(config: str | Path | dict[str, Any], *, force: bool = False) -> Index:
 
     # ── Phase: NER ───────────────────────────────────────────────────────────
     if run_ner:
-        existing = store.vector._conn.execute("SELECT COUNT(*) FROM chunk_entities").fetchone()[0]
+        _row = store.vector._conn.execute("SELECT COUNT(*) FROM chunk_entities").fetchone()
+        if _row is None:
+            raise RuntimeError("COUNT(*) returned no rows")
+        existing = _row[0]
         if existing == 0 or force:
             print("Building NER index...")
             from .ner import build_ner

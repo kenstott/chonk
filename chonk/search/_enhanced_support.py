@@ -76,7 +76,10 @@ def _load_community_index_from_store(store: Store) -> CommunityIndex | None:
     }
     if "chunk_communities" not in tables or "communities" not in tables:
         return None
-    count = conn.execute("SELECT COUNT(*) FROM chunk_communities").fetchone()[0]
+    _row = conn.execute("SELECT COUNT(*) FROM chunk_communities").fetchone()
+    if _row is None:
+        raise RuntimeError("COUNT(*) returned no rows")
+    count = _row[0]
     if count == 0:
         return None
     return _CI.from_db(db_path)

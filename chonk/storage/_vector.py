@@ -266,7 +266,10 @@ class DuckDBVectorBackend:
         if not self._fts_dirty:
             return
         try:
-            count = self._conn.execute("SELECT COUNT(*) FROM embeddings").fetchone()[0]
+            _count_row = self._conn.execute("SELECT COUNT(*) FROM embeddings").fetchone()
+            if _count_row is None:
+                raise RuntimeError("COUNT(*) returned no rows")
+            count = _count_row[0]
             if count == 0:
                 self._fts_dirty = False
                 return
@@ -606,9 +609,12 @@ class DuckDBVectorBackend:
               AND content LIKE '[%'
         """).fetchall()
 
-        return self._conn.execute(
+        _row = self._conn.execute(
             "SELECT COUNT(*) FROM embeddings WHERE breadcrumb IS NOT NULL"
-        ).fetchone()[0]
+        ).fetchone()
+        if _row is None:
+            raise RuntimeError("COUNT(*) returned no rows")
+        return _row[0]
 
     def count(self) -> int:
         """Return the total number of stored chunks."""
@@ -621,10 +627,13 @@ class DuckDBVectorBackend:
 
     def delete_by_document(self, document_name: str) -> int:
         """Delete all chunks for a document. Returns the number deleted."""
-        count_before = self._conn.execute(
+        _count_row = self._conn.execute(
             "SELECT COUNT(*) FROM embeddings WHERE document_name = ?",
             [document_name],
-        ).fetchone()[0]
+        ).fetchone()
+        if _count_row is None:
+            raise RuntimeError("COUNT(*) returned no rows")
+        count_before = _count_row[0]
         self._conn.execute(
             "DELETE FROM embeddings WHERE document_name = ?",
             [document_name],

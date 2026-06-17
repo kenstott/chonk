@@ -103,13 +103,13 @@ class RelationshipIndex:
         """Load RelationshipIndex from svo_triples table. Returns empty index if table absent."""
         idx = cls()
         try:
-            _view_exists = (
-                con.execute(
-                    "SELECT COUNT(*) FROM information_schema.tables "
-                    "WHERE table_name = 'all_svo_triples'"
-                ).fetchone()[0]
-                > 0
-            )
+            _row = con.execute(
+                "SELECT COUNT(*) FROM information_schema.tables "
+                "WHERE table_name = 'all_svo_triples'"
+            ).fetchone()
+            if _row is None:
+                raise RuntimeError("COUNT(*) returned no rows")
+            _view_exists = _row[0] > 0
             table = "all_svo_triples" if _view_exists else "svo_triples"
             if namespaces is not None:
                 placeholders = ", ".join(["?" for _ in namespaces])

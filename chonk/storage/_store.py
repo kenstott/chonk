@@ -147,24 +147,30 @@ class Store:
         ).fetchone()
         if row is None:
             return False
-        current_count = self.vector._conn.execute(
+        _count_row = self.vector._conn.execute(
             "SELECT COUNT(*) FROM embeddings WHERE domain_id IN ({})".format(
                 ", ".join("?" * len(domain_ids))
             ),
             domain_ids,
-        ).fetchone()[0]
+        ).fetchone()
+        if _count_row is None:
+            raise RuntimeError("COUNT(*) returned no rows")
+        current_count = _count_row[0]
         return row[0] == current_count
 
     def write_community_cache(self, fingerprint: str, domain_ids: list[str]) -> None:
         """Record a community cache entry after building communities for domain_ids."""
         import json as _json
 
-        chunk_count = self.vector._conn.execute(
+        _count_row = self.vector._conn.execute(
             "SELECT COUNT(*) FROM embeddings WHERE domain_id IN ({})".format(
                 ", ".join("?" * len(domain_ids))
             ),
             domain_ids,
-        ).fetchone()[0]
+        ).fetchone()
+        if _count_row is None:
+            raise RuntimeError("COUNT(*) returned no rows")
+        chunk_count = _count_row[0]
         self.vector._conn.execute(
             """
             INSERT INTO community_cache (fingerprint, domain_ids, chunk_count)
@@ -382,10 +388,13 @@ class Store:
             Number of chunks deleted from embeddings.
         """
         conn = self.vector._conn
-        count_before = conn.execute(
+        _count_row = conn.execute(
             "SELECT COUNT(*) FROM embeddings WHERE domain_id = ?",
             [domain_id],
-        ).fetchone()[0]
+        ).fetchone()
+        if _count_row is None:
+            raise RuntimeError("COUNT(*) returned no rows")
+        count_before = _count_row[0]
 
         # Collect chunk_ids for cascade deletes
         chunk_ids = [
@@ -472,10 +481,13 @@ class Store:
                 except OSError:
                     return False
 
-        chunk_count = conn.execute(
+        _count_row = conn.execute(
             "SELECT COUNT(*) FROM embeddings WHERE namespace = ?",
             [namespace_id],
-        ).fetchone()[0]
+        ).fetchone()
+        if _count_row is None:
+            raise RuntimeError("COUNT(*) returned no rows")
+        chunk_count = _count_row[0]
         return chunk_count > 0
 
     def _mark_namespace_built(self, namespace_id: str, phase: str) -> None:
@@ -614,14 +626,14 @@ class Store:
         conn.execute(f"ATTACH '{global_db_path}' AS global_db (READ_ONLY)")
 
         def _global_has(table: str) -> bool:
-            return (
-                conn.execute(
-                    "SELECT COUNT(*) FROM information_schema.tables "
-                    "WHERE table_catalog = 'global_db' AND table_name = ?",
-                    [table],
-                ).fetchone()[0]
-                > 0
-            )
+            _count_row = conn.execute(
+                "SELECT COUNT(*) FROM information_schema.tables "
+                "WHERE table_catalog = 'global_db' AND table_name = ?",
+                [table],
+            ).fetchone()
+            if _count_row is None:
+                raise RuntimeError("COUNT(*) returned no rows")
+            return _count_row[0] > 0
 
         # ── all_embeddings ──────────────────────────────────────────────────
         if _global_has("embeddings"):

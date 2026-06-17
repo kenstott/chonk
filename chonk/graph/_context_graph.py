@@ -136,10 +136,13 @@ def build_context_graph_edges(
     fingerprint = _chunk_fingerprint(chunk_ids)
 
     try:
-        svo_count = conn.execute(
+        _row = conn.execute(
             "SELECT COUNT(*) FROM svo_triples WHERE COALESCE(namespace, 'global') = ?",
             [namespace],
-        ).fetchone()[0]
+        ).fetchone()
+        if _row is None:
+            raise RuntimeError("COUNT(*) returned no rows")
+        svo_count = _row[0]
     except Exception:
         svo_count = 0
 

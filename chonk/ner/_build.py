@@ -280,7 +280,10 @@ def build_ner(
 
     should_return_early, incremental, skip_ids = _check_cache(con, fingerprint, force)
     if should_return_early:
-        return con.execute("SELECT COUNT(*) FROM chunk_entities").fetchone()[0]
+        _row = con.execute("SELECT COUNT(*) FROM chunk_entities").fetchone()
+        if _row is None:
+            raise RuntimeError("COUNT(*) returned no rows")
+        return _row[0]
 
     label_types = [t for t in SpacyLabel if t not in _NUMERIC_TYPES]
     matcher = SpacyMatcher(model=spacy_model, strip_numeric=True, entity_types=label_types)
