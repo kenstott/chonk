@@ -40,7 +40,7 @@ import csv
 import io
 from typing import Any
 
-from ._protocol import FetchResult
+from ._protocol import FetchOptions, FetchResult
 
 SCHEME = "sqlquery"
 
@@ -144,7 +144,7 @@ class SqlQueryTransport:
     def can_handle(self, uri: str) -> bool:
         return uri.startswith(f"{SCHEME}://")
 
-    def fetch(self, uri: str, sql: str | None = None, **kwargs: object) -> FetchResult:
+    def fetch(self, uri: str, options: FetchOptions | None = None) -> FetchResult:
         """Fetch query results as CSV bytes.
 
         Args:
@@ -161,6 +161,7 @@ class SqlQueryTransport:
         parsed = urlparse(uri)
         qs = parse_qs(parsed.query)
 
+        sql: str | None = options.sql if options else None
         if "sql" in qs:
             sql = unquote_plus(qs["sql"][0])
         if not sql:

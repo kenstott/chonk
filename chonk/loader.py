@@ -31,6 +31,7 @@ from .extractors import (  # noqa: E402
 from .transports import (  # noqa: E402
     Crawler,
     DirectoryCrawler,
+    FetchOptions,
     FetchResult,
     FtpTransport,
     HttpTransport,
@@ -309,7 +310,7 @@ class DocumentLoader:
         all_chunks: list[DocumentChunk] = []
 
         for name, sql in pairs:
-            result = transport.fetch(f"sqlquery://{name}", sql=sql)
+            result = transport.fetch(f"sqlquery://{name}", FetchOptions(sql=sql))
             text = extractor.extract(result.data, source_path=name)
             chunks = chunk_document(
                 name,

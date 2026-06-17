@@ -37,7 +37,7 @@ import csv
 import io
 from urllib.parse import parse_qs, unquote_plus, urlparse
 
-from ._protocol import FetchResult
+from ._protocol import FetchOptions, FetchResult
 
 
 class SqlAlchemyTransport:
@@ -63,7 +63,7 @@ class SqlAlchemyTransport:
     def can_handle(self, uri: str) -> bool:
         return uri.startswith(f"{self.SCHEME}://")
 
-    def fetch(self, uri: str, **kwargs: object) -> FetchResult:
+    def fetch(self, uri: str, options: FetchOptions | None = None) -> FetchResult:
         try:
             import sqlalchemy as sa
         except ImportError as exc:

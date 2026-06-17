@@ -13,7 +13,7 @@ from io import BytesIO
 from typing import Any
 from urllib.parse import urlparse
 
-from ._protocol import FetchResult
+from ._protocol import FetchOptions, FetchResult
 
 try:
     import paramiko as _paramiko
@@ -30,13 +30,13 @@ class SftpTransport:
     def can_handle(self, uri: str) -> bool:
         return uri.startswith("sftp://")
 
-    def fetch(self, uri: str, **kwargs: object) -> FetchResult:
+    def fetch(self, uri: str, options: FetchOptions | None = None) -> FetchResult:
         if not _PARAMIKO_AVAILABLE:
             raise ImportError("pip install chonk[sftp]")
 
         parsed = urlparse(uri)
         host = parsed.hostname
-        port = kwargs.get("port") or parsed.port or 22
+        port = (options.port if options else None) or parsed.port or 22
         remote_path = parsed.path
 
         assert _paramiko is not None  # guarded by _PARAMIKO_AVAILABLE check above
@@ -47,9 +47,9 @@ class SftpTransport:
             "hostname": host,
             "port": port,
         }
-        username = kwargs.get("username") or parsed.username
-        password = kwargs.get("password") or parsed.password
-        key_path = kwargs.get("key_path")
+        username = (options.username if options else None) or parsed.username
+        password = (options.password if options else None) or parsed.password
+        key_path = options.key_path if options else None
 
         if username:
             connect_kwargs["username"] = username

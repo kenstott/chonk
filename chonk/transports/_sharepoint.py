@@ -70,7 +70,7 @@ import hashlib
 import logging
 from typing import TYPE_CHECKING, Any
 
-from ._protocol import FetchResult
+from ._protocol import FetchOptions, FetchResult
 
 if TYPE_CHECKING:
     pass  # keeps TYPE_CHECKING used
@@ -189,7 +189,7 @@ class SharePointCrawler:
     def can_handle(self, uri: str) -> bool:
         return uri.startswith(f"spitem://{self._url_key}/") or uri == self._site_url
 
-    def fetch(self, uri: str, **__: object) -> FetchResult:
+    def fetch(self, uri: str, options: FetchOptions | None = None) -> FetchResult:
         if uri in self._cache:
             return self._cache[uri]
         if uri in self._pending:

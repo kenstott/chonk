@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import pytest
 
+from chonk.transports._protocol import FetchOptions
+
 sa = pytest.importorskip("sqlalchemy")
 
 
@@ -50,7 +52,7 @@ class TestSqlQueryTransport:
         from chonk.transports import SqlQueryTransport
 
         t = SqlQueryTransport(engine)
-        result = t.fetch("sqlquery://customers", sql="SELECT * FROM customers")
+        result = t.fetch("sqlquery://customers", FetchOptions(sql="SELECT * FROM customers"))
         assert result.detected_mime == "text/csv"
         text = result.data.decode()
         assert "Acme Corp" in text
@@ -60,14 +62,14 @@ class TestSqlQueryTransport:
         from chonk.transports import SqlQueryTransport
 
         t = SqlQueryTransport(engine)
-        result = t.fetch("sqlquery://my_report", sql="SELECT name FROM customers")
+        result = t.fetch("sqlquery://my_report", FetchOptions(sql="SELECT name FROM customers"))
         assert result.source_path == "my_report"
 
     def test_fetch_csv_has_header_row(self, engine):
         from chonk.transports import SqlQueryTransport
 
         t = SqlQueryTransport(engine)
-        result = t.fetch("sqlquery://q", sql="SELECT name, region FROM customers")
+        result = t.fetch("sqlquery://q", FetchOptions(sql="SELECT name, region FROM customers"))
         lines = result.data.decode().splitlines()
         assert lines[0] == "name,region"
 
@@ -83,10 +85,7 @@ class TestSqlQueryTransport:
 
         t = SqlQueryTransport("sqlite:///:memory:")
         # Can construct without error; fetch on empty db still works
-        result = t.fetch(
-            "sqlquery://test",
-            sql="SELECT 1 AS val",
-        )
+        result = t.fetch("sqlquery://test", FetchOptions(sql="SELECT 1 AS val"))
         assert b"val" in result.data
 
     def test_accepts_existing_connection(self, engine):
@@ -94,7 +93,9 @@ class TestSqlQueryTransport:
 
         with engine.connect() as conn:
             t = SqlQueryTransport(conn)
-            result = t.fetch("sqlquery://q", sql="SELECT COUNT(*) AS n FROM customers")
+            result = t.fetch(
+                "sqlquery://q", FetchOptions(sql="SELECT COUNT(*) AS n FROM customers")
+            )
         assert b"n" in result.data
 
     def test_invalid_connection_raises(self):
@@ -102,7 +103,7 @@ class TestSqlQueryTransport:
 
         t = SqlQueryTransport(object())
         with pytest.raises(TypeError, match="connection must be"):
-            t.fetch("sqlquery://q", sql="SELECT 1")
+            t.fetch("sqlquery://q", FetchOptions(sql="SELECT 1"))
 
 
 # ---------------------------------------------------------------------------

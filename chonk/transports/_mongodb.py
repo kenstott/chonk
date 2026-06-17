@@ -51,7 +51,7 @@ import json
 import logging
 from typing import Any
 
-from ._protocol import FetchResult
+from ._protocol import FetchOptions, FetchResult
 from ._schema_infer import DEFAULT_SCHEMA_SAMPLE_SIZE, collect_field_paths, infer_schema_text
 
 _log = logging.getLogger(__name__)
@@ -117,7 +117,7 @@ class MongoCrawler:
     def can_handle(self, uri: str) -> bool:
         return uri.startswith("mongodb://") or uri.startswith("mongodb+srv://")
 
-    def fetch(self, uri: str, **__: object) -> FetchResult:
+    def fetch(self, uri: str, options: FetchOptions | None = None) -> FetchResult:
         if uri not in self._cache:
             raise KeyError(f"MongoCrawler: unknown URI {uri!r} — call crawl() first")
         return self._cache[uri]

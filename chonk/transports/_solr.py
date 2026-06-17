@@ -47,7 +47,7 @@ from __future__ import annotations
 import json
 import logging
 
-from ._protocol import FetchResult
+from ._protocol import FetchOptions, FetchResult
 
 _log = logging.getLogger(__name__)
 
@@ -102,7 +102,7 @@ class SolrCrawler:
     def can_handle(self, uri: str) -> bool:
         return uri.startswith(f"{self._base_url}/{self._collection}")
 
-    def fetch(self, uri: str, **__: object) -> FetchResult:
+    def fetch(self, uri: str, options: FetchOptions | None = None) -> FetchResult:
         if uri not in self._cache:
             raise KeyError(f"SolrCrawler: unknown URI {uri!r} — call crawl() first")
         return self._cache[uri]

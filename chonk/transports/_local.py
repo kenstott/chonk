@@ -12,7 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 from urllib.parse import urlparse
 
-from ._protocol import FetchResult
+from ._protocol import FetchOptions, FetchResult
 
 
 def _is_local_uri(uri: str) -> bool:
@@ -32,7 +32,7 @@ class LocalTransport:
     def can_handle(self, uri: str) -> bool:
         return _is_local_uri(uri)
 
-    def fetch(self, uri: str, **kwargs: object) -> FetchResult:
+    def fetch(self, uri: str, options: FetchOptions | None = None) -> FetchResult:
         if uri.startswith("file://"):
             path = Path(uri[len("file://") :])
         else:

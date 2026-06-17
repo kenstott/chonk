@@ -39,7 +39,7 @@ import logging
 import textwrap
 from typing import Any
 
-from ._protocol import FetchResult
+from ._protocol import FetchOptions, FetchResult  # noqa: F401
 
 _log = logging.getLogger(__name__)
 
@@ -132,7 +132,7 @@ class DatabaseSchemaCrawler:
             uri
         )
 
-    def fetch(self, uri: str, **__: object) -> FetchResult:
+    def fetch(self, uri: str, options: FetchOptions | None = None) -> FetchResult:
         if uri not in self._cache:
             raise KeyError(f"DatabaseSchemaCrawler: unknown URI {uri!r} — call crawl() first")
         return self._cache[uri]

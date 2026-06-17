@@ -9,9 +9,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-from ._protocol import FetchResult
+from ._protocol import FetchOptions, FetchResult
 
 if TYPE_CHECKING:
     import requests
@@ -49,10 +49,10 @@ class HttpTransport:
     def can_handle(self, uri: str) -> bool:
         return uri.startswith("http://") or uri.startswith("https://")
 
-    def fetch(self, uri: str, **kwargs: Any) -> FetchResult:  # noqa: ANN401
+    def fetch(self, uri: str, options: FetchOptions | None = None) -> FetchResult:
         session = _get_http_session()
-        headers = kwargs.get("headers", {})
-        timeout = kwargs.get("timeout", 30)
+        headers = (options.headers or {}) if options else {}
+        timeout = options.timeout if options else 30
 
         response = session.get(uri, headers=headers, timeout=timeout)
         response.raise_for_status()

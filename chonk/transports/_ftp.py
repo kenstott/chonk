@@ -14,7 +14,7 @@ from io import BytesIO
 from typing import cast
 from urllib.parse import urlparse
 
-from ._protocol import FetchResult
+from ._protocol import FetchOptions, FetchResult
 
 
 class FtpTransport:
@@ -23,13 +23,14 @@ class FtpTransport:
     def can_handle(self, uri: str) -> bool:
         return uri.startswith("ftp://")
 
-    def fetch(self, uri: str, **kwargs: object) -> FetchResult:
+    def fetch(self, uri: str, options: FetchOptions | None = None) -> FetchResult:
         parsed = urlparse(uri)
         host = parsed.hostname
-        port = cast("int", kwargs.get("port") or parsed.port or 21)
+        port = cast("int", (options.port if options else None) or parsed.port or 21)
         remote_path = parsed.path
-        username = cast("str", kwargs.get("username") or parsed.username or "anonymous")
-        password = cast("str", kwargs.get("password") or parsed.password or "")
+        opt_user = options.username if options else None
+        username = cast("str", opt_user or parsed.username or "anonymous")
+        password = cast("str", (options.password if options else None) or parsed.password or "")
 
         if host is None:
             raise ValueError(f"FtpTransport: could not parse host from URI: {uri!r}")

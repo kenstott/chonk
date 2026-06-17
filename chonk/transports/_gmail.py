@@ -50,7 +50,7 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from ._protocol import FetchResult
+from ._protocol import FetchOptions, FetchResult
 
 if TYPE_CHECKING:
     pass
@@ -165,7 +165,7 @@ class GmailCrawler:
     def can_handle(self, uri: str) -> bool:
         return uri.startswith("gmail://") or uri.startswith(f"gmsg://{self._url_key}/")
 
-    def fetch(self, uri: str, **__: object) -> FetchResult:
+    def fetch(self, uri: str, options: FetchOptions | None = None) -> FetchResult:
         if uri in self._cache:
             return self._cache[uri]
         # Lazy fetch by message ID
