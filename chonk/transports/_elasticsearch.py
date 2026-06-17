@@ -145,7 +145,7 @@ class ElasticsearchCrawler:
         total = 0
 
         while True:
-            body: dict[str, object] = {
+            body: dict[str, Any] = {
                 "size": self._page_size,
                 "query": self._query,
                 "sort": [{"_id": "asc"}],

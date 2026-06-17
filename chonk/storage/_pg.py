@@ -156,6 +156,9 @@ class PgVectorBackend:
 
         conn = psycopg2.connect(self._dsn)
         conn.autocommit = False
+        with conn.cursor() as cur:
+            cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
+        conn.commit()
         register_vector(conn)
         return conn
 
