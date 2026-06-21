@@ -57,12 +57,17 @@ class Store:
         pinecone_catalog_path: str = ":memory:",
         pinecone_cloud: str = "aws",
         pinecone_region: str = "us-east-1",
+        weaviate_url: str | None = None,
+        weaviate_api_key: str | None = None,
+        weaviate_collection: str = "Chonk",
+        weaviate_catalog_path: str = ":memory:",
     ) -> None:
         """Create a Store.
 
         Args:
             db_path: Path to DuckDB file, or ":memory:" for an in-memory store.
-                     Ignored when ``dsn``, ``qdrant_url``, or ``pinecone_api_key`` is provided.
+                     Ignored when ``dsn``, ``qdrant_url``, ``pinecone_api_key``,
+                     or ``weaviate_url`` is provided.
             embedding_dim: Embedding vector dimension. Must match your model.
             read_only: Open in read-only mode (DuckDB only).
             dsn: PostgreSQL DSN (e.g. ``"postgresql://user:pass@host/db"``).
@@ -78,7 +83,29 @@ class Store:
             pinecone_catalog_path: DuckDB catalog file for Pinecone backend metadata.
             pinecone_cloud: Serverless cloud provider (default: ``"aws"``).
             pinecone_region: Serverless region (default: ``"us-east-1"``).
+            weaviate_url: Weaviate Cloud cluster URL
+                 (e.g. ``"https://abc.c0.us-east-1.aws.weaviate.cloud"``).
+                 When set, uses WeaviateVectorBackend. Takes precedence over
+                 ``pinecone_api_key``, ``qdrant_url``, and ``dsn``.
+            weaviate_api_key: Weaviate Cloud API key.
+            weaviate_collection: Weaviate collection name (default: ``"Chonk"``).
+            weaviate_catalog_path: DuckDB catalog file for Weaviate backend metadata.
         """
+        if weaviate_url is not None:
+            from ._weaviate import WeaviateVectorBackend
+
+            self._db: ThreadLocalDuckDB | None = None
+            self.vector: VectorBackend = WeaviateVectorBackend(  # type: ignore[assignment]
+                cluster_url=weaviate_url,
+                api_key=weaviate_api_key or "",
+                collection=weaviate_collection,
+                embedding_dim=embedding_dim,
+                catalog_path=weaviate_catalog_path,
+            )
+            assert isinstance(self.vector, VectorBackend)
+            self.relational = None  # type: ignore
+            return
+
         if pinecone_api_key is not None:
             from ._pinecone import PineconeVectorBackend
 

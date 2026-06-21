@@ -15,6 +15,7 @@ from ._relational import RelationalStore
 from ._schema import CHUNK_ENTITIES_DDL, EMBEDDINGS_DDL, ENTITIES_DDL, get_ddl
 from ._store import Store
 from ._vector import DuckDBVectorBackend, SyncResult, sync_document
+from ._weaviate import WeaviateVectorBackend
 
 __all__ = [
     "Store",
@@ -24,6 +25,7 @@ __all__ = [
     "QdrantVectorBackend",
     "RelationalStore",
     "VectorBackend",
+    "WeaviateVectorBackend",
     "SyncResult",
     "sync_document",
     "get_ddl",

@@ -1116,9 +1116,11 @@ python demo/graphrag_bench.py run-all --config-dir work/configs/
 
 | Backend | When selected | Install extra |
 |---|---|---|
-| `DuckDBVectorBackend` | default (no `dsn` or `qdrant_url`) | `storage` |
+| `DuckDBVectorBackend` | default (no `dsn`, `qdrant_url`, `pinecone_api_key`, or `weaviate_url`) | `storage` |
 | `PgVectorBackend` | `dsn=` set | `pgvector` |
 | `QdrantVectorBackend` | `qdrant_url=` set | `qdrant` |
+| `PineconeVectorBackend` | `pinecone_api_key=` set | `pinecone` |
+| `WeaviateVectorBackend` | `weaviate_url=` set | `weaviate` |
 
 ### DuckDB (default)
 
@@ -1189,6 +1191,84 @@ store.vector.compact()   # remove orphaned Qdrant points
 ```
 
 **Hybrid search.** When `query_text` is passed to `search()`, the Qdrant backend runs BM25 on the DuckDB catalog sidecar (which holds full chunk text) and merges the results with Qdrant ANN via Reciprocal Rank Fusion — the same hybrid strategy used by `DuckDBVectorBackend`. If the DuckDB `fts` extension is unavailable, the backend falls back silently to pure ANN.
+
+### Pinecone
+
+Vectors and chunk payload stored in a Pinecone serverless index; catalog metadata stored in a DuckDB sidecar file. Suited for fully managed, serverless vector search at any scale.
+
+```bash
+pip install "chonk[pinecone]"
+```
+
+```python
+import os
+store = Store(
+    pinecone_api_key=os.environ["PINECONE_API_KEY"],
+    pinecone_index="chonk",                # default
+    pinecone_catalog_path=":memory:",      # use a file path for persistence
+    pinecone_cloud="aws",                  # default
+    pinecone_region="us-east-1",           # default
+    embedding_dim=1024,
+)
+```
+
+**Persistence.** Pinecone stores vectors durably on Pinecone Cloud. The DuckDB sidecar holds catalog tables. Pass a file path to `pinecone_catalog_path` to persist the catalog across restarts:
+
+```python
+store = Store(
+    pinecone_api_key=os.environ["PINECONE_API_KEY"],
+    pinecone_catalog_path="/data/chonk_pinecone.duckdb",
+)
+```
+
+**`compact()`.** When `Store.delete_domain()` removes catalog entries, the corresponding Pinecone vectors become orphaned (silently excluded from search via catalog join). Call `backend.compact()` to physically delete them:
+
+```python
+store.delete_domain("user:alice:old-project")
+store.vector.compact()   # remove orphaned Pinecone vectors
+```
+
+**Hybrid search.** When `query_text` is passed to `search()`, the Pinecone backend runs BM25 on the DuckDB catalog sidecar and merges with Pinecone ANN via Reciprocal Rank Fusion.
+
+### Weaviate
+
+Vectors and chunk payload stored in Weaviate Cloud; catalog metadata stored in a DuckDB sidecar file. Supports native BM25 and ANN search inside Weaviate, merged via Reciprocal Rank Fusion.
+
+```bash
+pip install "chonk[weaviate]"
+```
+
+```python
+import os
+store = Store(
+    weaviate_url=os.environ["WEAVIATE_URL"],       # https://... cluster URL
+    weaviate_api_key=os.environ["WEAVIATE_API_KEY"],
+    weaviate_collection="Chonk",                   # default
+    weaviate_catalog_path=":memory:",              # use a file path for persistence
+    embedding_dim=1024,
+)
+```
+
+The `weaviate_url` must use the `https://` prefix (e.g. `https://abc123.c0.us-east-1.aws.weaviate.cloud`). Strip any `grpc-` prefix if copied from the Weaviate Cloud console.
+
+**Persistence.** Weaviate stores vectors durably on Weaviate Cloud. Pass a file path to `weaviate_catalog_path` to persist the DuckDB catalog across restarts:
+
+```python
+store = Store(
+    weaviate_url=os.environ["WEAVIATE_URL"],
+    weaviate_api_key=os.environ["WEAVIATE_API_KEY"],
+    weaviate_catalog_path="/data/chonk_weaviate.duckdb",
+)
+```
+
+**`compact()`.** When `Store.delete_domain()` removes catalog entries, the corresponding Weaviate objects become orphaned (excluded from search results via catalog join). Call `backend.compact()` to physically delete them:
+
+```python
+store.delete_domain("user:alice:old-project")
+store.vector.compact()   # remove orphaned Weaviate objects
+```
+
+**Hybrid search.** When `query_text` is passed to `search()`, the Weaviate backend runs both Weaviate's native ANN and native BM25 in parallel, then merges the results via Reciprocal Rank Fusion. No DuckDB `fts` extension is required.
 
 ---
 
