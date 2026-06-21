@@ -36,6 +36,7 @@ htmlcov/
 
 # AIPA server registry (local MCP config — may contain credentials)
 .aipa/
+.aipa.tmp/
 
 # Together AI run state (contains file/job IDs tied to account)
 training/run_metadata.json

@@ -1,0 +1,46 @@
+run:
+  timeout: 5m
+  go: "1.22"
+  # Match Python ruff/black line-length of 100
+  modules-download-mode: readonly
+
+linters:
+  enable:
+    - errcheck       # equivalent to Python's ANN (always handle errors)
+    - govet          # equivalent to pyright standard mode
+    - staticcheck    # equivalent to ruff E/F/B
+    - goimports      # equivalent to ruff I (import ordering)
+    - revive         # equivalent to ruff UP (style modernisation)
+    - gosec          # equivalent to bandit
+    - gocritic       # extra style checks
+    - exhaustive     # exhaustive switch over enums
+    - nilerr         # catch nil error misuse
+    - bodyclose      # ensure HTTP response bodies are closed
+
+  disable:
+    - depguard       # no dependency allow/deny list needed yet
+    - wsl            # whitespace linter too noisy for migration
+
+linters-settings:
+  revive:
+    rules:
+      - name: exported
+        severity: warning
+      - name: unexported-return
+        severity: warning
+  govet:
+    enable-all: true
+  goimports:
+    local-prefixes: github.com/kennethstott/chonk
+
+issues:
+  max-issues-per-linter: 50
+  max-same-issues: 5
+  exclude-rules:
+    # Tests don't need exhaustive error handling
+    - path: "_test\\.go"
+      linters: [errcheck, gosec]
+    # Migration stubs are allowed to be incomplete
+    - path: "internal/"
+      text: "should have comment"
+      linters: [revive]

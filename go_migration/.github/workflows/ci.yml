@@ -1,0 +1,112 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "feat/**", "fix/**"]
+  pull_request:
+    branches: [main]
+
+env:
+  GO_VERSION: "1.22"
+
+jobs:
+  # ── Lint ────────────────────────────────────────────────────────────────────
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=5m
+
+  # ── Vet ─────────────────────────────────────────────────────────────────────
+  vet:
+    name: Vet
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - run: go vet ./...
+
+  # ── Unit Tests + Coverage ────────────────────────────────────────────────────
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Run tests
+        run: |
+          go test -coverprofile=coverage.out -covermode=atomic \
+            -timeout 60s ./internal/... ./cmd/...
+      - name: Check coverage >= 70%
+        run: |
+          go tool cover -func=coverage.out | tail -1
+          pct=$(go tool cover -func=coverage.out | awk '/^total:/ {gsub("%",""); print $3}')
+          echo "Coverage: ${pct}%"
+          if (( $(echo "$pct < 70" | bc -l) )); then
+            echo "FAIL: coverage ${pct}% < 70%"
+            exit 1
+          fi
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          file: coverage.out
+
+  # ── Integration Tests (Postgres + DuckDB) ───────────────────────────────────
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: chonk
+          POSTGRES_PASSWORD: chonk
+          POSTGRES_DB: chonk_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      CHONK_TEST_PG_DSN: "postgresql://chonk:chonk@localhost:5432/chonk_test"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Run integration tests
+        run: |
+          go test -tags integration -timeout 120s ./tests/integration/...
+
+  # ── Build ────────────────────────────────────────────────────────────────────
+  build:
+    name: Build Binary
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - run: go build -o bin/chonk ./cmd/chonk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chonk-linux-amd64
+          path: bin/chonk
