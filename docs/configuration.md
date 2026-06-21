@@ -1110,6 +1110,88 @@ python demo/graphrag_bench.py run-all --config-dir work/configs/
 
 ---
 
+## Storage backends
+
+`Store` supports three storage backends selected by constructor arguments. All three expose the same `VectorBackend` protocol, so retrieval code is identical regardless of which backend is active.
+
+| Backend | When selected | Install extra |
+|---|---|---|
+| `DuckDBVectorBackend` | default (no `dsn` or `qdrant_url`) | `storage` |
+| `PgVectorBackend` | `dsn=` set | `pgvector` |
+| `QdrantVectorBackend` | `qdrant_url=` set | `qdrant` |
+
+### DuckDB (default)
+
+Embedded; zero external infrastructure. Vectors stored in a HNSW index alongside chunks. Suitable for single-process workloads up to ~10 M chunks.
+
+```python
+store = Store("my.duckdb", embedding_dim=1024)
+store = Store(":memory:", embedding_dim=1024)        # ephemeral
+store = Store("my.duckdb", read_only=True)           # concurrent readers
+```
+
+### PostgreSQL + pgvector
+
+Requires a running PostgreSQL instance with `pgvector` installed. Supports hybrid BM25 + ANN search.
+
+```bash
+pip install "chonk[pgvector]"
+```
+
+```python
+store = Store(dsn="postgresql://user:pass@host:5432/mydb", embedding_dim=1024)
+```
+
+The `pgvector` extension is created automatically on first connect if the connecting user has `CREATE EXTENSION` privileges.
+
+### Qdrant
+
+Vectors stored in a Qdrant collection; chunk metadata stored in a DuckDB sidecar file. Suited for large-scale or multi-process deployments.
+
+```bash
+pip install "chonk[qdrant]"
+# Start Qdrant (Docker):
+docker run -p 6333:6333 qdrant/qdrant
+```
+
+```python
+store = Store(
+    qdrant_url="http://localhost:6333",
+    qdrant_collection="chonk",           # default
+    qdrant_catalog_path=":memory:",       # use a file path for persistence
+    embedding_dim=1024,
+)
+```
+
+**Persistence.** Qdrant data is durable on the Qdrant server. The DuckDB sidecar holds the catalog (chunk metadata, documents table, namespace/domain registry). Pass a file path to `qdrant_catalog_path` to persist it across restarts:
+
+```python
+store = Store(
+    qdrant_url="http://localhost:6333",
+    qdrant_catalog_path="/data/chonk_catalog.duckdb",
+)
+```
+
+**Qdrant Cloud.** Pass `qdrant_api_key` with your cloud API key:
+
+```python
+store = Store(
+    qdrant_url="https://my-cluster.qdrant.io",
+    qdrant_api_key="my-api-key",
+)
+```
+
+**`compact()`.** When `Store.delete_domain()` removes entries from the catalog, the corresponding Qdrant points become orphaned (they are silently excluded from search results via a catalog join). Call `backend.compact()` to physically remove them from Qdrant and reclaim storage:
+
+```python
+store.delete_domain("user:alice:old-project")
+store.vector.compact()   # remove orphaned Qdrant points
+```
+
+**Hybrid search.** When `query_text` is passed to `search()`, the Qdrant backend runs BM25 on the DuckDB catalog sidecar (which holds full chunk text) and merges the results with Qdrant ANN via Reciprocal Rank Fusion — the same hybrid strategy used by `DuckDBVectorBackend`. If the DuckDB `fts` extension is unavailable, the backend falls back silently to pure ANN.
+
+---
+
 ## Library usage example
 
 ```python

@@ -48,21 +48,72 @@ class Store:
         embedding_dim: int = 1024,
         read_only: bool = False,
         dsn: str | None = None,
+        qdrant_url: str | None = None,
+        qdrant_collection: str = "chonk",
+        qdrant_catalog_path: str = ":memory:",
+        qdrant_api_key: str | None = None,
+        pinecone_api_key: str | None = None,
+        pinecone_index: str = "chonk",
+        pinecone_catalog_path: str = ":memory:",
+        pinecone_cloud: str = "aws",
+        pinecone_region: str = "us-east-1",
     ) -> None:
         """Create a Store.
 
         Args:
             db_path: Path to DuckDB file, or ":memory:" for an in-memory store.
-                     Ignored when ``dsn`` is provided.
+                     Ignored when ``dsn``, ``qdrant_url``, or ``pinecone_api_key`` is provided.
             embedding_dim: Embedding vector dimension. Must match your model.
             read_only: Open in read-only mode (DuckDB only).
             dsn: PostgreSQL DSN (e.g. ``"postgresql://user:pass@host/db"``).
                  When set, uses PgVectorBackend instead of DuckDB.
+            qdrant_url: Qdrant server URL (e.g. ``"http://localhost:6333"``).
+                 When set, uses QdrantVectorBackend. Takes precedence over ``dsn``.
+            qdrant_collection: Qdrant collection name (default: ``"chonk"``).
+            qdrant_catalog_path: DuckDB catalog file for Qdrant backend metadata.
+            qdrant_api_key: Optional Qdrant Cloud API key.
+            pinecone_api_key: Pinecone API key. When set, uses PineconeVectorBackend.
+                 Takes precedence over ``qdrant_url`` and ``dsn``.
+            pinecone_index: Pinecone index name (default: ``"chonk"``).
+            pinecone_catalog_path: DuckDB catalog file for Pinecone backend metadata.
+            pinecone_cloud: Serverless cloud provider (default: ``"aws"``).
+            pinecone_region: Serverless region (default: ``"us-east-1"``).
         """
+        if pinecone_api_key is not None:
+            from ._pinecone import PineconeVectorBackend
+
+            self._db: ThreadLocalDuckDB | None = None
+            self.vector: VectorBackend = PineconeVectorBackend(  # type: ignore[assignment]
+                api_key=pinecone_api_key,
+                index_name=pinecone_index,
+                embedding_dim=embedding_dim,
+                catalog_path=pinecone_catalog_path,
+                cloud=pinecone_cloud,
+                region=pinecone_region,
+            )
+            assert isinstance(self.vector, VectorBackend)
+            self.relational = None  # type: ignore
+            return
+
+        if qdrant_url is not None:
+            from ._qdrant import QdrantVectorBackend
+
+            self._db: ThreadLocalDuckDB | None = None
+            self.vector: VectorBackend = QdrantVectorBackend(  # type: ignore[assignment]
+                url=qdrant_url,
+                collection=qdrant_collection,
+                embedding_dim=embedding_dim,
+                catalog_path=qdrant_catalog_path,
+                api_key=qdrant_api_key,
+            )
+            assert isinstance(self.vector, VectorBackend)
+            self.relational = None  # type: ignore
+            return
+
         if dsn is not None:
             from ._pg import PgVectorBackend
 
-            self._db: ThreadLocalDuckDB | None = None
+            self._db: ThreadLocalDuckDB | None = None  # type: ignore[no-redef]
             self.vector: VectorBackend = PgVectorBackend(dsn, embedding_dim=embedding_dim)  # type: ignore[assignment]  # property satisfies bool protocol at runtime
             assert isinstance(self.vector, VectorBackend)
             self.relational = None  # type: ignore
