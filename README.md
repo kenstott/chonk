@@ -2255,9 +2255,9 @@ rclone sync work/results r2:chonk/results
 rclone sync work/data    r2:chonk/data
 ```
 
-### ECDR-Bench
+### HARE-Bench
 
-`work/fang2026/` contains ECDR-Bench — an enterprise benchmark designed around
+`work/fang2026/` contains HARE-Bench — an enterprise benchmark designed around
 planner sub-queries against a heterogeneous corpus. The corpus spans four public
 document types that share entity names but use incompatible terminology: SEC filings,
 CVE records, Federal Register notices, and patents. Queries are decomposed into
