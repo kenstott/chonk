@@ -13,6 +13,16 @@ Everything runs through one driver, `demo/graphrag_bench.py`. Every run is fully
 described by a TOML config; the TOML is the source of truth for retrieval mode,
 `k`, rerank, SRR, ADF, domain filters, and generator model.
 
+## What "reproducible" means here
+
+HARE-Bench is reproducible **from a previously generated corpus and index**.
+The corpus and the index stores are published, versioned artifacts, pinned by
+SHA-256. Reproducing the benchmark means regenerating the results (answer
+generation and scoring) from those artifacts with `scripts/hare/reproduce.sh`.
+Producing the corpus and the index (stages 1 and 2 below) is documented and
+scripted, but it is not part of the reproduction claim: source APIs change over
+time, and embeddings vary slightly across hardware.
+
 ## Reproduce HARE-Bench
 
 ```bash

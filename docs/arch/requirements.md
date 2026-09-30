@@ -24,3 +24,4 @@
 
 - **REQ-012** (2026-09-30): HARE-Bench reproducibility: all generated benchmark inputs (corpus, index stores, embedding caches) are published to the public chonk R2 bucket (https://chonk.simpleishard.io/benchmark/fang2026/) and pinned by SHA-256 in the committed `work/fang2026/artifact_manifest.json`. `scripts/hare/reproduce.sh` is the claimed reproduction method: it downloads the published index and only generates and scores results—it does no chunking or indexing.
 - **REQ-013** (2026-09-30): The published benchmark index is built locally (not on a GPU) from a clean git commit; the build environment is recorded in `index_build_info.json` published with the stores.
+- **REQ-014** (2026-09-30): HARE-Bench "reproducible" is defined as reproducing benchmark results from published, SHA-256-pinned corpus and index artifacts; corpus/index generation is scripted and documented but not part of the reproducibility claim.

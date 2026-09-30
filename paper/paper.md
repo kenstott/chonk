@@ -97,8 +97,10 @@ cross-domain retrieval benchmark over SEC filings, CVE records, Federal Register
 notices, and USPTO patents, and to run ablations on GraphRAG-Bench
 [@xiang2025graphragbench]. The benchmark driver, every run configuration, the
 questions, the typed gold schemas, the deterministic scorer, and the scored
-output of each reported run are included in the repository;
-`docs/reproducing-benchmarks.md` explains how to check and re-run them. A paper
+output of each reported run are included in the repository. The benchmark is
+reproducible from a previously generated corpus and index: both are published
+as versioned artifacts pinned by SHA-256, and a single script regenerates and
+scores the results from them (`docs/reproducing-benchmarks.md`). A paper
 describing these results is in preparation.
 
 # AI usage disclosure
