@@ -46,11 +46,14 @@ dependencies = [
     "torch>=2.12,<3",
 ]
 
+[project.scripts]
+chonk = "chonk._cli:main"
+
 [project.urls]
 Homepage = "https://github.com/kenstott/chonk"
 Repository = "https://github.com/kenstott/chonk"
 Issues = "https://github.com/kenstott/chonk/issues"
-Changelog = "https://github.com/kenstott/chonk/releases"
+Changelog = "https://github.com/kenstott/chonk/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 http    = ["requests>=2.34.2,<3", "certifi>=2026.5.20"]
