@@ -1,0 +1,90 @@
+# HARE-Bench (fang2026) ingest config — no-breadcrumb store plus entity records ("gleif").
+#
+# Build (from the repository root, after scripts/hare/artifacts.py download corpus):
+#   python -m chonk build work/configs/ingest/fang2026_nobc_gleif.yaml
+#
+# RECONSTRUCTED. The original config was lost. This file was rebuilt on
+# 2026-09-30 from the corpus layout, chonk.build()'s source types, and the
+# document-name patterns demo/graphrag_bench.py uses to assign ADF domains
+# (%_10k_%, CVE-%, fr_%, ^US[0-9]). Chunk sizes and models match the store
+# name and run configs. Two details are inferred, not recovered: the exact
+# patent SQL, and that breadcrumbs are off
+# everywhere except Federal Register (calibration v7: "fedreg bc" fix).
+# A rebuilt store will be close to, but not byte-identical with, the original.
+#
+# The original store was the nobc store plus entity-resolution documents. The
+# originals were lost; scripts/hare/fetch_entity_records.py rebuilt them on
+# 2026-09-30 from the GLEIF golden copy and SEC EDGAR: the five parents plus
+# every entity GLEIF reports as consolidated under them (173 records). Which
+# entities the original covered, and its document layout, are not known.
+#
+# Domains are not assigned here: graphrag_bench.py tags them by document name
+# when a run enables auto_domain_filter.
+
+store:
+  path: work/fang2026/data/chonk_nobc_1100_2200_gleif.duckdb
+  embedding_dim: 1024
+
+loader:
+  min_chunk_size: 1100
+  max_chunk_size: 2200
+  enrich_context: false
+  extra_extractors: [edgar]
+
+embed:
+  model: BAAI/bge-large-en-v1.5
+  batch_size: 256
+
+# NER and community are built afterwards with graphrag_bench.py build-ner /
+# build-community, matching how the reported stores were produced.
+index:
+  ner: false
+  community: false
+
+sources:
+  # SEC 10-K filings (inline XBRL). Document names: aapl_10k_2025, ...
+  - name: sec_10k
+    type: glob
+    path: work/corpus/10k
+    pattern: "*_10k_*.htm"
+    doc_type: edgar
+
+  # NVD CVE records, one document per CVE. Document names: CVE-2025-46286, ...
+  - name: cve
+    type: json_array
+    path: work/corpus/cve/cve_fang_2026_combined.json
+    array_field: vulnerabilities
+    id_path: cve.id
+
+  # Federal Register notices and rules. Document names: fr_2026-00345, ...
+  - name: fed_reg
+    type: glob
+    path: work/corpus/fedreg
+    pattern: "*.html"
+    name_prefix: fr_
+    enrich_context: true      # calibration v7 "fedreg bc" fix
+
+  # USPTO patent grants, one document per patent. Document names: US12186645, ...
+  # The patent number is inserted under the title so it is in the chunk content.
+  - name: patents
+    type: sql
+    connection: duckdb:///work/corpus/patents/patents_fang_2025.duckdb
+    name_col: name
+    content_col: content
+    query: |
+      SELECT 'US' || patent_id AS name,
+             regexp_replace(content, '^(# [^\n]*\n)',
+                            '\1' || chr(10) || '**Patent Number:** US' || patent_id || chr(10))
+               AS content
+      FROM v_patent_doc
+      ORDER BY patent_id
+
+  # Entity-resolution records: one document per legal entity, merging the GLEIF
+  # LEI record and the SEC EDGAR record. Document names: gleif_apple_inc, ...
+  # No ADF domain matches these names, so they carry no domain; the *_no_gleif
+  # run configs exclude them by restricting domain_ids.
+  - name: gleif
+    type: glob
+    path: work/corpus/gleif
+    pattern: "*.md"
+    name_prefix: gleif_
