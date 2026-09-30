@@ -12,8 +12,9 @@ include breaking API changes.
   `python -m chonk build`).
 - HARE-Bench reproduction pipeline under `scripts/hare/`: publish the corpus
   (stage 1) and the GPU-built index (stage 2) to the public bucket, then
-  `reproduce.sh` downloads the index, verifies it against
-  `work/fang2026/artifact_manifest.json`, and regenerates the results.
+  `reproduce.sh` downloads the index, verifies it against the bucket's
+  `manifest.json`, and regenerates the results. The bucket is configured
+  through environment variables.
 - HARE-Bench ingest configs (`work/configs/ingest/`).
 - `scripts/hare/fetch_entity_records.py`: builds the legal-entity records from
   the GLEIF golden copy and SEC EDGAR.

@@ -2,9 +2,9 @@
 # Reproduce the HARE-Bench results from the published index.
 #
 # This is the reproduction method. It downloads the published index stores and
-# embedding caches, verifies each file against the committed SHA-256 manifest,
-# generates and scores answers for every run config, and compares the scores
-# with the reported ones. It does no chunking or indexing: the index is a
+# embedding caches from the artifact bucket, verifies each file against the
+# bucket's manifest.json, generates and scores answers for every run config, and
+# compares the scores with the reported ones. It does no chunking or indexing: the index is a
 # published artifact (see scripts/hare/02_publish_index.sh).
 #
 # Usage:
@@ -13,7 +13,9 @@
 #   --config-dir   run configs to execute (default: work/configs/fang, all runs)
 #   --out-dir      working directory (default: work/reproduce)
 #
-# Needs OPENAI_API_KEY (generator, ADF classifier), in the environment or .env.
+# Needs, in the environment or .env: OPENAI_API_KEY (generator, ADF classifier)
+# and HARE_PUBLIC_URL (public bucket URL; see .env.example), or HARE_BUCKET_URL
+# with AWS_* credentials to download through the S3 API.
 # Each 500-question run with gpt-4o-mini costs roughly US$5-10.
 set -euo pipefail
 

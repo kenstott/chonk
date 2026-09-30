@@ -16,8 +16,8 @@ described by a TOML config; the TOML is the source of truth for retrieval mode,
 ## What "reproducible" means here
 
 HARE-Bench is reproducible **from a previously generated corpus and index**.
-The corpus and the index stores are published, versioned artifacts, pinned by
-SHA-256. Reproducing the benchmark means regenerating the results (answer
+The corpus and the index stores are published artifacts in a bucket, pinned by
+SHA-256 in the bucket's `manifest.json`. Reproducing the benchmark means regenerating the results (answer
 generation and scoring) from those artifacts with `scripts/hare/reproduce.sh`.
 
 The index can also be rebuilt from the published corpus (stage 2 below), but
@@ -32,14 +32,15 @@ The corpus is not regenerated at all: its source APIs change over time.
 ```bash
 uv sync --all-extras --group dev
 uv run python -m spacy download en_core_web_sm
-cp .env.example .env              # set OPENAI_API_KEY (generator and ADF classifier)
+cp .env.example .env              # set OPENAI_API_KEY (generator and ADF classifier);
+                                  # HARE_PUBLIC_URL already points at the published artifacts
 
 scripts/hare/reproduce.sh         # every run in work/configs/fang
 ```
 
-`reproduce.sh` is the reproduction method. It downloads the published index
-stores and embedding caches, checks every file against the SHA-256 digests in
-`work/fang2026/artifact_manifest.json`, generates and scores answers for every
+`reproduce.sh` is the reproduction method. It downloads `manifest.json` and the
+index stores and embedding caches from the bucket, checks every file against the
+manifest's SHA-256 digests, generates and scores answers for every
 run config into `work/reproduce/`, and prints each run's reported and
 reproduced scores side by side. It does no chunking or indexing; the index is a
 published artifact.
@@ -65,25 +66,36 @@ A GPU is recommended for embedding and reranking.
 
 ## How the artifacts are produced
 
-All generated files are published to the chonk bucket on Cloudflare R2 and
-served at `https://chonk.simpleishard.io/benchmark/fang2026/`. The committed
-manifest pins every file by SHA-256, so a download either matches exactly or
-fails.
+Initialization and benchmarking are independent activities. The bucket is the
+only thing they share: initialization writes the corpus, the index, and
+`manifest.json` to it; the benchmark reads them from it. Nothing passes through
+git.
 
-| Stage | Script | Output | R2 prefix |
+| Activity | Script | Reads | Writes to the bucket |
 |---|---|---|---|
-| 1 | `scripts/hare/01_publish_sources.sh` | Corpus: source documents and entity records | `corpus/` |
-| 2 | `scripts/hare/02_publish_index.sh` | Index stores and embedding caches, built from the published corpus | `index/` |
-| 3 | `scripts/hare/reproduce.sh` | Benchmark results from the published index, compared with the reported scores | — |
+| Initialization, stage 1 | `scripts/hare/01_publish_sources.sh` | bucket (`corpus/`), GLEIF, SEC EDGAR | `corpus/`, `manifest.json` |
+| Initialization, stage 2 | `scripts/hare/02_publish_index.sh` | bucket (`corpus/`) | `index/`, `manifest.json` |
+| Benchmark | `scripts/hare/reproduce.sh` | bucket (`index/`, `manifest.json`) | — |
 
-Stages 1 and 2 are for maintainers and need rclone write access to the bucket.
-Stage 1 needs `SEC_USER_AGENT="Name email@example.com"` (SEC fair-access
-policy). Stage 2 builds the index on the local machine and records the build
-environment (platform, accelerator, library versions, git commit) in
-`index_build_info.json`, published with the stores; embeddings differ slightly
-across hardware, so the published stores are the reference. `--gpu` builds on
-a Vultr GPU instance instead (needs `VULTR_API_KEY`). Each stage rewrites
-`work/fang2026/artifact_manifest.json`, which is then committed.
+The bucket and its credentials come from the environment (or `.env`):
+
+| Variable | Used by | Purpose |
+|---|---|---|
+| `HARE_BUCKET_URL` | initialization | `s3://<bucket>/<prefix>` to publish to |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | initialization | S3 credentials |
+| `AWS_ENDPOINT_OVERRIDE`, `AWS_REGION` | initialization | S3-compatible endpoint, e.g. Cloudflare R2 (`auto` region) |
+| `HARE_PUBLIC_URL` | benchmark | HTTPS URL serving the same prefix; no credentials needed |
+| `SEC_USER_AGENT` | stage 1 | `"Name email@example.com"` (SEC fair-access policy) |
+
+Without `HARE_PUBLIC_URL`, downloads use the S3 API and credentials. The
+published artifacts are at `s3://chonk/benchmark/fang2026` (Cloudflare R2),
+served publicly at `https://chonk.simpleishard.io/benchmark/fang2026/`.
+
+Stage 2 builds the index on the local machine and records the build environment
+(platform, accelerator, library versions, git commit, uncommitted paths) in
+`index_build_info.json`, published with the stores. `--gpu` builds on a Vultr
+GPU instance instead (needs `VULTR_API_KEY`). Each stage uploads its files
+first and `manifest.json` last, so the manifest never names a missing file.
 
 ### Corpus (`work/corpus/`)
 
