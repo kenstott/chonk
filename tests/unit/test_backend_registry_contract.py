@@ -1,7 +1,6 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 9e2f7a13-58cb-4d06-a3e1-70b4d9c25f8e
 
-"""Backend parity contract for the document registry (fixed.md phase 5).
+"""Backend parity contract for the document registry.
 
 Every backend must delete its ``documents`` registry row along with the chunks.
 A surviving row makes the next :func:`sync_document` report "skipped" for a

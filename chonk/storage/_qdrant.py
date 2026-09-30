@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: d4e5f6a7-b8c9-0d1e-2f3a-4b5c6d7e8f9a
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Qdrant vector backend for chonk.
 

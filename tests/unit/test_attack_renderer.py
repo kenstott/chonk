@@ -1,5 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 05b3fbe3-7835-4c56-ad65-fe5ebd140b21
 """Tests for AttackRenderer — MITRE ATT&CK STIX bundle rendering."""
 
 from __future__ import annotations
@@ -132,17 +131,13 @@ class TestIterTechniques:
         assert "T1055" in ids
 
     def test_excludes_revoked(self):
-        bundle = {
-            "objects": [{**_TECHNIQUE, "revoked": True}, _PARENT_TECH]
-        }
+        bundle = {"objects": [{**_TECHNIQUE, "revoked": True}, _PARENT_TECH]}
         techs, _ = _iter_techniques(bundle)
         ids = {_ext_id(t) for t in techs}
         assert "T1055.011" not in ids
 
     def test_excludes_deprecated(self):
-        bundle = {
-            "objects": [{**_TECHNIQUE, "x_mitre_deprecated": True}, _PARENT_TECH]
-        }
+        bundle = {"objects": [{**_TECHNIQUE, "x_mitre_deprecated": True}, _PARENT_TECH]}
         techs, _ = _iter_techniques(bundle)
         ids = {_ext_id(t) for t in techs}
         assert "T1055.011" not in ids
@@ -217,7 +212,9 @@ class TestAttackRenderer:
         loader = DocumentLoader(enrich_context=False)
         chunks = loader.load_bytes(_bytes(_BUNDLE), name="attack", doc_type="json")
         chunks = self.r.annotate(chunks, _BUNDLE)
-        annotated = [c for c in chunks if c.source_detail and c.source_detail.get("attack_id") == "T1055.011"]
+        annotated = [
+            c for c in chunks if c.source_detail and c.source_detail.get("attack_id") == "T1055.011"
+        ]
         assert annotated, "no chunk annotated with T1055.011"
         d = annotated[0].source_detail
         assert d["name"] == "Extra Window Memory Injection"
@@ -237,9 +234,7 @@ class TestAttackRenderer:
         assert chunk.source_detail["attack_id"] == "T1055.011"
 
     def test_annotate_no_match_leaves_unchanged(self):
-        chunk = DocumentChunk(
-            document_name="x", content="nothing here", chunk_index=0
-        )
+        chunk = DocumentChunk(document_name="x", content="nothing here", chunk_index=0)
         self.r.annotate([chunk], _BUNDLE)
         assert chunk.source_detail is None
 

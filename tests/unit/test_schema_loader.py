@@ -1,13 +1,12 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 2f95cebf-bc3f-41d2-a9bb-c3ac97191b49
 
 """Unit tests for load_schema() and load_api() — Phase 1.2."""
+
 from __future__ import annotations
 
 import pytest
 
-from chonk import DocumentLoader, ColumnMeta, TableMeta, FieldMeta, EndpointMeta
-from chonk.models import DocumentChunk
+from chonk import ColumnMeta, DocumentLoader, EndpointMeta, FieldMeta, TableMeta
 
 
 @pytest.fixture
@@ -18,6 +17,7 @@ def loader():
 # ---------------------------------------------------------------------------
 # load_schema
 # ---------------------------------------------------------------------------
+
 
 class TestLoadSchema:
     def test_table_only_produces_one_chunk(self, loader):
@@ -86,8 +86,10 @@ class TestLoadSchema:
             columns=[
                 ColumnMeta(name="id", data_type="INTEGER", is_primary_key=True),
                 ColumnMeta(
-                    name="order_id", data_type="INTEGER",
-                    is_foreign_key=True, foreign_key_ref="orders.id",
+                    name="order_id",
+                    data_type="INTEGER",
+                    is_foreign_key=True,
+                    foreign_key_ref="orders.id",
                 ),
             ],
         )
@@ -110,7 +112,9 @@ class TestLoadSchema:
     def test_multiple_tables_all_chunks_present(self, loader):
         tables = [
             TableMeta(name="a", source_db="db", columns=[ColumnMeta("x", "TEXT")]),
-            TableMeta(name="b", source_db="db", columns=[ColumnMeta("y", "INT"), ColumnMeta("z", "INT")]),
+            TableMeta(
+                name="b", source_db="db", columns=[ColumnMeta("y", "INT"), ColumnMeta("z", "INT")]
+            ),
         ]
         chunks = loader.load_schema(tables)
         assert len(chunks) == 2 + 3  # (1+1) + (1+2)
@@ -123,18 +127,20 @@ class TestLoadSchema:
 
     def test_chunk_index_ordering(self, loader):
         table = TableMeta(
-            name="t", source_db="db",
+            name="t",
+            source_db="db",
             columns=[ColumnMeta("a", "TEXT"), ColumnMeta("b", "TEXT")],
         )
         chunks = loader.load_schema([table])
-        assert chunks[0].chunk_index == 0   # table
-        assert chunks[1].chunk_index == 1   # first column
-        assert chunks[2].chunk_index == 2   # second column
+        assert chunks[0].chunk_index == 0  # table
+        assert chunks[1].chunk_index == 1  # first column
+        assert chunks[2].chunk_index == 2  # second column
 
 
 # ---------------------------------------------------------------------------
 # load_api
 # ---------------------------------------------------------------------------
+
 
 class TestLoadApi:
     def test_endpoint_only_produces_one_chunk(self, loader):
@@ -238,7 +244,9 @@ class TestLoadApi:
     def test_multiple_endpoints_all_chunks_present(self, loader):
         endpoints = [
             EndpointMeta(path="/a", source_api="api", fields=[FieldMeta("x", "string")]),
-            EndpointMeta(path="/b", source_api="api", fields=[FieldMeta("y", "int"), FieldMeta("z", "int")]),
+            EndpointMeta(
+                path="/b", source_api="api", fields=[FieldMeta("y", "int"), FieldMeta("z", "int")]
+            ),
         ]
         chunks = loader.load_api(endpoints)
         assert len(chunks) == 2 + 3  # (1+1) + (1+2)

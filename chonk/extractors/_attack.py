@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: d4e5f6a7-b8c9-0123-4567-89abcdef0123
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """AttackRenderer — renders MITRE ATT&CK STIX bundles into per-technique markdown."""
 

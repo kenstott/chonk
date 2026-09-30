@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 8b15486c-73ce-4da3-b9da-9980fbc8b362
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """
 Contextual vs Naive RAG — demonstration of the chonk thesis.

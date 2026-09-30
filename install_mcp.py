@@ -44,10 +44,12 @@ from pathlib import Path
 # Config file locations
 # ---------------------------------------------------------------------------
 
+
 def _claude_config_path() -> Path:
     system = platform.system()
     if system == "Darwin":
-        return Path.home() / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
+        app_support = Path.home() / "Library" / "Application Support"
+        return app_support / "Claude" / "claude_desktop_config.json"
     if system == "Windows":
         return Path(os.environ["APPDATA"]) / "Claude" / "claude_desktop_config.json"
     return Path.home() / ".config" / "Claude" / "claude_desktop_config.json"
@@ -132,6 +134,7 @@ _TYPED_HOSTS = {"claude-code", "claude-code-user", "copilot", "vscode"}
 # Server script auto-detection
 # ---------------------------------------------------------------------------
 
+
 def _find_server_script() -> str:
     candidate = Path(__file__).parent / "mcp_chonk_server.py"
     if candidate.exists():
@@ -151,6 +154,7 @@ def _find_python() -> str:
 # ---------------------------------------------------------------------------
 # Config builders
 # ---------------------------------------------------------------------------
+
 
 def _build_http_entry(url: str, api_key: str | None, typed: bool) -> dict:
     entry: dict = {"url": url}
@@ -185,6 +189,7 @@ def _build_stdio_entry(
 # ---------------------------------------------------------------------------
 # Read / write config
 # ---------------------------------------------------------------------------
+
 
 def _read_config(path: Path) -> dict:
     if not path.exists():
@@ -230,6 +235,7 @@ def _existing_entry(config: dict, name: str, host: str) -> dict | None:
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(

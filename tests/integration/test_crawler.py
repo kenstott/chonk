@@ -1,22 +1,17 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 19441863-65bd-40e7-8cdb-0871d596ab60
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Integration tests for WebCrawler, DirectoryCrawler, and DocumentLoader crawl methods."""
+
 from __future__ import annotations
 
 import textwrap
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
-from chonk.transports import Crawler, DirectoryCrawler, WebCrawler
 from chonk import DocumentLoader
-
+from chonk.transports import Crawler, DirectoryCrawler, WebCrawler
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
@@ -55,6 +50,7 @@ def _fake_http_get(url: str, timeout: int):
 # Crawler Protocol
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestCrawlerProtocol:
     def test_web_crawler_satisfies_protocol(self):
         assert isinstance(WebCrawler(), Crawler)
@@ -66,6 +62,7 @@ class TestCrawlerProtocol:
         class MyCustomCrawler:
             def can_handle(self, uri: str) -> bool:
                 return uri.startswith("custom://")
+
             def crawl(self, uri: str, **kwargs) -> list[str]:
                 return [f"{uri}/doc1", f"{uri}/doc2"]
 
@@ -75,6 +72,7 @@ class TestCrawlerProtocol:
 # ─────────────────────────────────────────────────────────────────────────────
 # WebCrawler
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestWebCrawler:
     def test_can_handle_http(self):
@@ -131,6 +129,7 @@ class TestWebCrawler:
 
     def test_crawl_root_fetch_failure_returns_empty(self):
         from urllib.error import URLError
+
         with patch("chonk.transports._web_crawler._http_get", side_effect=URLError("timeout")):
             c = WebCrawler()
             urls = c.crawl("https://unreachable.example.com/")
@@ -146,6 +145,7 @@ class TestWebCrawler:
 # ─────────────────────────────────────────────────────────────────────────────
 # DirectoryCrawler — local
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestDirectoryCrawler:
     def test_can_handle_local_path(self):
@@ -255,6 +255,7 @@ class TestDirectoryCrawler:
 # DocumentLoader crawl methods
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestDocumentLoaderCrawl:
     def test_load_directory(self, tmp_path):
         (tmp_path / "doc1.md").write_text("# Title\n\nSome content here.")
@@ -274,15 +275,20 @@ class TestDocumentLoaderCrawl:
         doc_names = {c.document_name for c in chunks}
         assert "doc" in doc_names
         # txt should not appear
-        txt_chunks = [c for c in chunks if c.document_name == "doc" and c.content.startswith("Text")]
+        txt_chunks = [
+            c for c in chunks if c.document_name == "doc" and c.content.startswith("Text")
+        ]
         assert not txt_chunks
 
     def test_load_directory_with_custom_crawler(self, tmp_path):
         (tmp_path / "custom.md").write_text("# Custom crawl\n\nCustom crawl content.")
 
         class FixedCrawler:
-            def can_handle(self, uri): return True
-            def crawl(self, uri, **kw): return [str(tmp_path / "custom.md")]
+            def can_handle(self, uri):
+                return True
+
+            def crawl(self, uri, **kw):
+                return [str(tmp_path / "custom.md")]
 
         loader = DocumentLoader()
         chunks = loader.load_directory(str(tmp_path), crawler=FixedCrawler())
@@ -310,8 +316,11 @@ class TestDocumentLoaderCrawl:
             return FetchResult(data=body, detected_mime=ct, source_path=uri)
 
         class FixedCrawler:
-            def can_handle(self, uri): return True
-            def crawl(self, uri, **kw): return ["https://example.com/page1"]
+            def can_handle(self, uri):
+                return True
+
+            def crawl(self, uri, **kw):
+                return ["https://example.com/page1"]
 
         with patch("chonk.transports._http.HttpTransport.fetch", side_effect=fake_transport_fetch):
             loader = DocumentLoader()
@@ -323,7 +332,9 @@ class TestDocumentLoaderCrawl:
         good.write_text("# Good document\n\nGood document content.")
 
         class MixedCrawler:
-            def can_handle(self, uri): return True
+            def can_handle(self, uri):
+                return True
+
             def crawl(self, uri, **kw):
                 return [str(good), "/nonexistent/bad.md"]
 
@@ -334,6 +345,7 @@ class TestDocumentLoaderCrawl:
 
     def test_load_crawl_auto_selects_web_crawler_for_http(self):
         from urllib.error import URLError
+
         with patch(
             "chonk.transports._web_crawler._http_get",
             side_effect=URLError("connection refused"),

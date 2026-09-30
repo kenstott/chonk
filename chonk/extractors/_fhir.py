@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: e5f6a7b8-c9d0-1234-ef01-234567890123
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """FhirRenderer — renders FHIR R4 Bundle JSON into per-resource markdown."""
 

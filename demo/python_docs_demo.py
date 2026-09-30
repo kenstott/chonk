@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: faa0c06a-012a-4f3a-89d4-e4d2ac58dec6
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """
 Python Docs — Contextual vs Naive RAG on real-world documentation.

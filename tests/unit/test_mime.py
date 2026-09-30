@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 8a4af826-045e-442b-853e-228c1f714e18
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Tests for chonk.extractors._mime MIME normalization and detection."""
 
@@ -15,29 +10,36 @@ from chonk.extractors._mime import (
     normalize_type,
 )
 
-
 # =============================================================================
 # normalize_type
 # =============================================================================
+
 
 class TestNormalizeType:
     def test_pdf_mime(self):
         assert normalize_type("application/pdf") == "pdf"
 
     def test_docx_mime(self):
-        assert normalize_type(
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        ) == "docx"
+        assert (
+            normalize_type(
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )
+            == "docx"
+        )
 
     def test_xlsx_mime(self):
-        assert normalize_type(
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        ) == "xlsx"
+        assert (
+            normalize_type("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            == "xlsx"
+        )
 
     def test_pptx_mime(self):
-        assert normalize_type(
-            "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-        ) == "pptx"
+        assert (
+            normalize_type(
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            )
+            == "pptx"
+        )
 
     def test_short_alias_pdf(self):
         assert normalize_type("pdf") == "pdf"
@@ -84,6 +86,7 @@ class TestNormalizeType:
 # =============================================================================
 # detect_type_from_source
 # =============================================================================
+
 
 class TestDetectTypeFromSource:
     def test_pdf_extension(self):
@@ -143,6 +146,7 @@ class TestDetectTypeFromSource:
 # =============================================================================
 # is_binary_type
 # =============================================================================
+
 
 class TestIsBinaryType:
     def test_pdf_is_binary(self):

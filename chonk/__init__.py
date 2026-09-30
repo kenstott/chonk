@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: d433c31c-035d-4fc5-a7da-9e6596502656
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Chunky Monkey — a dairy-free RAG pipeline for delicious semantic similarity, clustering and NER."""  # noqa: E501
 

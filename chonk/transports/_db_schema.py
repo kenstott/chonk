@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 3d8f1a2b-5e7c-4f9d-b0a3-6c2e8f4d1b9a
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """DatabaseSchemaCrawler — index stored procedures, views, and triggers via SQLAlchemy.
 

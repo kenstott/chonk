@@ -1,12 +1,6 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 75e44fdf-178e-4130-b329-f5e639aa0819
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Tests for chonk.context — enrich_chunk and enrich_chunks."""
-
 
 from chonk.context import enrich_chunk, enrich_chunks
 from chonk.models import DocumentChunk
@@ -60,9 +54,13 @@ class TestEnrichChunk:
 
     def test_all_other_fields_preserved(self):
         chunk = DocumentChunk(
-            document_name="my_doc", content="Content here.",
-            section=["Sec A"], chunk_index=5,
-            source_offset=100, source_length=50, chunk_type="schema",
+            document_name="my_doc",
+            content="Content here.",
+            section=["Sec A"],
+            chunk_index=5,
+            source_offset=100,
+            source_length=50,
+            chunk_type="schema",
             breadcrumb="[my_doc > Sec A]",
         )
         result = enrich_chunk(chunk)
@@ -86,13 +84,17 @@ class TestEnrichChunk:
 
     def test_document_name_disambiguates_identical_sections(self):
         chunk_a = DocumentChunk(
-            document_name="techcorp_msa", content="…cap is 12 months fees…",
-            section=["Limitation of Liability"], chunk_index=0,
+            document_name="techcorp_msa",
+            content="…cap is 12 months fees…",
+            section=["Limitation of Liability"],
+            chunk_index=0,
             breadcrumb="[techcorp_msa > Limitation of Liability]",
         )
         chunk_b = DocumentChunk(
-            document_name="cloudsolutions_agreement", content="…cap is 12 months fees…",
-            section=["Limitation of Liability"], chunk_index=0,
+            document_name="cloudsolutions_agreement",
+            content="…cap is 12 months fees…",
+            section=["Limitation of Liability"],
+            chunk_index=0,
             breadcrumb="[cloudsolutions_agreement > Limitation of Liability]",
         )
         result_a = enrich_chunk(chunk_a)
@@ -121,7 +123,9 @@ class TestEnrichChunks:
         chunks = [
             _make_chunk(breadcrumb="[doc_a > Intro]", content="Has a section.", doc_name="doc_a"),
             _make_chunk(breadcrumb="[doc_a]", content="No section here.", doc_name="doc_a"),
-            _make_chunk(breadcrumb="[doc_a > Methods]", content="Another section.", doc_name="doc_a"),
+            _make_chunk(
+                breadcrumb="[doc_a > Methods]", content="Another section.", doc_name="doc_a"
+            ),
         ]
         results = enrich_chunks(chunks)
         assert "doc_a" in results[0].embedding_content
@@ -146,8 +150,10 @@ class TestEnrichChunks:
     def test_all_chunks_include_document_name(self):
         chunks = [
             DocumentChunk(
-                document_name="techcorp_msa", content=f"Clause {i} text.",
-                section=[f"Section {i}"], chunk_index=i,
+                document_name="techcorp_msa",
+                content=f"Clause {i} text.",
+                section=[f"Section {i}"],
+                chunk_index=i,
                 breadcrumb=f"[techcorp_msa > Section {i}]",
             )
             for i in range(5)
@@ -184,26 +190,63 @@ class TestDocumentChunkSourceDerivation:
         assert DocumentChunk(document_name="d", content="c", chunk_index=0).source == "document"
 
     def test_db_table_yields_schema(self):
-        assert DocumentChunk(document_name="d", content="c", chunk_index=0, chunk_type="db_table").source == "schema"
+        assert (
+            DocumentChunk(
+                document_name="d", content="c", chunk_index=0, chunk_type="db_table"
+            ).source
+            == "schema"
+        )
 
     def test_db_column_yields_schema(self):
-        assert DocumentChunk(document_name="d", content="c", chunk_index=0, chunk_type="db_column").source == "schema"
+        assert (
+            DocumentChunk(
+                document_name="d", content="c", chunk_index=0, chunk_type="db_column"
+            ).source
+            == "schema"
+        )
 
     def test_db_schema_yields_schema(self):
-        assert DocumentChunk(document_name="d", content="c", chunk_index=0, chunk_type="db_schema").source == "schema"
+        assert (
+            DocumentChunk(
+                document_name="d", content="c", chunk_index=0, chunk_type="db_schema"
+            ).source
+            == "schema"
+        )
 
     def test_api_endpoint_yields_api(self):
-        assert DocumentChunk(document_name="d", content="c", chunk_index=0, chunk_type="api_endpoint").source == "api"
+        assert (
+            DocumentChunk(
+                document_name="d", content="c", chunk_index=0, chunk_type="api_endpoint"
+            ).source
+            == "api"
+        )
 
     def test_api_graphql_query_yields_api(self):
-        assert DocumentChunk(document_name="d", content="c", chunk_index=0, chunk_type="api_graphql_query").source == "api"
+        assert (
+            DocumentChunk(
+                document_name="d", content="c", chunk_index=0, chunk_type="api_graphql_query"
+            ).source
+            == "api"
+        )
 
     def test_legacy_graphql_query_yields_api(self):
-        assert DocumentChunk(document_name="d", content="c", chunk_index=0, chunk_type="graphql_query").source == "api"
+        assert (
+            DocumentChunk(
+                document_name="d", content="c", chunk_index=0, chunk_type="graphql_query"
+            ).source
+            == "api"
+        )
 
     def test_legacy_graphql_mutation_yields_api(self):
-        assert DocumentChunk(document_name="d", content="c", chunk_index=0, chunk_type="graphql_mutation").source == "api"
+        assert (
+            DocumentChunk(
+                document_name="d", content="c", chunk_index=0, chunk_type="graphql_mutation"
+            ).source
+            == "api"
+        )
 
     def test_explicit_source_not_overridden(self):
-        chunk = DocumentChunk(document_name="d", content="c", chunk_index=0, chunk_type="db_table", source="custom")
+        chunk = DocumentChunk(
+            document_name="d", content="c", chunk_index=0, chunk_type="db_table", source="custom"
+        )
         assert chunk.source == "custom"

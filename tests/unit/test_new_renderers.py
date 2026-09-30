@@ -1,5 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: c4094ce1-c0a4-4d01-a98c-c10e937c81ef
 """Tests for CweRenderer, NistRenderer, ClinicalTrialRenderer, FdaLabelRenderer, FhirRenderer."""
 
 from __future__ import annotations
@@ -69,7 +68,10 @@ _NIST_BUNDLE = {
                         "parts": [
                             {
                                 "name": "statement",
-                                "prose": "The organization develops and implements access control policies.",
+                                "prose": (
+                                    "The organization develops and implements "
+                                    "access control policies."
+                                ),
                                 "parts": [],
                             }
                         ],
@@ -103,9 +105,7 @@ _STUDY = {
         },
         "conditionsModule": {"conditions": ["COVID-19"]},
         "designModule": {"phases": ["PHASE3"]},
-        "armsInterventionsModule": {
-            "interventions": [{"type": "DRUG", "name": "Remdesivir"}]
-        },
+        "armsInterventionsModule": {"interventions": [{"type": "DRUG", "name": "Remdesivir"}]},
         "eligibilityModule": {
             "eligibilityCriteria": "Inclusion Criteria: Adults >= 18 years.",
             "sex": "ALL",
@@ -130,7 +130,9 @@ _FDA_LABEL = {
         "application_number": ["NDA019837"],
     },
     "indications_and_usage": ["For temporary relief of minor aches and pains."],
-    "dosage_and_administration": ["Adults and children 12 years and over: take 2 tablets every 4 to 6 hours."],
+    "dosage_and_administration": [
+        "Adults and children 12 years and over: take 2 tablets every 4 to 6 hours."
+    ],
     "warnings": ["Liver warning: This product contains acetaminophen."],
 }
 
@@ -295,9 +297,7 @@ class TestNistRenderer:
         assert chunk.source_detail["group"] == "Access Control"
 
     def test_annotate_sets_rendered_source(self):
-        chunk = DocumentChunk(
-            document_name="nist", content="AC-1 access control", chunk_index=0
-        )
+        chunk = DocumentChunk(document_name="nist", content="AC-1 access control", chunk_index=0)
         self.r.annotate([chunk], _NIST_BUNDLE)
         assert chunk.rendered_source is not None
         assert "AC-1" in chunk.rendered_source
@@ -374,9 +374,7 @@ class TestClinicalTrialRenderer:
         assert "COVID-19" in chunk.source_detail["conditions"]
 
     def test_annotate_sets_rendered_source(self):
-        chunk = DocumentChunk(
-            document_name="ct", content="NCT04280705 safety", chunk_index=0
-        )
+        chunk = DocumentChunk(document_name="ct", content="NCT04280705 safety", chunk_index=0)
         self.r.annotate([chunk], _CT_BUNDLE)
         assert chunk.rendered_source is not None
         assert "NCT04280705" in chunk.rendered_source
@@ -445,9 +443,7 @@ class TestFdaLabelRenderer:
         assert chunk.source_detail["brand_name"] == "Tylenol"
 
     def test_annotate_sets_rendered_source(self):
-        chunk = DocumentChunk(
-            document_name="fda", content="NDA019837 pain relief", chunk_index=0
-        )
+        chunk = DocumentChunk(document_name="fda", content="NDA019837 pain relief", chunk_index=0)
         self.r.annotate([chunk], _FDA_BUNDLE)
         assert chunk.rendered_source is not None
         assert "Tylenol" in chunk.rendered_source

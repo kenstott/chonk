@@ -1,33 +1,35 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 1246319b-6461-4ccc-a574-6b7a5972e749
 
 """Unit tests for ParquetExtractor and load_structured_file() — Phase 1.3."""
+
 from __future__ import annotations
 
 import io
 import json
-import tempfile
 import os
+import tempfile
 
 import pytest
 
 from chonk import DocumentLoader
 from chonk.extractors._parquet import ParquetExtractor
 
-
 # ---------------------------------------------------------------------------
 # Fixtures — build tiny in-memory files
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def parquet_bytes():
     pa = pytest.importorskip("pyarrow")
     pq = pytest.importorskip("pyarrow.parquet")
-    table = pa.table({
-        "id": pa.array([1, 2, 3], type=pa.int64()),
-        "name": pa.array(["alice", "bob", "carol"], type=pa.string()),
-        "score": pa.array([9.1, 8.5, 7.2], type=pa.float64()),
-    })
+    table = pa.table(
+        {
+            "id": pa.array([1, 2, 3], type=pa.int64()),
+            "name": pa.array(["alice", "bob", "carol"], type=pa.string()),
+            "score": pa.array([9.1, 8.5, 7.2], type=pa.float64()),
+        }
+    )
     buf = io.BytesIO()
     pq.write_table(table, buf)
     return buf.getvalue()
@@ -83,6 +85,7 @@ def loader():
 # ParquetExtractor — schema mode
 # ---------------------------------------------------------------------------
 
+
 class TestParquetExtractorSchema:
     def test_schema_mode_lists_columns(self, parquet_bytes):
         text = ParquetExtractor(mode="schema").extract(parquet_bytes, "data.parquet")
@@ -125,6 +128,7 @@ class TestParquetExtractorSchema:
 # ParquetExtractor — data mode
 # ---------------------------------------------------------------------------
 
+
 class TestParquetExtractorData:
     def test_data_mode_markdown_table(self, parquet_bytes):
         text = ParquetExtractor(mode="data").extract(parquet_bytes, "data.parquet")
@@ -141,6 +145,7 @@ class TestParquetExtractorData:
 # ---------------------------------------------------------------------------
 # load_structured_file — schema inference
 # ---------------------------------------------------------------------------
+
 
 class TestLoadStructuredFile:
     def _write_tmp(self, data: bytes, suffix: str) -> str:
@@ -172,7 +177,9 @@ class TestLoadStructuredFile:
         path = self._write_tmp(parquet_bytes, ".parquet")
         try:
             chunks = loader.load_structured_file(path)
-            id_chunk = next(c for c in chunks if "id" in c.document_name and c.chunk_type == "db_column")
+            id_chunk = next(
+                c for c in chunks if "id" in c.document_name and c.chunk_type == "db_column"
+            )
             assert "INTEGER" in id_chunk.content
             score_chunk = next(c for c in chunks if "score" in c.document_name)
             assert "FLOAT" in score_chunk.content
@@ -263,6 +270,7 @@ class TestLoadStructuredFile:
 # ---------------------------------------------------------------------------
 # load() auto-dispatch
 # ---------------------------------------------------------------------------
+
 
 class TestLoadAutoDispatch:
     def _write_tmp(self, data: bytes, suffix: str) -> str:

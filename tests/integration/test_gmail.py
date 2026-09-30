@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 7d2f4a1e-5c8b-4e3f-b9a0-1c6d2e8f3b7a
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Live integration tests for GmailCrawler against kennethstott@gmail.com.
 

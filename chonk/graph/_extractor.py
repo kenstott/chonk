@@ -1,10 +1,5 @@
 # ruff: noqa: E501
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: d624dd7b-9fcb-48a2-a460-6d6d3527a0f0
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """SVOExtractor — LLM-driven triple extraction with chonk-owned prompt."""
 

@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 7c4b1e9f-d23a-4f7e-8b05-c1d2e3f4a5b6
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """XML extractor — emits markdown with element-path breadcrumb headings."""
 

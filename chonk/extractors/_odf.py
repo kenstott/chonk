@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: bd19bdb8-2327-4d7f-9270-00142d498613
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """OpenDocument Format extractor (ODT, ODS, ODP) using odfpy.
 

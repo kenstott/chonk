@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 53c39093-29da-4528-abaa-ef67a03583e7
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """PromptBuilder — assemble a ranked, budget-bounded prompt from AnswerContext."""
 

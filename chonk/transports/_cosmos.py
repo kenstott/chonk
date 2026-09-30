@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: f6c8d1e5-7a0b-4f2c-e9a6-5b4d0c3f8a1e
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """CosmosCrawler — index documents from Azure Cosmos DB (NoSQL API) via the SDK.
 

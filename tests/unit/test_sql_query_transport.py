@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 5c88cf9a-c93f-4ec3-a715-982f7dabeee8
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holders.
 
 """Tests for SqlQueryTransport and DocumentLoader.load_from_db()."""
 

@@ -1,5 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 4f3056b7-c777-4138-9cc3-8bf05d806a26
 """Tests for CveRenderer and the Renderer plug-in pattern on JsonExtractor."""
 
 from __future__ import annotations
@@ -34,9 +33,7 @@ _ONE_CVE = {
             }
         ]
     },
-    "weaknesses": [
-        {"description": [{"lang": "en", "value": "CWE-119"}]}
-    ],
+    "weaknesses": [{"description": [{"lang": "en", "value": "CWE-119"}]}],
     "configurations": [
         {
             "nodes": [
@@ -178,7 +175,9 @@ class TestCveRenderer:
         assert not self.r.can_render(None, {"name": "Alice", "age": 30})
 
     def test_render_multiple_cves_present(self):
-        two = {"vulnerabilities": [{"cve": _ONE_CVE}, {"cve": {**_ONE_CVE, "id": "CVE-2024-00002"}}]}
+        two = {
+            "vulnerabilities": [{"cve": _ONE_CVE}, {"cve": {**_ONE_CVE, "id": "CVE-2024-00002"}}]
+        }
         md = self.r.render(two)
         assert "CVE-2024-99999" in md
         assert "CVE-2024-00002" in md

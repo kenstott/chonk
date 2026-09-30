@@ -1,5 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: d0c1dd8a-daeb-487b-aee9-44a9500542bf
 """Tests for mcp_chonk_server — uses an in-memory-style temp DuckDB."""
 
 from __future__ import annotations

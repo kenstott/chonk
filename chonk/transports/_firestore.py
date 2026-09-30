@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: e5b7c0d4-6f9a-4e1b-d8f5-4a3c9b2e7f0d
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """FirestoreCrawler — index documents from Google Cloud Firestore.
 

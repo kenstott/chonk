@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 8c3e1f7a-2b4d-4f9e-a0c5-6d8b1e3f5a9c
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Live integration tests for ImapTransport against FastMail.
 
@@ -14,8 +9,10 @@ Skipped automatically when SMTP_USER is not in the environment.
 
     pytest tests/integration/test_imap.py -v -s
 """
+
 from __future__ import annotations
 
+import imaplib
 import os
 from pathlib import Path
 from urllib.parse import quote
@@ -153,8 +150,6 @@ class TestImapTransportLive:
         from chonk.transports import ImapTransport
 
         t = ImapTransport()
-        bad_uri = _imap_uri().replace(
-            quote(os.environ["SMTP_PASSWORD"], safe=""), "wrongpassword"
-        )
-        with pytest.raises(Exception):
+        bad_uri = _imap_uri().replace(quote(os.environ["SMTP_PASSWORD"], safe=""), "wrongpassword")
+        with pytest.raises(imaplib.IMAP4.error):
             list(t.fetch_messages(bad_uri, limit=1))

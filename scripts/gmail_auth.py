@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: f7fbbdad-a82a-4439-87cf-92f3261965f3
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """One-time Gmail OAuth2 consent flow. Run once to save token to ~/.chonk/gmail_token.json.
 
@@ -15,6 +10,7 @@ Usage:
 2. Google redirects to localhost:8000 (which will show a connection error — that's fine).
 3. Copy the full URL from the browser address bar and paste it here.
 """
+
 from __future__ import annotations
 
 import os
@@ -29,7 +25,7 @@ if _ENV_FILE.exists():
     except ImportError:
         pass
 
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google_auth_oauthlib.flow import InstalledAppFlow  # noqa: E402  # after .env load
 
 _SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 _TOKEN_PATH = Path.home() / ".chonk" / "gmail_token.json"
@@ -54,7 +50,9 @@ flow.redirect_uri = _REDIRECT_URI
 auth_url, _ = flow.authorization_url(access_type="offline", prompt="consent")
 print("\nOpen this URL in your browser:")
 print(auth_url)
-print("\nAfter authorizing, you'll be redirected to localhost:8000 (may show 'connection refused').")
+print(
+    "\nAfter authorizing, you'll be redirected to localhost:8000 (may show 'connection refused')."
+)
 print("Copy the FULL URL from the browser address bar and paste it here:")
 
 redirect_response = input("> ").strip()

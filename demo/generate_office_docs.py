@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 32dc2e60-6d2c-4800-b55b-47734ece8b37
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Generate demo office documents for chonk — xlsx, docx, pptx.
 

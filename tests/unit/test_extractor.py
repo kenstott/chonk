@@ -1,5 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: e311be18-894c-47e2-a206-c83ec66da0f4
 
 """Unit tests for LLMClient protocol and SVOExtractor."""
 
@@ -12,6 +11,7 @@ from chonk.graph import VERB_SET, LLMClient, SVOExtractor
 # ---------------------------------------------------------------------------
 # Stub LLM clients
 # ---------------------------------------------------------------------------
+
 
 class StubLLM:
     """Returns a fixed JSON payload."""
@@ -43,6 +43,7 @@ def _good_json(triples: list[dict]) -> str:
 # LLMClient protocol
 # ---------------------------------------------------------------------------
 
+
 class TestLLMClientProtocol:
     def test_stub_satisfies_protocol(self):
         assert isinstance(StubLLM("[]"), LLMClient)
@@ -50,6 +51,7 @@ class TestLLMClientProtocol:
     def test_object_without_complete_fails(self):
         class Bad:
             pass
+
         assert not isinstance(Bad(), LLMClient)
 
     def test_extractor_rejects_non_client(self):
@@ -61,14 +63,22 @@ class TestLLMClientProtocol:
 # SVOExtractor.extract
 # ---------------------------------------------------------------------------
 
+
 class TestSVOExtractorExtract:
     def _extractor(self, payload: str) -> SVOExtractor:
         return SVOExtractor(StubLLM(payload))
 
     def test_returns_valid_triple(self):
-        payload = _good_json([
-            {"subject_id": "orders", "verb": "references", "object_id": "customers", "confidence": 0.95}
-        ])
+        payload = _good_json(
+            [
+                {
+                    "subject_id": "orders",
+                    "verb": "references",
+                    "object_id": "customers",
+                    "confidence": 0.95,
+                }
+            ]
+        )
         results = self._extractor(payload).extract("orders.customer_id FK customers.id")
         assert len(results) == 1
         t = results[0]
@@ -78,16 +88,16 @@ class TestSVOExtractorExtract:
         assert t.confidence == 0.95
 
     def test_chunk_id_stored_on_triple(self):
-        payload = _good_json([
-            {"subject_id": "a", "verb": "type_of", "object_id": "b", "confidence": 0.8}
-        ])
+        payload = _good_json(
+            [{"subject_id": "a", "verb": "type_of", "object_id": "b", "confidence": 0.8}]
+        )
         results = self._extractor(payload).extract("text", chunk_id="chunk_42")
         assert results[0].source_chunk_id == "chunk_42"
 
     def test_no_chunk_id_is_none(self):
-        payload = _good_json([
-            {"subject_id": "a", "verb": "type_of", "object_id": "b", "confidence": 0.8}
-        ])
+        payload = _good_json(
+            [{"subject_id": "a", "verb": "type_of", "object_id": "b", "confidence": 0.8}]
+        )
         results = self._extractor(payload).extract("text")
         assert results[0].source_chunk_id is None
 
@@ -100,33 +110,43 @@ class TestSVOExtractorExtract:
         assert results == []
 
     def test_markdown_fences_stripped(self):
-        payload = "```json\n" + _good_json([
-            {"subject_id": "x", "verb": "governs", "object_id": "y", "confidence": 0.7}
-        ]) + "\n```"
+        payload = (
+            "```json\n"
+            + _good_json(
+                [{"subject_id": "x", "verb": "governs", "object_id": "y", "confidence": 0.7}]
+            )
+            + "\n```"
+        )
         results = self._extractor(payload).extract("text")
         assert len(results) == 1
 
     def test_invalid_verb_row_dropped(self):
-        payload = _good_json([
-            {"subject_id": "a", "verb": "invented_verb", "object_id": "b", "confidence": 0.9},
-            {"subject_id": "c", "verb": "type_of", "object_id": "d", "confidence": 0.6},
-        ])
+        payload = _good_json(
+            [
+                {"subject_id": "a", "verb": "invented_verb", "object_id": "b", "confidence": 0.9},
+                {"subject_id": "c", "verb": "type_of", "object_id": "d", "confidence": 0.6},
+            ]
+        )
         results = self._extractor(payload).extract("text")
         assert len(results) == 1
         assert results[0].subject_id == "c"
 
     def test_missing_field_row_dropped(self):
-        payload = _good_json([
-            {"subject_id": "a", "verb": "type_of", "confidence": 0.9},  # no object_id
-            {"subject_id": "c", "verb": "contains", "object_id": "d", "confidence": 0.5},
-        ])
+        payload = _good_json(
+            [
+                {"subject_id": "a", "verb": "type_of", "confidence": 0.9},  # no object_id
+                {"subject_id": "c", "verb": "contains", "object_id": "d", "confidence": 0.5},
+            ]
+        )
         results = self._extractor(payload).extract("text")
         assert len(results) == 1
 
     def test_confidence_out_of_range_row_dropped(self):
-        payload = _good_json([
-            {"subject_id": "a", "verb": "type_of", "object_id": "b", "confidence": 1.5},
-        ])
+        payload = _good_json(
+            [
+                {"subject_id": "a", "verb": "type_of", "object_id": "b", "confidence": 1.5},
+            ]
+        )
         results = self._extractor(payload).extract("text")
         assert results == []
 
@@ -135,19 +155,35 @@ class TestSVOExtractorExtract:
         assert results == []
 
     def test_multiple_triples_all_returned(self):
-        payload = _good_json([
-            {"subject_id": "invoice", "verb": "references", "object_id": "customer", "confidence": 1.0},
-            {"subject_id": "invoice_line", "verb": "part_of", "object_id": "invoice", "confidence": 1.0},
-            {"subject_id": "invoice", "verb": "governed_by", "object_id": "GAAP", "confidence": 0.6},
-        ])
+        payload = _good_json(
+            [
+                {
+                    "subject_id": "invoice",
+                    "verb": "references",
+                    "object_id": "customer",
+                    "confidence": 1.0,
+                },
+                {
+                    "subject_id": "invoice_line",
+                    "verb": "part_of",
+                    "object_id": "invoice",
+                    "confidence": 1.0,
+                },
+                {
+                    "subject_id": "invoice",
+                    "verb": "governed_by",
+                    "object_id": "GAAP",
+                    "confidence": 0.6,
+                },
+            ]
+        )
         results = self._extractor(payload).extract("text")
         # "governed_by" is not in VERB_SET — dropped
         assert len(results) == 2
 
     def test_all_valid_verbs_accepted(self):
         rows = [
-            {"subject_id": "a", "verb": v, "object_id": "b", "confidence": 0.5}
-            for v in VERB_SET
+            {"subject_id": "a", "verb": v, "object_id": "b", "confidence": 0.5} for v in VERB_SET
         ]
         results = self._extractor(_good_json(rows)).extract("text")
         assert len(results) == len(VERB_SET)
@@ -157,6 +193,7 @@ class TestSVOExtractorExtract:
 # SVOExtractor.extract_batch
 # ---------------------------------------------------------------------------
 
+
 class TestSVOExtractorBatch:
     def test_batch_aggregates_results(self):
         call_count = 0
@@ -165,24 +202,36 @@ class TestSVOExtractorBatch:
             def complete(self, prompt: str) -> str:
                 nonlocal call_count
                 call_count += 1
-                return _good_json([
-                    {"subject_id": f"s{call_count}", "verb": "type_of",
-                     "object_id": "entity", "confidence": 0.8}
-                ])
+                return _good_json(
+                    [
+                        {
+                            "subject_id": f"s{call_count}",
+                            "verb": "type_of",
+                            "object_id": "entity",
+                            "confidence": 0.8,
+                        }
+                    ]
+                )
 
         extractor = SVOExtractor(CountingLLM())
-        results = extractor.extract_batch([
-            ("text one", "c1"),
-            ("text two", "c2"),
-            ("text three", "c3"),
-        ])
+        results = extractor.extract_batch(
+            [
+                ("text one", "c1"),
+                ("text two", "c2"),
+                ("text three", "c3"),
+            ]
+        )
         assert len(results) == 3
         assert call_count == 3
 
     def test_batch_preserves_chunk_ids(self):
-        extractor = SVOExtractor(StubLLM(_good_json([
-            {"subject_id": "x", "verb": "depends_on", "object_id": "y", "confidence": 0.9}
-        ])))
+        extractor = SVOExtractor(
+            StubLLM(
+                _good_json(
+                    [{"subject_id": "x", "verb": "depends_on", "object_id": "y", "confidence": 0.9}]
+                )
+            )
+        )
         results = extractor.extract_batch([("text", "my_chunk")])
         assert results[0].source_chunk_id == "my_chunk"
 
@@ -194,6 +243,7 @@ class TestSVOExtractorBatch:
 # ---------------------------------------------------------------------------
 # Prompt content
 # ---------------------------------------------------------------------------
+
 
 class TestPromptContent:
     def test_prompt_contains_all_verbs(self):
@@ -220,12 +270,13 @@ class TestPromptContent:
 # Override / customisation
 # ---------------------------------------------------------------------------
 
+
 class TestSVOExtractorOverrides:
     def test_custom_verb_set_accepted(self):
         custom_verbs = frozenset({"custom_rel", "another_rel"})
-        payload = _good_json([
-            {"subject_id": "a", "verb": "custom_rel", "object_id": "b", "confidence": 0.9}
-        ])
+        payload = _good_json(
+            [{"subject_id": "a", "verb": "custom_rel", "object_id": "b", "confidence": 0.9}]
+        )
         extractor = SVOExtractor(StubLLM(payload), verb_set=custom_verbs)
         results = extractor.extract("text")
         assert len(results) == 1
@@ -233,9 +284,9 @@ class TestSVOExtractorOverrides:
 
     def test_custom_verb_set_rejects_default_verbs(self):
         custom_verbs = frozenset({"custom_rel"})
-        payload = _good_json([
-            {"subject_id": "a", "verb": "type_of", "object_id": "b", "confidence": 0.9}
-        ])
+        payload = _good_json(
+            [{"subject_id": "a", "verb": "type_of", "object_id": "b", "confidence": 0.9}]
+        )
         extractor = SVOExtractor(StubLLM(payload), verb_set=custom_verbs)
         assert extractor.extract("text") == []
 
@@ -268,28 +319,40 @@ class TestSVOExtractorOverrides:
 # Entity-anchored extraction
 # ---------------------------------------------------------------------------
 
+
 def _ea_payload(triples=None, descriptions=None, aliases=None, rel_descriptions=None):
-    return json.dumps({
-        "triples": triples or [],
-        "descriptions": descriptions or {},
-        "aliases": aliases or {},
-        "rel_descriptions": rel_descriptions or {},
-    })
+    return json.dumps(
+        {
+            "triples": triples or [],
+            "descriptions": descriptions or {},
+            "aliases": aliases or {},
+            "rel_descriptions": rel_descriptions or {},
+        }
+    )
 
 
 class TestExtractEntityAnchored:
     def _entities(self):
         return [
             {"id": "CustomerRiskScore", "type": "db_column", "description": ""},
-            {"id": "FactTable",         "type": "db_table",  "description": "Central fact table"},
-            {"id": "CompliancePolicy",  "type": "concept",   "description": ""},
+            {"id": "FactTable", "type": "db_table", "description": "Central fact table"},
+            {"id": "CompliancePolicy", "type": "concept", "description": ""},
         ]
 
     def test_returns_triples_and_descriptions(self):
         payload = _ea_payload(
-            triples=[{"subject_id": "CustomerRiskScore", "verb": "part_of",
-                      "object_id": "FactTable", "confidence": 0.9}],
-            descriptions={"CustomerRiskScore": "Risk score per customer", "CompliancePolicy": "Regulatory rules"},
+            triples=[
+                {
+                    "subject_id": "CustomerRiskScore",
+                    "verb": "part_of",
+                    "object_id": "FactTable",
+                    "confidence": 0.9,
+                }
+            ],
+            descriptions={
+                "CustomerRiskScore": "Risk score per customer",
+                "CompliancePolicy": "Regulatory rules",
+            },
         )
         triples, descs, _, _rel = SVOExtractor(StubLLM(payload)).extract_entity_anchored(
             "some text", "c1", self._entities()
@@ -304,8 +367,14 @@ class TestExtractEntityAnchored:
 
     def test_filters_triples_with_unknown_subject(self):
         payload = _ea_payload(
-            triples=[{"subject_id": "UnknownEntity", "verb": "part_of",
-                      "object_id": "FactTable", "confidence": 0.8}]
+            triples=[
+                {
+                    "subject_id": "UnknownEntity",
+                    "verb": "part_of",
+                    "object_id": "FactTable",
+                    "confidence": 0.8,
+                }
+            ]
         )
         triples, _, _2, _rel = SVOExtractor(StubLLM(payload)).extract_entity_anchored(
             "text", "c1", self._entities()
@@ -314,8 +383,14 @@ class TestExtractEntityAnchored:
 
     def test_filters_triples_with_invalid_verb(self):
         payload = _ea_payload(
-            triples=[{"subject_id": "CustomerRiskScore", "verb": "invented_verb",
-                      "object_id": "FactTable", "confidence": 0.9}]
+            triples=[
+                {
+                    "subject_id": "CustomerRiskScore",
+                    "verb": "invented_verb",
+                    "object_id": "FactTable",
+                    "confidence": 0.9,
+                }
+            ]
         )
         triples, _, _2, _rel = SVOExtractor(StubLLM(payload)).extract_entity_anchored(
             "text", "c1", self._entities()
@@ -340,18 +415,26 @@ class TestExtractEntityAnchored:
 
     def test_entity_with_description_marked_in_prompt(self):
         captured = []
+
         class CaptureLLM:
             def complete(self, prompt):
                 captured.append(prompt)
                 return _ea_payload()
+
         SVOExtractor(CaptureLLM()).extract_entity_anchored("text", "c1", self._entities())
         assert "[✓] FactTable" in captured[0]
         assert "[ ] CustomerRiskScore" in captured[0]
 
     def test_source_chunk_id_set_on_triples(self):
         payload = _ea_payload(
-            triples=[{"subject_id": "CustomerRiskScore", "verb": "part_of",
-                      "object_id": "FactTable", "confidence": 0.7}]
+            triples=[
+                {
+                    "subject_id": "CustomerRiskScore",
+                    "verb": "part_of",
+                    "object_id": "FactTable",
+                    "confidence": 0.7,
+                }
+            ]
         )
         triples, _, _2, _rel = SVOExtractor(StubLLM(payload)).extract_entity_anchored(
             "text", "chunk-42", self._entities()
@@ -360,20 +443,37 @@ class TestExtractEntityAnchored:
 
     def test_rel_description_attached_to_triple(self):
         payload = _ea_payload(
-            triples=[{"subject_id": "CustomerRiskScore", "verb": "part_of",
-                      "object_id": "FactTable", "confidence": 0.9}],
-            rel_descriptions={"CustomerRiskScore|part_of|FactTable": "Risk score is a column in the fact table."},
+            triples=[
+                {
+                    "subject_id": "CustomerRiskScore",
+                    "verb": "part_of",
+                    "object_id": "FactTable",
+                    "confidence": 0.9,
+                }
+            ],
+            rel_descriptions={
+                "CustomerRiskScore|part_of|FactTable": "Risk score is a column in the fact table."
+            },
         )
         triples, _, _2, rel_descs = SVOExtractor(StubLLM(payload)).extract_entity_anchored(
             "text", "c1", self._entities()
         )
         assert triples[0].description == "Risk score is a column in the fact table."
-        assert rel_descs["CustomerRiskScore|part_of|FactTable"] == "Risk score is a column in the fact table."
+        assert (
+            rel_descs["CustomerRiskScore|part_of|FactTable"]
+            == "Risk score is a column in the fact table."
+        )
 
     def test_rel_description_missing_key_leaves_empty_string(self):
         payload = _ea_payload(
-            triples=[{"subject_id": "CustomerRiskScore", "verb": "part_of",
-                      "object_id": "FactTable", "confidence": 0.9}],
+            triples=[
+                {
+                    "subject_id": "CustomerRiskScore",
+                    "verb": "part_of",
+                    "object_id": "FactTable",
+                    "confidence": 0.9,
+                }
+            ],
             rel_descriptions={},
         )
         triples, _, _2, _ = SVOExtractor(StubLLM(payload)).extract_entity_anchored(
@@ -386,6 +486,7 @@ class TestExtractEntityAnchored:
 # entity description on entities table
 # ---------------------------------------------------------------------------
 
+
 class TestEntityDescriptionsStore:
     def _seed_entity(self, store, eid: str) -> None:
         store.vector._conn.execute(
@@ -395,6 +496,7 @@ class TestEntityDescriptionsStore:
 
     def test_set_and_get(self, tmp_path):
         from chonk.storage._store import Store
+
         with Store(tmp_path / "t.duckdb") as store:
             self._seed_entity(store, "ent_a")
             store.set_entity_description("ent_a", "A description")
@@ -403,6 +505,7 @@ class TestEntityDescriptionsStore:
 
     def test_overwrites_previous(self, tmp_path):
         from chonk.storage._store import Store
+
         with Store(tmp_path / "t.duckdb") as store:
             self._seed_entity(store, "e")
             store.set_entity_description("e", "First")
@@ -412,16 +515,16 @@ class TestEntityDescriptionsStore:
 
     def test_batch_set(self, tmp_path):
         from chonk.storage._store import Store
+
         with Store(tmp_path / "t.duckdb") as store:
             for eid in ("a", "b", "c"):
                 self._seed_entity(store, eid)
-            n = store.set_entity_descriptions_batch(
-                {"a": "desc a", "b": "desc b", "c": "desc c"}
-            )
+            n = store.set_entity_descriptions_batch({"a": "desc a", "b": "desc b", "c": "desc c"})
         assert n == 3
 
     def test_get_missing_entity_returns_empty(self, tmp_path):
         from chonk.storage._store import Store
+
         with Store(tmp_path / "t.duckdb") as store:
             result = store.get_entity_descriptions(["nonexistent"])
         assert result == {}
@@ -431,11 +534,12 @@ class TestEntityDescriptionsStore:
 # Entity aliases — extractor parses aliases from LLM response
 # ---------------------------------------------------------------------------
 
+
 class TestExtractEntityAnchoredAliases:
     def _entities(self):
         return [
             {"id": "CustomerRiskScore", "type": "db_column", "description": ""},
-            {"id": "FactTable",         "type": "db_table",  "description": "Central fact table"},
+            {"id": "FactTable", "type": "db_table", "description": "Central fact table"},
         ]
 
     def test_aliases_parsed_from_response(self):
@@ -478,9 +582,11 @@ class TestExtractEntityAnchoredAliases:
 # Entity aliases — Store methods
 # ---------------------------------------------------------------------------
 
+
 class TestEntityAliasesStore:
     def test_add_and_get_alias(self, tmp_path):
         from chonk.storage._store import Store
+
         with Store(tmp_path / "t.duckdb") as store:
             store.add_entity_alias("CRS", "CustomerRiskScore")
             result = store.get_entity_aliases("CustomerRiskScore")
@@ -488,6 +594,7 @@ class TestEntityAliasesStore:
 
     def test_resolve_alias(self, tmp_path):
         from chonk.storage._store import Store
+
         with Store(tmp_path / "t.duckdb") as store:
             store.add_entity_alias("CRS", "CustomerRiskScore")
             result = store.resolve_entity_alias("CRS")
@@ -495,12 +602,14 @@ class TestEntityAliasesStore:
 
     def test_resolve_missing_alias_returns_none(self, tmp_path):
         from chonk.storage._store import Store
+
         with Store(tmp_path / "t.duckdb") as store:
             result = store.resolve_entity_alias("nonexistent")
         assert result is None
 
     def test_llm_first_registration_wins(self, tmp_path):
         from chonk.storage._store import Store
+
         with Store(tmp_path / "t.duckdb") as store:
             store.add_entity_alias("CRS", "CustomerRiskScore", source="llm")
             store.add_entity_alias("CRS", "OtherEntity", source="llm")
@@ -509,6 +618,7 @@ class TestEntityAliasesStore:
 
     def test_user_source_overwrites_llm(self, tmp_path):
         from chonk.storage._store import Store
+
         with Store(tmp_path / "t.duckdb") as store:
             store.add_entity_alias("CRS", "CustomerRiskScore", source="llm")
             store.add_entity_alias("CRS", "CorrectEntity", source="user")
@@ -517,6 +627,7 @@ class TestEntityAliasesStore:
 
     def test_batch_aliases(self, tmp_path):
         from chonk.storage._store import Store
+
         with Store(tmp_path / "t.duckdb") as store:
             n = store.add_entity_aliases_batch(
                 {"alias_a": "EntityA", "alias_b": "EntityB"}, source="llm"
@@ -528,8 +639,10 @@ class TestEntityAliasesStore:
 # Top-level import
 # ---------------------------------------------------------------------------
 
+
 class TestTopLevelImport:
     def test_top_level_import(self):
         import chonk
+
         assert chonk.LLMClient is LLMClient
         assert chonk.SVOExtractor is SVOExtractor

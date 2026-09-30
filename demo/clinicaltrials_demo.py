@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 6c1a14cf-5361-4e62-b3a1-8b4d08840694
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """
 ClinicalTrials.gov — Contextual vs Naive RAG on real clinical trial protocols.

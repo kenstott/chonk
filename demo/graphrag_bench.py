@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 7a4e2b91-3c88-4f02-b5d1-e920c7f84a3d
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """
 Chunky Monkey — GraphRAG-Bench evaluation.

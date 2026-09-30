@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 7d268018-663f-42b4-ae26-dab0555ce04d
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Store: composed facade over DuckDBVectorBackend and RelationalStore."""
 

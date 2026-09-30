@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 04abe60c-11b9-40f5-bbb8-d7954bd9b922
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """
 EDGAR 10-K RAG Demo — Contextual vs Naive retrieval on real SEC filings.

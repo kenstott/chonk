@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: c3d4e5f6-a7b8-9012-cdef-012345678901
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """ClinicalTrialRenderer — renders ClinicalTrials.gov API v2 study records."""
 

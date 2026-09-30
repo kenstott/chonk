@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: f6794903-923a-4d9e-a02b-de16a198eb8b
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """WebCrawler — BFS HTTP/HTTPS site crawler using stdlib only.
 

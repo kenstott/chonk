@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 371c62a4-e9a3-4290-904f-25093f471a7f
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """CommunityIndexBuilder — background hot-swap builder for CommunityIndex."""
 

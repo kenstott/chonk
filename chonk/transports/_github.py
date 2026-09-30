@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 7f3a9b2e-4c81-4d5f-a8e2-1b6c0d9f3a47
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """GitHubCrawler — incremental working-tree traversal via GitHub REST API.
 

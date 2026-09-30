@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 20988944-4fc2-4299-bd0a-487b5d812cd2
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holders.
 
 """Tests for SchemaVocabBuilder and NerPipeline."""
 

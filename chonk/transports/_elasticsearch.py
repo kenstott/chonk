@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: b2e4f7a1-3c9d-4b8e-a5f2-1d0c6e9b3a7f
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """ElasticsearchCrawler — index documents from Elasticsearch or OpenSearch via REST API.
 

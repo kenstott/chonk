@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 9c3c753b-dc25-4887-93b9-efc45c77f98b
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Integration tests for chonk storage (requires chonk[storage])."""
 

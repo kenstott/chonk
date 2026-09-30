@@ -1,11 +1,7 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: bc0cf27f-9ab8-496f-a2fd-c2e1d972435b
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Unit tests for ClinicalTrials.gov study → Markdown conversion and pipeline."""
+
 from __future__ import annotations
 
 import sys
@@ -18,6 +14,7 @@ from demo.clinicaltrials_demo import QUERIES, _study_to_markdown
 # ─────────────────────────────────────────────────────────────────────────────
 # Minimal realistic ClinicalTrials.gov study record (API v2 format)
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def _make_study(
     nct_id: str = "NCT01234567",
@@ -51,15 +48,23 @@ def _make_study(
         ]
     if secondary_outcomes is None:
         secondary_outcomes = [
-            {"measure": "Progression-Free Survival (PFS)", "description": "Time from randomization to progression or death."},
-            {"measure": "Overall Survival (OS)", "description": "Time from randomization to death from any cause."},
+            {
+                "measure": "Progression-Free Survival (PFS)",
+                "description": "Time from randomization to progression or death.",
+            },
+            {
+                "measure": "Overall Survival (OS)",
+                "description": "Time from randomization to death from any cause.",
+            },
         ]
     if interventions is None:
         interventions = [
             {
                 "name": "DrugX",
                 "type": "DRUG",
-                "description": "DrugX 100mg administered orally once daily on Days 1-28 of each 28-day cycle.",
+                "description": (
+                    "DrugX 100mg administered orally once daily on Days 1-28 of each 28-day cycle."
+                ),
             }
         ]
     return {
@@ -94,8 +99,8 @@ def _make_study(
 # _study_to_markdown
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TestStudyToMarkdown:
 
+class TestStudyToMarkdown:
     def test_returns_doc_name_and_markdown(self):
         study = _make_study()
         doc_name, md = _study_to_markdown(study)
@@ -252,13 +257,16 @@ class TestStudyToMarkdown:
 # Integration: DocumentLoader pipeline on CT markdown
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TestClinicalTrialsWithDocumentLoader:
 
+class TestClinicalTrialsWithDocumentLoader:
     def _make_chunks(self, nct_id: str = "NCT12345678", enrich_context: bool = True):
         from chonk import DocumentLoader
+
         study = _make_study(nct_id=nct_id, brief_title="Pembrolizumab in NSCLC")
         doc_name, md = _study_to_markdown(study)
-        loader = DocumentLoader(min_chunk_size=300, max_chunk_size=300, enrich_context=enrich_context)
+        loader = DocumentLoader(
+            min_chunk_size=300, max_chunk_size=300, enrich_context=enrich_context
+        )
         return loader.load_text(md, name=doc_name)
 
     def test_load_produces_chunks(self):
@@ -316,6 +324,7 @@ class TestClinicalTrialsWithDocumentLoader:
     def test_naive_vs_contextual_chunk_count_equal(self):
         """Same number of chunks; only embedding_content differs."""
         from chonk import DocumentLoader
+
         study = _make_study()
         doc_name, md = _study_to_markdown(study)
 
@@ -345,8 +354,7 @@ class TestClinicalTrialsWithDocumentLoader:
 
         elig_chunks = [c for c in chunks if any("Eligibility" in s for s in c.section)]
         assert len(elig_chunks) >= 2, (
-            "Long eligibility section should split into ≥2 chunks; "
-            f"got {len(elig_chunks)}"
+            f"Long eligibility section should split into ≥2 chunks; got {len(elig_chunks)}"
         )
 
     def test_all_elig_continuation_chunks_carry_section(self):
@@ -375,6 +383,7 @@ class TestClinicalTrialsWithDocumentLoader:
 # ─────────────────────────────────────────────────────────────────────────────
 # QUERIES list sanity checks
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestQueriesStructure:
     def test_queries_is_nonempty(self):

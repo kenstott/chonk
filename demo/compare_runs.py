@@ -1,5 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 92373334-a139-4220-8393-03672db82bb4
 """
 Compare two benchmark runs question-by-question.
 

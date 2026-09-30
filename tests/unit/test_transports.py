@@ -1,21 +1,16 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 8695d94f-ed02-46c6-bf6e-ce109870096a
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Tests for chonk transport backends."""
 
 import pytest
 
-from chonk.transports import LocalTransport, HttpTransport, S3Transport, detect_transport
+from chonk.transports import HttpTransport, LocalTransport, S3Transport, detect_transport
 from chonk.transports._protocol import FetchResult
-
 
 # =============================================================================
 # LocalTransport
 # =============================================================================
+
 
 class TestLocalTransport:
     def test_reads_file(self, tmp_path):
@@ -70,6 +65,7 @@ class TestLocalTransport:
 # HttpTransport
 # =============================================================================
 
+
 class TestHttpTransport:
     def test_can_handle_https(self):
         assert HttpTransport().can_handle("https://example.com/doc.pdf")
@@ -94,6 +90,7 @@ class TestHttpTransport:
 # S3Transport
 # =============================================================================
 
+
 class TestS3Transport:
     def test_can_handle_s3(self):
         assert S3Transport().can_handle("s3://my-bucket/path/file.pdf")
@@ -114,6 +111,7 @@ class TestS3Transport:
 # =============================================================================
 # detect_transport
 # =============================================================================
+
 
 class TestDetectTransport:
     def test_detects_local_for_bare_path(self, tmp_path):
@@ -144,32 +142,39 @@ class TestDetectTransport:
 # ImapTransport
 # =============================================================================
 
+
 class TestImapTransport:
     """Tests for ImapTransport — network calls are mocked via unittest.mock."""
 
     def test_can_handle_imap(self):
         from chonk.transports._imap import ImapTransport
+
         assert ImapTransport().can_handle("imap://user:pass@mail.example.com/INBOX")
 
     def test_can_handle_imaps(self):
         from chonk.transports._imap import ImapTransport
+
         assert ImapTransport().can_handle("imaps://user:pass@imap.gmail.com/INBOX")
 
     def test_cannot_handle_http(self):
         from chonk.transports._imap import ImapTransport
+
         assert not ImapTransport().can_handle("https://example.com/doc.pdf")
 
     def test_cannot_handle_local(self):
         from chonk.transports._imap import ImapTransport
+
         assert not ImapTransport().can_handle("/local/path/to/file.eml")
 
     def test_cannot_handle_s3(self):
         from chonk.transports._imap import ImapTransport
+
         assert not ImapTransport().can_handle("s3://bucket/key")
 
     def _mock_imap(self, raw_messages: list[bytes], search_ids: list[str] | None = None):
         """Return a mock IMAP4_SSL instance that returns the given raw messages."""
         from unittest.mock import MagicMock
+
         ids = search_ids or [str(i + 1) for i in range(len(raw_messages))]
         id_string = " ".join(ids).encode()
 
@@ -189,6 +194,7 @@ class TestImapTransport:
 
     def test_fetch_messages_yields_fetch_results(self):
         from unittest.mock import patch
+
         from chonk.transports._imap import ImapTransport
         from chonk.transports._protocol import FetchResult
 
@@ -196,9 +202,9 @@ class TestImapTransport:
         conn = self._mock_imap([raw])
 
         with patch("imaplib.IMAP4_SSL", return_value=conn):
-            results = list(ImapTransport().fetch_messages(
-                "imaps://user:pass@imap.example.com/INBOX"
-            ))
+            results = list(
+                ImapTransport().fetch_messages("imaps://user:pass@imap.example.com/INBOX")
+            )
 
         assert len(results) == 1
         assert isinstance(results[0], FetchResult)
@@ -207,20 +213,22 @@ class TestImapTransport:
 
     def test_fetch_messages_limit(self):
         from unittest.mock import patch
+
         from chonk.transports._imap import ImapTransport
 
         msgs = [f"From: a@b.com\r\n\r\nMsg {i}".encode() for i in range(5)]
         conn = self._mock_imap(msgs)
 
         with patch("imaplib.IMAP4_SSL", return_value=conn):
-            results = list(ImapTransport().fetch_messages(
-                "imaps://user:pass@imap.example.com/INBOX", limit=2
-            ))
+            results = list(
+                ImapTransport().fetch_messages("imaps://user:pass@imap.example.com/INBOX", limit=2)
+            )
 
         assert len(results) == 2
 
     def test_fetch_messages_most_recent_first(self):
         from unittest.mock import patch
+
         from chonk.transports._imap import ImapTransport
 
         msgs = [
@@ -230,15 +238,16 @@ class TestImapTransport:
         conn = self._mock_imap(msgs)
 
         with patch("imaplib.IMAP4_SSL", return_value=conn):
-            results = list(ImapTransport().fetch_messages(
-                "imaps://user:pass@imap.example.com/INBOX", limit=1
-            ))
+            results = list(
+                ImapTransport().fetch_messages("imaps://user:pass@imap.example.com/INBOX", limit=1)
+            )
 
         # Should return the last (highest UID = most recent) message
         assert b"Newer" in results[0].data
 
     def test_fetch_returns_single_result(self):
         from unittest.mock import patch
+
         from chonk.transports._imap import ImapTransport
 
         raw = b"From: a@b.com\r\nSubject: Only\r\n\r\nSingle"
@@ -250,7 +259,8 @@ class TestImapTransport:
         assert result.data == raw
 
     def test_fetch_no_messages_raises(self):
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
+
         from chonk.transports._imap import ImapTransport
 
         conn = MagicMock()
@@ -266,6 +276,7 @@ class TestImapTransport:
 
     def test_uses_imap4_for_plain_imap(self):
         from unittest.mock import patch
+
         from chonk.transports._imap import ImapTransport
 
         raw = b"From: a@b.com\r\n\r\nPlain"

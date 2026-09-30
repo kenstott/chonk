@@ -1,15 +1,11 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 320806b1-99d0-4029-99a4-3d8fec2e6276
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Custom transport example — plug in your own source.
 
 Shows how to implement the Transport protocol.
 Use this pattern for: SharePoint, Confluence, Notion, Dropbox, internal APIs.
 """
+
 from chonk import DocumentLoader
 from chonk.transports._protocol import FetchResult
 
@@ -20,14 +16,14 @@ class InMemoryTransport:
     Use as a template for SharePoint, Confluence, and other private sources.
     """
 
-    def __init__(self, documents: dict[str, bytes]):
+    def __init__(self, documents: dict[str, bytes]) -> None:
         self._docs = documents
 
     def can_handle(self, uri: str) -> bool:
         return uri.startswith("mem://")
 
-    def fetch(self, uri: str, **kwargs) -> FetchResult:
-        key = uri[len("mem://"):]
+    def fetch(self, uri: str, **kwargs: object) -> FetchResult:
+        key = uri[len("mem://") :]
         if key not in self._docs:
             raise FileNotFoundError(f"Document not found: {uri!r}")
         return FetchResult(
@@ -39,7 +35,10 @@ class InMemoryTransport:
 
 if __name__ == "__main__":
     store = {
-        "policy.md": b"# Leave Policy\n\nEmployees are entitled to 20 days per year.\n\n## Sick Leave\n\nUnlimited sick leave with documentation.",
+        "policy.md": (
+            b"# Leave Policy\n\nEmployees are entitled to 20 days per year.\n\n"
+            b"## Sick Leave\n\nUnlimited sick leave with documentation."
+        ),
         "handbook.md": b"# Employee Handbook\n\n## Code of Conduct\n\nTreat everyone with respect.",
     }
 

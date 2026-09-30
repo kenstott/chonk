@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 6bdda530-9e8a-4fc9-9c12-941e3197beca
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """DocumentLoader — orchestrates Transport → Extractor → chunk_document → enrich_chunks."""
 

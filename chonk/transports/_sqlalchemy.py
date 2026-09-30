@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: f31a0bc0-9aa9-4e0f-bfe0-76fc226c5060
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """SQLAlchemy transport — executes a SQL query and returns the result as CSV bytes.
 

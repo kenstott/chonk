@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: a1f3b7c2-4e8d-4a9f-b5c3-2d0e6f8a1b4c
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """MongoCrawler — index documents from MongoDB collections.
 

@@ -1,21 +1,20 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 56be0467-4847-467a-9ef6-d7d7fa14e224
 
 """Unit tests for VersionedRef, CommunityIndexBuilder, RelationshipIndexBuilder."""
 
 import threading
-import time
-import pytest
+
 import numpy as np
+import pytest
 
 from chonk._versioning import VersionedRef
 from chonk.community import CommunityIndex, CommunityIndexBuilder
 from chonk.graph import RelationshipIndex, RelationshipIndexBuilder, SVOTriple
 
-
 # ---------------------------------------------------------------------------
 # VersionedRef
 # ---------------------------------------------------------------------------
+
 
 class TestVersionedRefInit:
     def test_unset_version_is_minus_one(self):
@@ -125,6 +124,7 @@ class TestVersionedRefThreadSafety:
 # CommunityIndexBuilder
 # ---------------------------------------------------------------------------
 
+
 def _small_vecs(n: int = 10, dim: int = 8) -> tuple[list[str], np.ndarray]:
     ids = [f"chunk_{i}" for i in range(n)]
     vecs = np.random.randn(n, dim).astype("float32")
@@ -177,8 +177,9 @@ class TestCommunityIndexBuilderBuild:
         ids, vecs = _small_vecs()
         received = []
         b = CommunityIndexBuilder()
-        b.build(ids, vecs, n_levels=1, algorithm="louvain",
-                on_complete=lambda idx: received.append(idx))
+        b.build(
+            ids, vecs, n_levels=1, algorithm="louvain", on_complete=lambda idx: received.append(idx)
+        )
         b.wait(timeout=30)
         assert len(received) == 1
         assert isinstance(received[0], CommunityIndex)
@@ -205,6 +206,7 @@ class TestCommunityIndexBuilderBuild:
 # ---------------------------------------------------------------------------
 # RelationshipIndexBuilder
 # ---------------------------------------------------------------------------
+
 
 class TestRelationshipIndexBuilderInit:
     def test_ref_starts_none(self):
@@ -251,8 +253,7 @@ class TestRelationshipIndexBuilderFromTriples:
     def test_on_complete_called(self):
         received = []
         b = RelationshipIndexBuilder()
-        b.build_from_triples(self._triples(),
-                             on_complete=lambda idx: received.append(idx))
+        b.build_from_triples(self._triples(), on_complete=lambda idx: received.append(idx))
         b.wait(timeout=10)
         assert len(received) == 1
         assert isinstance(received[0], RelationshipIndex)
@@ -286,15 +287,19 @@ class TestRelationshipIndexBuilderHotSwap:
 # Top-level import
 # ---------------------------------------------------------------------------
 
+
 class TestTopLevelImports:
     def test_versioned_ref_importable(self):
         from chonk import VersionedRef
+
         assert VersionedRef is not None
 
     def test_community_index_builder_importable(self):
         from chonk import CommunityIndexBuilder
+
         assert CommunityIndexBuilder is not None
 
     def test_relationship_index_builder_importable(self):
         from chonk import RelationshipIndexBuilder
+
         assert RelationshipIndexBuilder is not None
