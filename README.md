@@ -2329,8 +2329,13 @@ CVE records, Federal Register notices, and patents. Queries are decomposed into
 atomic sub-queries matching the vocabulary of a specific document type, then evaluated
 across all four simultaneously to measure cross-domain retrieval accuracy.
 
-See [`work/fang2026/benchmark-design.md`](work/fang2026/benchmark-design.md) for the
+See [`benchmark-design.md`](benchmark-design.md) for the
 full benchmark design, corpus construction methodology, and evaluation protocol.
+
+### Reproducing the results
+
+See [docs/reproducing-benchmarks.md](docs/reproducing-benchmarks.md) for how to check the
+reported numbers and re-run any configuration.
 
 ### Replication notes
 
@@ -2374,6 +2379,13 @@ python demo/python_docs_demo.py
 - **Conflict-free text extraction** — no third-party cloud APIs consulted without consent
 - **Non-GMO transport layer** — no monkey-patching of built-ins
 - **Fair trade** — MIT licensed, attribution appreciated
+
+---
+
+## Contributing and support
+
+See [CONTRIBUTING.md](CONTRIBUTING.md), [SUPPORT.md](SUPPORT.md), and
+[GOVERNANCE.md](GOVERNANCE.md). Release history is in [CHANGELOG.md](CHANGELOG.md).
 
 ---
 

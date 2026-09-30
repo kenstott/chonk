@@ -1,0 +1,115 @@
+# Changelog
+
+All notable changes to `chonk-rag` are recorded here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
+[Semantic Versioning](https://semver.org/). Before 1.0, a minor version bump may
+include breaking API changes.
+
+## [Unreleased]
+
+### Added
+- `chonk build <config.yaml> [--store PATH] [--force]` command (also
+  `python -m chonk build`).
+- HARE-Bench reproduction pipeline under `scripts/hare/`: publish the corpus
+  (stage 1) and the GPU-built index (stage 2) to the public bucket, then
+  `reproduce.sh` downloads the index, verifies it against
+  `work/fang2026/artifact_manifest.json`, and regenerates the results.
+- HARE-Bench ingest configs (`work/configs/ingest/`).
+- `scripts/hare/fetch_entity_records.py`: builds the legal-entity records from
+  the GLEIF golden copy and SEC EDGAR.
+- `CONTRIBUTING.md`, `GOVERNANCE.md`, `SUPPORT.md`, and this changelog.
+- JOSS paper draft under `paper/`.
+- `docs/reproducing-benchmarks.md`.
+
+### Fixed
+- `build()` and `Index.add_source()` embedded raw chunk content and ignored
+  `enrich_context`; they now embed the breadcrumb-enriched text, like every
+  other embed path.
+
+### Removed
+- Local working material (training data, migration plans, scratch notes) is no
+  longer tracked in the repository.
+
+## [0.5.5] - 2026-08-15
+### Fixed
+- `run_worker` had no way to stop, which raced the coordinator test (#21).
+
+## [0.5.4] - 2026-08-15
+### Fixed
+- Worker-coordinator tests could not run in isolation (#20).
+
+## [0.5.3] - 2026-08-15
+### Changed
+- The backend parity suite runs against embedded Weaviate, with no service (#19).
+
+## [0.5.2] - 2026-08-15
+### Changed
+- The backend parity suite runs against Qdrant and PostgreSQL (#18).
+
+## [0.5.1] - 2026-08-15
+### Fixed
+- `EntityLookup` and `NamespaceEvidence` are exported; near-match works in both
+  directions (#17).
+
+## [0.5.0] - 2026-08-14
+### Added
+- Explanations for why an entity lookup came back empty (#16).
+
+## [0.4.2] - 2026-08-14
+### Fixed
+- An unrecognised vocabulary entry was dropped silently; it now raises (#15).
+
+## [0.4.1] - 2026-08-14
+### Fixed
+- `build_ner` could not write to PostgreSQL (#14).
+
+## [0.4.0] - 2026-08-14
+### Added
+- Glossary vocabulary (#13).
+### Fixed
+- `clear()` cascade and backend-only `rebuild()` (#13).
+
+## [0.3.1] - 2026-08-14
+### Fixed
+- `SchemaMatcher` registered entities it could never match (#12).
+
+## [0.3.0] - 2026-08-14
+### Added
+- Typed entity IDs, namespace scoping, and entity-type chunk filtering (#11).
+
+## [0.2.4] - 2026-08-13
+### Changed
+- Published on PyPI as `chonk-rag`.
+
+## [0.2.3] - 2026-08-13
+### Changed
+- Complete PyPI package metadata; publish authenticates with `PYPI_API_TOKEN`.
+
+## [0.2.2] - 2026-08-13
+### Fixed
+- Release CI downloads the spaCy model before the test gate.
+
+## [0.2.1] - 2026-08-13
+### Changed
+- PyPI release workflow; NER `row_limit` default.
+
+## [0.2.0] - 2026-08-13
+- First tagged release.
+
+[Unreleased]: https://github.com/kenstott/chonk/compare/v0.5.5...HEAD
+[0.5.5]: https://github.com/kenstott/chonk/compare/v0.5.4...v0.5.5
+[0.5.4]: https://github.com/kenstott/chonk/compare/v0.5.3...v0.5.4
+[0.5.3]: https://github.com/kenstott/chonk/compare/v0.5.2...v0.5.3
+[0.5.2]: https://github.com/kenstott/chonk/compare/v0.5.1...v0.5.2
+[0.5.1]: https://github.com/kenstott/chonk/compare/v0.5.0...v0.5.1
+[0.5.0]: https://github.com/kenstott/chonk/compare/v0.4.2...v0.5.0
+[0.4.2]: https://github.com/kenstott/chonk/compare/v0.4.1...v0.4.2
+[0.4.1]: https://github.com/kenstott/chonk/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/kenstott/chonk/compare/v0.3.1...v0.4.0
+[0.3.1]: https://github.com/kenstott/chonk/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/kenstott/chonk/compare/v0.2.4...v0.3.0
+[0.2.4]: https://github.com/kenstott/chonk/compare/v0.2.3...v0.2.4
+[0.2.3]: https://github.com/kenstott/chonk/compare/v0.2.2...v0.2.3
+[0.2.2]: https://github.com/kenstott/chonk/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/kenstott/chonk/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/kenstott/chonk/releases/tag/v0.2.0
