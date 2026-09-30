@@ -19,9 +19,13 @@ HARE-Bench is reproducible **from a previously generated corpus and index**.
 The corpus and the index stores are published, versioned artifacts, pinned by
 SHA-256. Reproducing the benchmark means regenerating the results (answer
 generation and scoring) from those artifacts with `scripts/hare/reproduce.sh`.
-Producing the corpus and the index (stages 1 and 2 below) is documented and
-scripted, but it is not part of the reproduction claim: source APIs change over
-time, and embeddings vary slightly across hardware.
+
+The index can also be rebuilt from the published corpus (stage 2 below), but
+the rebuilt stores will not be byte-identical: embedding and NER models produce
+slightly different floating-point results on CPU, CUDA, and Apple Metal, which
+can shift retrieval rankings and so make benchmark scores drift. The published
+index, with its build environment in `index_build_info.json`, is the reference.
+The corpus is not regenerated at all: its source APIs change over time.
 
 ## Reproduce HARE-Bench
 
