@@ -76,6 +76,7 @@ git.
 | Initialization, stage 1 | `scripts/hare/01_publish_sources.sh` | bucket (`corpus/`), GLEIF, SEC EDGAR | `corpus/`, `manifest.json` |
 | Initialization, stage 2 | `scripts/hare/02_publish_index.sh` | bucket (`corpus/`) | `index/`, `manifest.json` |
 | Benchmark | `scripts/hare/reproduce.sh` | bucket (`index/`, `manifest.json`) | — |
+| Reference diagnostics (optional) | `artifacts.py publish diagnostics` | a finished benchmark run | `diagnostics/`, `manifest.json` |
 
 The bucket and its credentials come from the environment (or `.env`):
 
@@ -96,6 +97,25 @@ Stage 2 builds the index on the local machine and records the build environment
 `index_build_info.json`, published with the stores. `--gpu` builds on a Vultr
 GPU instance instead (needs `VULTR_API_KEY`). Each stage uploads its files
 first and `manifest.json` last, so the manifest never names a missing file.
+
+### Diagnostics (`diagnostics/`, optional)
+
+A reference run's per-question outputs: `<run>.jsonl` (retrieved chunk IDs,
+reranker scores, context, generated answer), its scores, and its rerank cache.
+`reproduce.sh` never needs them. They let a reproduction be compared question
+by question, to tell retrieval drift (floating-point differences across
+hardware) from generation drift (LLM sampling):
+
+```bash
+uv run python scripts/hare/artifacts.py download diagnostics --out-dir work/reference
+uv run python scripts/hare/compare_results.py --reported work/fang2026/results \
+    --reproduced work/reproduce/results --retrieval work/reference
+```
+
+For each run this reports how many questions retrieved exactly the same chunks
+in the same order, the same chunks in any order, and the mean Jaccard overlap.
+Reranking and retrieval are part of what the benchmark measures, so they are
+recomputed on every reproduction; the published trace is only a reference.
 
 ### Corpus (`work/corpus/`)
 

@@ -11,6 +11,12 @@ Layout under the bucket prefix:
   manifest.json      SHA-256 and size of every published file, per part
   corpus/...         source documents          (local: work/corpus/)
   index/...          index stores + caches     (local: work/fang2026/data/)
+  diagnostics/...    reference run outputs     (local: work/reproduce/results/)
+
+diagnostics is optional: reproduce.sh never needs it. It holds a reference
+run's per-question retrieval trace (<run>.jsonl: retrieved chunk IDs, reranker
+scores, context, answer), its scores, and its rerank cache, so a reproduction
+can be compared question by question (compare_results.py --retrieval).
 
 Configuration (environment, or .env at the repository root):
 
@@ -29,6 +35,7 @@ missing or altered file is an error.
 Usage:
     python scripts/hare/artifacts.py publish corpus
     python scripts/hare/artifacts.py publish index
+    python scripts/hare/artifacts.py publish diagnostics [--src-dir DIR]
     python scripts/hare/artifacts.py download index [--out-dir DIR]
     python scripts/hare/artifacts.py verify corpus [--out-dir DIR]
 """
@@ -69,7 +76,13 @@ PARTS: dict[str, tuple[Path, list[str]]] = {
             "index_build_info.json",
         ],
     ),
+    "diagnostics": (
+        ROOT / "work" / "reproduce" / "results",
+        ["*.jsonl", "bench_eval_*_rp.json", "_rerank_ckpt_*.json", "*_flags.json"],
+    ),
 }
+# Partial or resumable state, never published.
+_EXCLUDE_MARKERS = ("checkpoint", "_ckpt_", ".part")
 
 Files = dict[str, dict[str, str | int]]
 Manifest = dict[str, Files]
@@ -191,8 +204,8 @@ def _reader() -> S3Bucket | PublicBucket:
 # ── Commands ────────────────────────────────────────────────────────────────
 
 
-def _collect(part: str) -> list[Path]:
-    base, patterns = PARTS[part]
+def _collect(part: str, base: Path) -> list[Path]:
+    _, patterns = PARTS[part]
     found: set[Path] = set()
     for pattern in patterns:
         matches = [p for p in base.glob(pattern) if p.is_file()]
@@ -201,7 +214,8 @@ def _collect(part: str) -> list[Path]:
         found.update(
             p
             for p in matches
-            if not p.name.startswith(("._", ".DS_Store")) and not p.name.endswith(".part")
+            if not p.name.startswith(("._", ".DS_Store"))
+            and not (any(m in p.name for m in _EXCLUDE_MARKERS) and "_rerank_ckpt_" not in p.name)
         )
     return sorted(found)
 
@@ -244,11 +258,11 @@ def download(part: str, out_dir: Path) -> int:
     return _report(part, files, out_dir)
 
 
-def publish(part: str) -> int:
+def publish(part: str, src_dir: Path | None) -> int:
     bucket = S3Bucket()
-    base, _ = PARTS[part]
+    base = src_dir or PARTS[part][0]
     entries: Files = {}
-    for path in _collect(part):
+    for path in _collect(part, base):
         rel = str(path.relative_to(base))
         entries[rel] = {"sha256": _sha256(path), "bytes": path.stat().st_size}
         print(f"  {part}/{rel}")
@@ -267,12 +281,14 @@ def main() -> int:
     for name in ("download", "verify", "publish"):
         p = sub.add_parser(name)
         p.add_argument("part", choices=sorted(PARTS))
-        if name != "publish":
+        if name == "publish":
+            p.add_argument("--src-dir", type=Path, help="default: the part's repo directory")
+        else:
             p.add_argument("--out-dir", type=Path, help="default: the part's repo directory")
     args = parser.parse_args()
 
     if args.command == "publish":
-        return publish(args.part)
+        return publish(args.part, args.src_dir)
     out_dir: Path = args.out_dir or PARTS[args.part][0]
     if args.command == "download":
         return download(args.part, out_dir)
