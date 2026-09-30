@@ -2793,6 +2793,12 @@ def cmd_run(args: argparse.Namespace) -> None:
                 if _rerank_device
                 else CrossEncoder(RERANK_MODEL, max_length=512)
             )
+        # Reranker scores differ slightly across devices (CPU, MPS, CUDA); record the
+        # one actually used so runs, and their rerank caches, can be told apart.
+        _flags["rerank_device"] = (
+            str(reranker.device) if reranker is not None else f"api:{rerank_provider}"
+        )
+        _flags_path.write_text(json.dumps(_flags, indent=2), encoding="utf-8")
 
     _need_community = use_community_context or search_mode in ("graph_first", "map_reduce_global")
     community_index = _load_community_index(db_path) if _need_community else None
@@ -3153,6 +3159,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                     "search_mode": search_mode,
                     "ner_x": use_ner_x,
                     "rerank_provider": rerank_provider,
+                    "rerank_device": _flags.get("rerank_device"),
                     "reranker": (
                         RERANK_MODEL_TOGETHER
                         if rerank_provider == "together"

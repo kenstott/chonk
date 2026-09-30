@@ -8,10 +8,15 @@
 # published artifact (see scripts/hare/02_publish_index.sh).
 #
 # Usage:
-#   scripts/hare/reproduce.sh [--config-dir DIR] [--out-dir DIR]
+#   scripts/hare/reproduce.sh [--config-dir DIR] [--out-dir DIR] [--compare-retrieval]
 #
-#   --config-dir   run configs to execute (default: work/configs/fang, all runs)
-#   --out-dir      working directory (default: work/reproduce)
+#   --config-dir          run configs to execute (default: work/configs/fang, all runs)
+#   --out-dir             working directory (default: work/reproduce)
+#   --compare-retrieval   also download the published reference run outputs
+#                         (diagnostics/) and compare retrieval question by question
+#
+# The reranker runs on CPU by default on Apple silicon; RERANKER_DEVICE=mps (or
+# cuda) runs it on the GPU. The device used is recorded in <run>_flags.json.
 #
 # Needs, in the environment or .env: OPENAI_API_KEY (generator, ADF classifier)
 # and HARE_PUBLIC_URL (public bucket URL; see .env.example), or HARE_BUCKET_URL
@@ -21,10 +26,12 @@ set -euo pipefail
 
 CONFIG_DIR="work/configs/fang"
 OUT="work/reproduce"
+COMPARE_RETRIEVAL=0
 while [ $# -gt 0 ]; do
     case "$1" in
-        --config-dir) CONFIG_DIR="$2"; shift ;;
-        --out-dir)    OUT="$2"; shift ;;
+        --config-dir)        CONFIG_DIR="$2"; shift ;;
+        --out-dir)           OUT="$2"; shift ;;
+        --compare-retrieval) COMPARE_RETRIEVAL=1 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
     shift
@@ -69,4 +76,10 @@ echo "=== Generating and scoring ==="
 $PY demo/graphrag_bench.py run-all --config-dir "$CONFIG_DIR" --out-dir "$OUT"
 
 echo "=== Reported vs reproduced ==="
-$PY scripts/hare/compare_results.py --reported work/fang2026/results --reproduced "$OUT/results"
+if [ "$COMPARE_RETRIEVAL" -eq 1 ]; then
+    $PY scripts/hare/artifacts.py download diagnostics --out-dir "$OUT/reference"
+    $PY scripts/hare/compare_results.py --reported work/fang2026/results \
+        --reproduced "$OUT/results" --retrieval "$OUT/reference"
+else
+    $PY scripts/hare/compare_results.py --reported work/fang2026/results --reproduced "$OUT/results"
+fi

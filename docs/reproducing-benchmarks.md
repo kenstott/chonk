@@ -49,6 +49,12 @@ published artifact.
 |---|---|
 | `--config-dir DIR` | Run only the configs in `DIR` |
 | `--out-dir DIR` | Working directory (default `work/reproduce`) |
+| `--compare-retrieval` | Also compare each question's retrieved passages with the published reference run |
+
+On Apple silicon the reranker runs on CPU by default, which is slow;
+`RERANKER_DEVICE=mps scripts/hare/reproduce.sh` runs it on the GPU. The device
+used is recorded in each run's `<run>_flags.json` and is part of the rerank
+cache key.
 
 Each 500-question run with gpt-4o-mini costs roughly US$5–10 in API fees, and
 `work/configs/fang` holds 50 runs. To reproduce one run, put its TOML alone in a
