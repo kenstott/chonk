@@ -5320,8 +5320,10 @@ def cmd_run_all(args: argparse.Namespace) -> None:
 
     out_dir = Path(args.out_dir)
     results_dir = out_dir / "results"
+    results_dir.mkdir(parents=True, exist_ok=True)
 
     ap = _make_parser()
+    failed: list[str] = []
 
     for toml_path in toml_files:
         cfg = _load_config(str(toml_path))
@@ -5333,6 +5335,7 @@ def cmd_run_all(args: argparse.Namespace) -> None:
         crash_marker = results_dir / f".failed_{run_name}"
         if crash_marker.exists():
             print(f"=== SKIP {run_name} (crashed — clear marker to retry) ===")
+            failed.append(run_name)
             continue
 
         eval_file = results_dir / f"bench_eval_{run_name}_rp.json"
@@ -5383,6 +5386,7 @@ def cmd_run_all(args: argparse.Namespace) -> None:
                     f"=== CRASH {run_name} (exit {ret.returncode}) — marking failed, skipping ==="
                 )
                 crash_marker.write_text(f"exit={ret.returncode}")
+                failed.append(run_name)
                 try:
                     import torch as _torch
 
@@ -5428,7 +5432,12 @@ def cmd_run_all(args: argparse.Namespace) -> None:
         except Exception as _exc:
             print(f"=== CRASH EVAL {run_name}_rp: {_exc} — marking failed, skipping ===")
             crash_marker.write_text(str(_exc))
+            failed.append(run_name)
             continue
+
+    if failed:
+        print(f"=== {len(failed)} run(s) failed: {', '.join(failed)} ===")
+        _sys.exit(1)
 
 
 def cmd_init_config(args: argparse.Namespace) -> None:

@@ -654,3 +654,43 @@ class TestBuildEntityIndexVocabEntities:
                 store, use_schema_vocab=False, vocab_entities=[]
             )
         assert idx.total_chunks() > 0
+
+
+class TestRunAllFailureReporting:
+    """run-all must record a crashed run and exit non-zero, never report success."""
+
+    def _config_dir(self, tmp_path: Path) -> Path:
+        cfg_dir = tmp_path / "configs"
+        cfg_dir.mkdir()
+        (cfg_dir / "r.toml").write_text('run_name = "r"\n')
+        return cfg_dir
+
+    def test_crashed_run_is_marked_and_exits_nonzero(self, tmp_path, monkeypatch):
+        import subprocess
+
+        monkeypatch.setattr(
+            subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(cmd, 1)
+        )
+        out_dir = tmp_path / "out"  # results/ does not exist yet
+        args = argparse.Namespace(
+            config_dir=str(self._config_dir(tmp_path)), out_dir=str(out_dir), question_ids=None
+        )
+
+        with pytest.raises(SystemExit) as exc:
+            _bench.cmd_run_all(args)
+
+        assert exc.value.code == 1
+        assert (out_dir / "results" / ".failed_r").read_text() == "exit=1"
+
+    def test_previously_crashed_run_still_exits_nonzero(self, tmp_path):
+        out_dir = tmp_path / "out"
+        (out_dir / "results").mkdir(parents=True)
+        (out_dir / "results" / ".failed_r").write_text("exit=1")
+        args = argparse.Namespace(
+            config_dir=str(self._config_dir(tmp_path)), out_dir=str(out_dir), question_ids=None
+        )
+
+        with pytest.raises(SystemExit) as exc:
+            _bench.cmd_run_all(args)
+
+        assert exc.value.code == 1

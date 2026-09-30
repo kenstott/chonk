@@ -30,7 +30,7 @@ The corpus is not regenerated at all: its source APIs change over time.
 ## Reproduce HARE-Bench
 
 ```bash
-uv sync --all-extras --group dev
+uv sync --all-extras              # includes the dev and bench dependency groups
 uv run python -m spacy download en_core_web_sm
 cp .env.example .env              # set OPENAI_API_KEY (generator and ADF classifier);
                                   # HARE_PUBLIC_URL already points at the published artifacts

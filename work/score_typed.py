@@ -302,7 +302,7 @@ _FIN_ABBREV_MAP = {
     "t": "trillion",
 }
 
-# Scale words → multiplier — used as fallback when quantulum3 is unavailable
+# Scale words → multiplier — used when quantulum3 finds no currency quantity
 _SCALE_MAP = {
     "trillion": 1e12,
     "trillions": 1e12,
@@ -324,19 +324,17 @@ _SCALE_WORD_RE = re.compile(
     re.IGNORECASE,
 )
 
-_QPARSER = None
+_QPARSER: ModuleType | None = None
 
 
-def _get_qparser() -> ModuleType | None:
+def _get_qparser() -> ModuleType:
+    """quantulum3's parser. Required: without it financial values score differently."""
     global _QPARSER
     if _QPARSER is None:
-        try:
-            from quantulum3 import parser as qp
+        from quantulum3 import parser as qp
 
-            _QPARSER = qp
-        except ImportError:
-            _QPARSER = False
-    return _QPARSER if _QPARSER is not False else None
+        _QPARSER = qp
+    return _QPARSER
 
 
 _Q_GOOD_UNITS = {
@@ -368,14 +366,11 @@ def _parse_financial(text: str) -> float | None:
     # Expand bare abbreviations: "10.9B" → "10.9 billion", "716.9MM" → "716.9 million"
     expanded = _FIN_ABBREV_RE.sub(lambda m: " " + _FIN_ABBREV_MAP[m.group(1).lower()], clean)
 
-    qp = _get_qparser()
-    if qp is not None:
-        quants = qp.parse(expanded)
-        for q in quants:
-            if q.unit.name in _Q_GOOD_UNITS and q.value != 0:
-                return float(q.value)
+    for q in _get_qparser().parse(expanded):
+        if q.unit.name in _Q_GOOD_UNITS and q.value != 0:
+            return float(q.value)
 
-    # Fallback: regex scale-word matching
+    # No currency quantity found: regex scale-word matching
     num_clean = expanded.replace(",", "").replace("$", "").replace("€", "").replace("£", "")
     m = _FLOAT_RE.search(num_clean)
     if not m:

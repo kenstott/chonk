@@ -42,6 +42,25 @@ if [ -z "${OPENAI_API_KEY:-}" ] && ! grep -q '^OPENAI_API_KEY=.' .env 2>/dev/nul
     exit 1
 fi
 
+echo "=== Checking the environment ==="
+$PY - <<'PYEOF'
+import importlib, sys
+missing = []
+for mod in ("openai", "langchain_openai", "quantulum3", "boto3", "spacy"):
+    try:
+        importlib.import_module(mod)
+    except ImportError:
+        missing.append(mod)
+if missing:
+    sys.exit(f"missing: {', '.join(missing)} -- run: uv sync --all-extras")
+import spacy
+try:
+    spacy.load("en_core_web_sm")
+except OSError:
+    sys.exit("spaCy model missing -- run: uv run python -m spacy download en_core_web_sm")
+print("ok")
+PYEOF
+
 echo "=== Downloading and verifying the published index ==="
 $PY scripts/hare/artifacts.py download index --out-dir "$OUT/data"
 cp work/fang2026/data/fang2026_questions.jsonl work/fang2026/data/fang2026_gold_schemas.jsonl "$OUT/data/"
