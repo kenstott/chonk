@@ -1,0 +1,12 @@
+# Vector + BM25 only, matched to the hybrid run
+# fang_ner_ref_bc_laned60_community_k50_rerank_srr_bm25_mini: same store, k, BM25,
+# rerank, SRR, and generator, without the entity lane or community context.
+extends = "fang_ner_ref_bc_laned60_community_k50_rerank_srr_bm25_mini.toml"
+run_name = "fang_vector_bm25_bc_k50_rerank_srr_mini"
+
+[retrieval]
+enhanced = false
+entity_ref_expansion = false
+
+[retrieval.community]
+enabled = false
