@@ -48,24 +48,53 @@ published artifact.
 | Option | Effect |
 |---|---|
 | `--config-dir DIR` | Run only the configs in `DIR` |
+| `--runs FILE` | Run only the run names listed in `FILE`, one per line; `work/configs/hare_bench_paper_runs.txt` lists the runs the paper cites |
 | `--out-dir DIR` | Working directory (default `work/reproduce`) |
 | `--compare-retrieval` | Also compare each question's retrieved passages with the published reference run |
+| `--gpu gcp` or `--gpu vultr` | Generate and score on a GPU instance at that provider instead of this machine |
+| `--no-compare` | Stop after scoring, without the reported-vs-reproduced comparison |
 
 On Apple silicon the reranker runs on CPU by default, which is slow;
 `RERANKER_DEVICE=mps scripts/hare/reproduce.sh` runs it on the GPU. The device
 used is recorded in each run's `<run>_flags.json` and is part of the rerank
 cache key.
 
+`--gpu` creates a GPU instance, copies the repository and any results already in
+`--out-dir` to it, runs `reproduce.sh` there with `RERANKER_DEVICE=cuda`, copies
+the results back every minute, and destroys the instance when the run ends, also
+on failure. Finished runs are skipped, so an interrupted `--gpu` run can be
+repeated. It needs `HARE_PUBLIC_URL` in the environment or `.env`, and `ssh` and
+`rsync`. The model API keys are passed to the remote process environment and are
+not written to the instance's disk. The run's log is `<out-dir>/gpu.log`.
+
+| Provider | Needs | Default instance |
+|---|---|---|
+| `gcp` | `GCP_PROJECT`, an authenticated `gcloud`, and a GPU quota of at least 1 | `n1-standard-8` with one T4 (16 GB), `us-central1` |
+| `vultr` | `VULTR_API_KEY`, `curl`, `sshpass` | `vcg-a16-3c-32g-8vram` (8 GB), `ewr` |
+
+With `gcp`, the instance cannot outlive the job. Compute Engine deletes it
+`GCP_MAX_HOURS` (default 4) after it starts, even if the machine that launched
+it is gone; its boot disk is deleted with it; and the script fails if any
+`chonk-hare-*` instance or disk is left afterwards. Before creating anything it
+prints the worst-case cost and asks for confirmation (`HARE_GPU_YES=1` skips the
+question). When the deadline passes mid-run, the results copied back so far are
+kept and the run can be repeated to finish. Zones in `GCP_ZONES` are tried in
+order, skipping any without GPU capacity. `GCP_ZONES`, `GCP_MACHINE_TYPE`,
+`GCP_ACCELERATOR`, and `GCP_HOURLY_USD` override the defaults.
+
+Vultr has no such deadline: if the launching machine dies, the instance keeps
+billing until it is destroyed by hand.
+
+Runs that use Claude or Together models also need `ANTHROPIC_API_KEY` or
+`TOGETHER_API_KEY`.
+
 Each 500-question run with gpt-4o-mini costs roughly US$5–10 in API fees, and
-`work/configs/fang` holds 50 runs. To reproduce one run, put its TOML alone in a
-directory and pass `--config-dir`. The TOMLs use
-`extends = "../fang_base.toml"`, so the directory must sit next to
-`work/configs/fang_base.toml`:
+`work/configs/fang` holds 50 runs. To reproduce some of them, list their run
+names in a file and pass `--runs`:
 
 ```bash
-mkdir -p work/configs/one
-cp work/configs/fang/fang_ner_ref_bc_laned60_community_k30_srr_bm25_mini_adf.toml work/configs/one/
-scripts/hare/reproduce.sh --config-dir work/configs/one
+echo fang_ner_ref_bc_laned60_community_k30_srr_bm25_mini_adf > work/configs/one_run.txt
+scripts/hare/reproduce.sh --runs work/configs/one_run.txt
 ```
 
 A GPU is recommended for embedding and reranking.
@@ -200,7 +229,8 @@ To re-score a generation file with the typed scorer alone:
 uv run python work/score_typed.py \
   --schemas work/fang2026/data/fang2026_gold_schemas.jsonl \
   --results work/reproduce/results/<run>_rp.jsonl \
-  --out work/reproduce/results/<run>_typed_scores.json
+  --out work/reproduce/results/<run>_typed_scores.json \
+  --local-embed-model BAAI/bge-large-en-v1.5
 ```
 
 ## GraphRAG-Bench

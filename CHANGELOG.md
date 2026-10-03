@@ -21,8 +21,22 @@ include breaking API changes.
 - `CONTRIBUTING.md`, `GOVERNANCE.md`, `SUPPORT.md`, and this changelog.
 - JOSS paper draft under `paper/`.
 - `docs/reproducing-benchmarks.md`.
+- `scripts/hare/reproduce.sh --gpu gcp|vultr`: runs the reproduction on a GPU
+  instance and copies the results back. On GCP the instance has a provider-side
+  deadline and is deleted even if the launching machine dies.
 
 ### Fixed
+- `scripts/hare/reproduce.sh` did not set up the scorer: it now copies the typed
+  scorer into the data directory and fetches the GraphRAG-Bench repository the
+  evaluator imports from. The evaluator now fails when either is missing; it
+  used to print a message and write no scores.
+- `scripts/hare/compare_results.py` failed on the score files `run-all` writes;
+  it now reads that layout as well as the typed scorer's.
+- Benchmark rerank checkpoint: runs that differed only in BM25 or the Auto
+  Domain Filter shared one checkpoint, so the second run reused the first run's
+  ranking and dropped its own extra candidates. The checkpoint key now includes
+  both settings, and a checkpointed ranking is reused only when the question's
+  candidate set is unchanged.
 - `build()` and `Index.add_source()` embedded raw chunk content and ignored
   `enrich_context`; they now embed the breadcrumb-enriched text, like every
   other embed path.

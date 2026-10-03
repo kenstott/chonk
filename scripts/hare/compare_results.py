@@ -4,6 +4,7 @@
 
 Reads bench_eval_<run>_rp.json from both directories and prints the overall
 score and per-question-type scores side by side, with the difference.
+Both score file layouts are read: the typed scorer's and the evaluator's.
 
 With --retrieval DIR (a reference run's outputs, e.g. the published
 diagnostics), it also compares each question's retrieved chunk IDs from
@@ -36,11 +37,18 @@ TYPES = {
 
 
 def _scores(path: Path) -> dict[str, float]:
+    """Overall and per-type scores from either score file layout.
+
+    work/score_typed.py writes {"overall", "by_type"}; `graphrag_bench.py run-all`
+    writes one {"typed_score"} block per question type, and the overall score is
+    the mean of the five per-type scores.
+    """
     d = json.loads(path.read_text())
-    out = {"overall": float(d["overall"])}
-    for name, short in TYPES.items():
-        out[short] = float(d["by_type"][name])
-    return out
+    if "by_type" in d:
+        out = {short: float(d["by_type"][name]) for name, short in TYPES.items()}
+        return {"overall": float(d["overall"]), **out}
+    out = {short: float(d[name]["typed_score"]) for name, short in TYPES.items()}
+    return {"overall": sum(out.values()) / len(out), **out}
 
 
 def _retrieved(path: Path) -> dict[str, list[str]]:
