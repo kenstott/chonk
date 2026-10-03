@@ -694,3 +694,116 @@ class TestRunAllFailureReporting:
             _bench.cmd_run_all(args)
 
         assert exc.value.code == 1
+
+
+# ---------------------------------------------------------------------------
+# Rerank checkpoint
+# ---------------------------------------------------------------------------
+
+
+class TestRerankCheckpoint:
+    """A checkpointed ranking is reused only for the candidate set it ranked."""
+
+    @staticmethod
+    def _hits(*chunk_ids: str) -> dict[str, tuple]:
+        return {cid: (cid, 0.5, object()) for cid in chunk_ids}
+
+    def test_digest_ignores_candidate_order(self):
+        assert _bench._rerank_candidates_digest(["a", "b", "c"]) == (
+            _bench._rerank_candidates_digest(["c", "a", "b"])
+        )
+
+    def test_digest_differs_for_different_candidates(self):
+        assert _bench._rerank_candidates_digest(["a", "b"]) != (
+            _bench._rerank_candidates_digest(["a", "c"])
+        )
+
+    def test_restores_ranking_for_same_candidates(self):
+        hits = self._hits("a", "b", "c")
+        entry = {"candidates": _bench._rerank_candidates_digest(hits), "ranked": ["c", "a"]}
+
+        assert _bench._restore_reranked(entry, hits) == [hits["c"], hits["a"]]
+
+    def test_does_not_restore_when_candidates_changed(self):
+        # e.g. the same run config with BM25 or ADF switched on
+        ranked_from = self._hits("a", "b", "c")
+        entry = {"candidates": _bench._rerank_candidates_digest(ranked_from), "ranked": ["c", "a"]}
+
+        assert _bench._restore_reranked(entry, self._hits("a", "b", "d")) is None
+        assert _bench._restore_reranked(entry, self._hits("a", "c")) is None
+
+
+# ---------------------------------------------------------------------------
+# bench-eval prerequisites
+# ---------------------------------------------------------------------------
+
+
+class TestBenchEvalPrerequisites:
+    """A missing scorer prerequisite stops the evaluation instead of skipping it."""
+
+    @staticmethod
+    def _args(out_dir: Path) -> argparse.Namespace:
+        return argparse.Namespace(out_dir=str(out_dir), run_name="r_rp")
+
+    def test_missing_benchmark_repo_raises(self, tmp_path):
+        (tmp_path / "data").mkdir()
+        (tmp_path / "results").mkdir()
+
+        with pytest.raises(FileNotFoundError, match="GraphRAG-Benchmark"):
+            _bench.cmd_bench_eval(self._args(tmp_path))
+
+    def test_typed_schemas_without_typed_scorer_raises(self, tmp_path):
+        (tmp_path / "data").mkdir()
+        (tmp_path / "results").mkdir()
+        (tmp_path / "GraphRAG-Benchmark").mkdir()
+        (tmp_path / "data" / "fang2026_gold_schemas.jsonl").write_text("")
+
+        with pytest.raises(FileNotFoundError, match="score_typed.py"):
+            _bench.cmd_bench_eval(self._args(tmp_path))
+
+
+# ---------------------------------------------------------------------------
+# run-all --runs
+# ---------------------------------------------------------------------------
+
+
+class TestRunAllRunsFilter:
+    """run-all --runs limits the configs to the listed run names."""
+
+    @staticmethod
+    def _setup(tmp_path: Path, runs_file_text: str) -> argparse.Namespace:
+        cfg_dir = tmp_path / "configs"
+        cfg_dir.mkdir()
+        for name in ("r", "s", "t"):
+            (cfg_dir / f"{name}.toml").write_text(f'run_name = "{name}"\n')
+        runs_file = tmp_path / "runs.txt"
+        runs_file.write_text(runs_file_text)
+        return argparse.Namespace(
+            config_dir=str(cfg_dir),
+            out_dir=str(tmp_path / "out"),
+            question_ids=None,
+            runs=str(runs_file),
+        )
+
+    def test_only_listed_runs_are_started(self, tmp_path, monkeypatch):
+        import subprocess
+
+        started: list[str] = []
+
+        def fake_run(cmd, **kw):
+            started.append(cmd[cmd.index("--run-name") + 1])
+            return subprocess.CompletedProcess(cmd, 1)  # stop each run before its eval
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        args = self._setup(tmp_path, "# cited in the paper\nt\n\nr  # leader\n")
+
+        with pytest.raises(SystemExit):
+            _bench.cmd_run_all(args)
+
+        assert started == ["r", "t"]
+
+    def test_listed_run_without_a_config_raises(self, tmp_path):
+        args = self._setup(tmp_path, "r\nmissing_run\n")
+
+        with pytest.raises(RuntimeError, match="missing_run"):
+            _bench.cmd_run_all(args)
