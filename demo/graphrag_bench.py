@@ -2280,6 +2280,26 @@ def _register_fang_domains(store) -> None:
     print(f"[ADF] Domain registration: {dict(tagged)}")
 
 
+def _llm_client(provider: str, timeout: float):
+    """OpenAI-compatible chat client for a generator provider."""
+    import openai
+
+    if provider == "openai":
+        return openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"], timeout=timeout)
+    if provider == "together":
+        return openai.OpenAI(
+            api_key=os.environ["TOGETHER_API_KEY"], base_url=TOGETHER_BASE_URL, timeout=timeout
+        )
+    if provider == "anthropic":
+        return openai.OpenAI(
+            api_key=os.environ["ANTHROPIC_API_KEY"],
+            base_url=ANTHROPIC_BASE_URL,
+            default_headers={"anthropic-version": "2023-06-01"},
+            timeout=timeout,
+        )
+    raise ValueError(f"no chat client for provider {provider!r}")
+
+
 def _build_domain_filter_fn(openai_client, model: str):
     """Return a callable suitable for EnhancedSearch.search(domain_filter_llm_fn=...)."""
 
@@ -2889,12 +2909,16 @@ def cmd_run(args: argparse.Namespace) -> None:
 
     _adf_fn = None
     if auto_domain_filter:
-        import openai as _adf_oai
-
-        _adf_client = _adf_oai.OpenAI(api_key=os.environ["OPENAI_API_KEY"], timeout=30.0)
+        # The classifier runs on the generator's provider and model, so a run on a
+        # self-hosted (sovereign) model sends nothing to a third party.
+        _adf_provider = getattr(args, "gen_provider", "openai")
+        _adf_client = _llm_client(_adf_provider, timeout=30.0)
         _adf_model = getattr(args, "gen_model", GEN_MODEL)
         _adf_fn = _build_domain_filter_fn(_adf_client, _adf_model)
-        print(f"[ADF] Automated domain filtering enabled (model={_adf_model})")
+        print(
+            f"[ADF] Automated domain filtering enabled "
+            f"(provider={_adf_provider}, model={_adf_model})"
+        )
 
     work_items: list[dict] = []
     with Store(db_path, embedding_dim=EMBED_DIM, read_only=True) as store:

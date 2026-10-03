@@ -26,6 +26,9 @@ include breaking API changes.
   deadline and is deleted even if the launching machine dies.
 
 ### Fixed
+- Benchmark Auto Domain Filter: the classifier always called OpenAI with the
+  generator's model name, so runs on Together or Anthropic models failed. It now
+  runs on the generator's provider.
 - `scripts/hare/reproduce.sh` did not set up the scorer: it now copies the typed
   scorer into the data directory and fetches the GraphRAG-Bench repository the
   evaluator imports from. The evaluator now fails when either is missing; it

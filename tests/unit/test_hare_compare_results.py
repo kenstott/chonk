@@ -48,3 +48,16 @@ def test_reads_evaluator_layout(tmp_path):
 def test_unknown_layout_raises(tmp_path):
     with pytest.raises(KeyError):
         _compare._scores(_write(tmp_path, {"_params": {}}))
+
+
+def test_type_without_typed_score_is_nan_and_left_out_of_overall(tmp_path):
+    # runs without SRR cannot be scored on cross-domain questions, which require
+    # cited evidence; the typed scorer leaves that type out of the overall score
+    payload = {"_params": {"n_evaluated": 500}}
+    payload.update({name: {"typed_score": score} for name, score in _BY_TYPE.items()})
+    payload["Cross-Domain Entity Resolution"] = {}
+
+    scores = _compare._scores(_write(tmp_path, payload))
+
+    assert scores["CE"] != scores["CE"]  # NaN
+    assert scores["overall"] == pytest.approx((0.9 + 0.7 + 0.6 + 0.5) / 4)

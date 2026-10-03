@@ -807,3 +807,33 @@ class TestRunAllRunsFilter:
 
         with pytest.raises(RuntimeError, match="missing_run"):
             _bench.cmd_run_all(args)
+
+
+# ---------------------------------------------------------------------------
+# Auto Domain Filter client
+# ---------------------------------------------------------------------------
+
+
+class TestDomainFilterClient:
+    """The ADF classifier runs on the generator's provider and model."""
+
+    @pytest.mark.parametrize(
+        ("provider", "key_var", "base_url"),
+        [
+            ("openai", "OPENAI_API_KEY", None),
+            ("together", "TOGETHER_API_KEY", _bench.TOGETHER_BASE_URL),
+            ("anthropic", "ANTHROPIC_API_KEY", _bench.ANTHROPIC_BASE_URL),
+        ],
+    )
+    def test_client_follows_generator_provider(self, monkeypatch, provider, key_var, base_url):
+        monkeypatch.setenv(key_var, f"key-for-{provider}")
+
+        client = _bench._llm_client(provider, timeout=30.0)
+
+        assert client.api_key == f"key-for-{provider}"
+        if base_url is not None:
+            assert str(client.base_url).rstrip("/") == base_url.rstrip("/")
+
+    def test_unknown_provider_raises(self):
+        with pytest.raises(ValueError, match="cohere"):
+            _bench._llm_client("cohere", timeout=30.0)

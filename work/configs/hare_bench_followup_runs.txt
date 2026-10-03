@@ -1,0 +1,4 @@
+# Rerun of the gpt-oss-120b ADF run after its classifier moved to Together
+fang_ner_ref_laned60_community_k30_rerank_srr_gptoss120b_adf
+fang_vector_bm25_bc_k30_rerank_srr_mini
+fang_vector_bm25_bc_k50_rerank_srr_mini

@@ -41,14 +41,19 @@ def _scores(path: Path) -> dict[str, float]:
 
     work/score_typed.py writes {"overall", "by_type"}; `graphrag_bench.py run-all`
     writes one {"typed_score"} block per question type, and the overall score is
-    the mean of the five per-type scores.
+    the mean of the per-type scores. A type with no typed score is NaN and is left
+    out of the overall, as the typed scorer does: runs without SRR cannot be scored
+    on cross-domain questions, which require cited evidence.
     """
     d = json.loads(path.read_text())
     if "by_type" in d:
         out = {short: float(d["by_type"][name]) for name, short in TYPES.items()}
         return {"overall": float(d["overall"]), **out}
-    out = {short: float(d[name]["typed_score"]) for name, short in TYPES.items()}
-    return {"overall": sum(out.values()) / len(out), **out}
+    if not any("typed_score" in d.get(name, {}) for name in TYPES):
+        raise KeyError(f"{path}: no typed scores")
+    out = {short: float(d[name].get("typed_score", "nan")) for name, short in TYPES.items()}
+    scored = [v for v in out.values() if v == v]
+    return {"overall": sum(scored) / len(scored), **out}
 
 
 def _retrieved(path: Path) -> dict[str, list[str]]:
