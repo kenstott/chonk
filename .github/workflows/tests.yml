@@ -19,7 +19,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.14"]
+        # Oldest and newest Python with spaCy wheels (spacy 3.8.14 has none for 3.14).
+        python-version: ["3.11", "3.13"]
 
     services:
       postgres:
