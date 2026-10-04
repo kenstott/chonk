@@ -46,11 +46,14 @@ dependencies = [
     "torch>=2.12,<3",
 ]
 
+[project.scripts]
+chonk = "chonk._cli:main"
+
 [project.urls]
 Homepage = "https://github.com/kenstott/chonk"
 Repository = "https://github.com/kenstott/chonk"
 Issues = "https://github.com/kenstott/chonk/issues"
-Changelog = "https://github.com/kenstott/chonk/releases"
+Changelog = "https://github.com/kenstott/chonk/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 http    = ["requests>=2.34.2,<3", "certifi>=2026.5.20"]
@@ -71,7 +74,7 @@ cluster = ["scikit-learn>=1.9,<2", "numpy>=2.4.6,<3"]
 leiden  = ["igraph>=1.0.0,<2", "leidenalg>=0.12.0,<2"]
 parquet = ["pyarrow>=24.0,<30"]
 code       = []  # Python/TS/JS/Java via stdlib ast + regex; no additional packages required
-ner        = ["inflect>=7.5,<8"]
+ner        = ["inflect>=7.5,<8", "nltk>=3.9.4,<4"]  # nltk: WordNet singular forms
 spacy      = ["spacy>=3.8.14,<3.9", "thinc>=8.3.13,<9"]
 csv        = ["pandas>=2.3.3,<3"]
 gmail      = ["google-api-python-client>=2.197,<3", "google-auth-oauthlib>=1.4,<2", "google-auth-httplib2>=0.4,<1"]
@@ -103,6 +106,16 @@ build-backend = "hatchling.build"
 packages = ["chonk"]
 
 [dependency-groups]
+# Benchmark driver (demo/graphrag_bench.py) and HARE-Bench scorer (work/score_typed.py).
+bench = [
+    "openai>=3.22.1,<4",
+    "langchain-core>=1.6.6,<2",
+    "langchain-openai>=1.6.7,<2",
+    "quantulum3>=0.10.0,<1",
+    "datasets>=5.0.1,<6",
+    "together>=2.38.0,<3",
+    "cohere>=7.2.0,<8",
+]
 dev = [
     "pytest>=9.0.3,<10",
     "pytest-cov>=7.1",
@@ -133,6 +146,9 @@ dev = [
     "psycopg2-binary>=2.9.12,<3",
     "pgvector>=0.4.2,<1",
 ]
+
+[tool.uv]
+default-groups = ["dev", "bench"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

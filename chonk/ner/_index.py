@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 87879595-95d8-4607-bc7a-b919603a34b3
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Bidirectional entity-chunk association index.
 

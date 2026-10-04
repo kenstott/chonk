@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 7a4e2b91-3c88-4f02-b5d1-e920c7f84a3d
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """
 Chunky Monkey — GraphRAG-Bench evaluation.
@@ -30,6 +25,7 @@ import re
 import sys
 import time
 from collections import defaultdict
+from collections.abc import Iterable
 from pathlib import Path
 
 try:
@@ -112,6 +108,25 @@ PUBLISHED_BASELINES = {
 # ─────────────────────────────────────────────────────────────────────────────
 # TOML config loading
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+def _rerank_candidates_digest(chunk_ids: Iterable[str]) -> str:
+    """Digest of one question's rerank candidate set, independent of order."""
+    import hashlib
+
+    return hashlib.sha256("\n".join(sorted(chunk_ids)).encode()).hexdigest()[:16]
+
+
+def _restore_reranked(entry: dict, hit_by_cid: dict[str, tuple]) -> list[tuple] | None:
+    """Checkpointed ranking for one question, or None when its candidates changed.
+
+    A ranking is only valid for the candidate set it was ranked from. BM25, ADF,
+    and domain filters all change which chunks reach the reranker, and ADF's
+    routing can differ between two invocations of the same run.
+    """
+    if entry["candidates"] != _rerank_candidates_digest(hit_by_cid):
+        return None
+    return [hit_by_cid[cid] for cid in entry["ranked"]]
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
@@ -2247,6 +2262,15 @@ _FANG_DOMAINS = [
 ]
 
 
+def _needs_domain_tags(auto_domain_filter: bool, domain_ids: list[str] | None) -> bool:
+    """Whether a run filters by domain, so the store's chunks must carry domain tags.
+
+    The published stores carry none; without tags a static domain filter (the
+    *_no_gleif runs) would depend on whether an ADF run had tagged the store first.
+    """
+    return bool(auto_domain_filter or domain_ids)
+
+
 def _register_fang_domains(store) -> None:
     """Register FANG corpus domains and tag embeddings with domain_id by document_name pattern."""
     for domain_id, ns, name, desc in _FANG_DOMAINS:
@@ -2263,6 +2287,26 @@ def _register_fang_domains(store) -> None:
         "SELECT domain_id, COUNT(*) FROM embeddings WHERE domain_id IS NOT NULL GROUP BY domain_id"
     ).fetchall()
     print(f"[ADF] Domain registration: {dict(tagged)}")
+
+
+def _llm_client(provider: str, timeout: float):
+    """OpenAI-compatible chat client for a generator provider."""
+    import openai
+
+    if provider == "openai":
+        return openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"], timeout=timeout)
+    if provider == "together":
+        return openai.OpenAI(
+            api_key=os.environ["TOGETHER_API_KEY"], base_url=TOGETHER_BASE_URL, timeout=timeout
+        )
+    if provider == "anthropic":
+        return openai.OpenAI(
+            api_key=os.environ["ANTHROPIC_API_KEY"],
+            base_url=ANTHROPIC_BASE_URL,
+            default_headers={"anthropic-version": "2023-06-01"},
+            timeout=timeout,
+        )
+    raise ValueError(f"no chat client for provider {provider!r}")
 
 
 def _build_domain_filter_fn(openai_client, model: str):
@@ -2798,6 +2842,12 @@ def cmd_run(args: argparse.Namespace) -> None:
                 if _rerank_device
                 else CrossEncoder(RERANK_MODEL, max_length=512)
             )
+        # Reranker scores differ slightly across devices (CPU, MPS, CUDA); record the
+        # one actually used so runs, and their rerank caches, can be told apart.
+        _flags["rerank_device"] = (
+            str(reranker.device) if reranker is not None else f"api:{rerank_provider}"
+        )
+        _flags_path.write_text(json.dumps(_flags, indent=2), encoding="utf-8")
 
     _need_community = use_community_context or search_mode in ("graph_first", "map_reduce_global")
     community_index = _load_community_index(db_path) if _need_community else None
@@ -2863,17 +2913,21 @@ def cmd_run(args: argparse.Namespace) -> None:
     # Run schema migrations in write mode before opening read-only.
     # ALTER TABLE is idempotent; this is a no-op when columns already exist.
     with Store(db_path, embedding_dim=EMBED_DIM) as _mig:
-        if auto_domain_filter:
+        if _needs_domain_tags(auto_domain_filter, domain_ids):
             _register_fang_domains(_mig)
 
     _adf_fn = None
     if auto_domain_filter:
-        import openai as _adf_oai
-
-        _adf_client = _adf_oai.OpenAI(api_key=os.environ["OPENAI_API_KEY"], timeout=30.0)
+        # The classifier runs on the generator's provider and model, so a run on a
+        # self-hosted (sovereign) model sends nothing to a third party.
+        _adf_provider = getattr(args, "gen_provider", "openai")
+        _adf_client = _llm_client(_adf_provider, timeout=30.0)
         _adf_model = getattr(args, "gen_model", GEN_MODEL)
         _adf_fn = _build_domain_filter_fn(_adf_client, _adf_model)
-        print(f"[ADF] Automated domain filtering enabled (model={_adf_model})")
+        print(
+            f"[ADF] Automated domain filtering enabled "
+            f"(provider={_adf_provider}, model={_adf_model})"
+        )
 
     work_items: list[dict] = []
     with Store(db_path, embedding_dim=EMBED_DIM, read_only=True) as store:
@@ -3157,7 +3211,12 @@ def cmd_run(args: argparse.Namespace) -> None:
                     "entity_ref": use_entity_ref_expansion,
                     "search_mode": search_mode,
                     "ner_x": use_ner_x,
+                    "bm25": bool(getattr(args, "bm25", False)),
+                    "auto_domain_filter": bool(auto_domain_filter),
+                    "domain_ids": sorted(domain_ids) if domain_ids else None,
+                    "namespaces": sorted(namespaces) if namespaces else None,
                     "rerank_provider": rerank_provider,
+                    "rerank_device": _flags.get("rerank_device"),
                     "reranker": (
                         RERANK_MODEL_TOGETHER
                         if rerank_provider == "together"
@@ -3170,8 +3229,8 @@ def cmd_run(args: argparse.Namespace) -> None:
             )
             _rerank_cache_key = _hl_rr.md5(_rerank_key_str.encode()).hexdigest()[:16]
             _rerank_ckpt_path = results_dir / f"_rerank_ckpt_{_rerank_cache_key}.json"
-            # Load existing checkpoint: qid -> [chunk_id, ...]
-            _rerank_ckpt: dict[str, list[str]] = {}
+            # Load existing checkpoint: qid -> {"candidates": digest, "ranked": [chunk_id, ...]}
+            _rerank_ckpt: dict[str, dict] = {}
             if _rerank_ckpt_path.exists():
                 try:
                     _rerank_ckpt = json.loads(_rerank_ckpt_path.read_text())
@@ -3189,18 +3248,28 @@ def cmd_run(args: argparse.Namespace) -> None:
             ]
             # Restore already-checkpointed questions
             _pending_rerank_indices = []
+            _n_stale = 0
             for j, (i, q) in enumerate(pending):
                 qid = q.get("id", f"q{i}")
-                if qid in _rerank_ckpt:
-                    ordered = [
-                        _hit_by_cid[j][cid] for cid in _rerank_ckpt[qid] if cid in _hit_by_cid[j]
-                    ]
-                    _reranked_hits[j] = ordered
-                else:
+                ordered = (
+                    _restore_reranked(_rerank_ckpt[qid], _hit_by_cid[j])
+                    if qid in _rerank_ckpt
+                    else None
+                )
+                if ordered is None:
+                    _n_stale += qid in _rerank_ckpt
                     _pending_rerank_indices.append(j)
+                else:
+                    _reranked_hits[j] = ordered
             if len(_pending_rerank_indices) < len(_all_hits):
                 print(
                     f"  Restored {len(_all_hits) - len(_pending_rerank_indices)} from rerank checkpoint.",
+                    flush=True,
+                )
+            if _n_stale:
+                print(
+                    f"  {_n_stale} checkpointed questions have different candidates now; "
+                    "reranking them again.",
                     flush=True,
                 )
             for _ci, _chunk_start in enumerate(
@@ -3225,7 +3294,10 @@ def cmd_run(args: argparse.Namespace) -> None:
                     ]
                     _reranked_hits[j] = [h for _, h in ranked]
                     qid = pending[j][1].get("id", f"q{pending[j][0]}")
-                    _rerank_ckpt[qid] = [h[0] for h in _reranked_hits[j]]
+                    _rerank_ckpt[qid] = {
+                        "candidates": _rerank_candidates_digest(_hit_by_cid[j]),
+                        "ranked": [h[0] for h in _reranked_hits[j]],
+                    }
                 _rerank_ckpt_path.write_text(json.dumps(_rerank_ckpt))
                 print(
                     f"  Reranked {_chunk_end_display}/{len(_pending_rerank_indices)} pending",
@@ -3684,6 +3756,14 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
     ckpt_f = results_dir / f"bench_eval_ckpt_{run_name}.jsonl"
     out_f = results_dir / f"bench_eval_{run_name}.json"
 
+    if not repo_dir.exists():
+        raise FileNotFoundError(f"Benchmark repo not found at {repo_dir}. Run 'download' first.")
+    if any(data_dir.glob("*_gold_schemas.jsonl")) and not (data_dir / "score_typed.py").exists():
+        raise FileNotFoundError(
+            f"{data_dir} has typed answer schemas but no score_typed.py; "
+            "the typed scores would be left out. Copy work/score_typed.py there."
+        )
+
     run_db = _run_db_path(data_dir, run_name)
     if run_db.exists():
         _init_run_db(run_db)  # migrate schema (ALTER TABLE is idempotent)
@@ -3694,9 +3774,6 @@ def cmd_bench_eval(args: argparse.Namespace) -> None:
         _write_results_to_db(run_db, records)
     else:
         print(f"No results found: {results_f}. Run 'run' first.")
-        return
-    if not repo_dir.exists():
-        print(f"Benchmark repo not found at {repo_dir}. Run 'download' first.")
         return
     question_ids_file = getattr(args, "question_ids", None)
     if question_ids_file:
@@ -5325,8 +5402,25 @@ def cmd_run_all(args: argparse.Namespace) -> None:
 
     out_dir = Path(args.out_dir)
     results_dir = out_dir / "results"
+    results_dir.mkdir(parents=True, exist_ok=True)
 
     ap = _make_parser()
+    failed: list[str] = []
+
+    # --runs FILE: one run name per line, '#' starts a comment
+    only: set[str] | None = None
+    if getattr(args, "runs", None):
+        only = {
+            name
+            for line in Path(args.runs).read_text().splitlines()
+            if (name := line.split("#", 1)[0].strip())
+        }
+        known = {_load_config(str(f)).get("run_name") for f in toml_files}
+        if only - known:
+            raise RuntimeError(
+                f"{args.runs} lists runs with no config in {config_dir}: "
+                f"{', '.join(sorted(only - known))}"
+            )
 
     for toml_path in toml_files:
         cfg = _load_config(str(toml_path))
@@ -5334,10 +5428,13 @@ def cmd_run_all(args: argparse.Namespace) -> None:
         if not run_name:
             print(f"SKIP {toml_path.name}: no run_name")
             continue
+        if only is not None and run_name not in only:
+            continue
 
         crash_marker = results_dir / f".failed_{run_name}"
         if crash_marker.exists():
             print(f"=== SKIP {run_name} (crashed — clear marker to retry) ===")
+            failed.append(run_name)
             continue
 
         eval_file = results_dir / f"bench_eval_{run_name}_rp.json"
@@ -5388,6 +5485,7 @@ def cmd_run_all(args: argparse.Namespace) -> None:
                     f"=== CRASH {run_name} (exit {ret.returncode}) — marking failed, skipping ==="
                 )
                 crash_marker.write_text(f"exit={ret.returncode}")
+                failed.append(run_name)
                 try:
                     import torch as _torch
 
@@ -5433,7 +5531,12 @@ def cmd_run_all(args: argparse.Namespace) -> None:
         except Exception as _exc:
             print(f"=== CRASH EVAL {run_name}_rp: {_exc} — marking failed, skipping ===")
             crash_marker.write_text(str(_exc))
+            failed.append(run_name)
             continue
+
+    if failed:
+        print(f"=== {len(failed)} run(s) failed: {', '.join(failed)} ===")
+        _sys.exit(1)
 
 
 def cmd_init_config(args: argparse.Namespace) -> None:
@@ -6209,6 +6312,12 @@ def _make_parser() -> argparse.ArgumentParser:
         dest="question_ids",
         metavar="PATH",
         help="JSON file with list of question IDs to run (default: all)",
+    )
+    p.add_argument(
+        "--runs",
+        default=None,
+        metavar="PATH",
+        help="Text file of run names, one per line; only these configs run (default: all)",
     )
     p.set_defaults(func=cmd_run_all)
 

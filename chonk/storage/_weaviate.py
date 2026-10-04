@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: e2f3a4b5-c6d7-8e9f-a0b1-c2d3e4f5a6b7
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Weaviate vector backend for chonk.
 

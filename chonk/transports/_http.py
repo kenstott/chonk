@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 4c810be5-e7cc-4678-829c-a06667ea9b1f
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """HTTP/HTTPS transport using requests with a persistent session."""
 

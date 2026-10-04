@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 043d5c95-ea19-4084-9218-abba10f0a83e
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """NoSQLRenderer — annotates DocumentChunks from NoSQL crawler JSON payloads.
 

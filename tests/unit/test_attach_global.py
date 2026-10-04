@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: a6f73e38-04cb-446c-b7e0-86087e1b029c
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Tests for Store.attach_global() / detach_global() union-view feature."""
 

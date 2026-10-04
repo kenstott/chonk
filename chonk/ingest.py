@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 122f06b0-3685-465e-9ca2-de49c1829517
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Config-driven build and search: build(config) -> Index."""
 
@@ -123,6 +118,11 @@ _INGEST_FNS = {
 }
 
 
+def _embedding_texts(chunks: list[DocumentChunk]) -> list[str]:
+    """Text to embed per chunk: the breadcrumb-enriched form when enrich_context set it."""
+    return [c.embedding_content if c.embedding_content else c.content for c in chunks]
+
+
 def _embed_chunks(chunks: list[DocumentChunk], ec: EmbedConfig) -> np.ndarray:
     import numpy as np
     from sentence_transformers import SentenceTransformer
@@ -130,7 +130,7 @@ def _embed_chunks(chunks: list[DocumentChunk], ec: EmbedConfig) -> np.ndarray:
     model_name = ec.model
     batch_size = ec.batch_size
     model = SentenceTransformer(model_name)
-    texts = [c.content for c in chunks]
+    texts = _embedding_texts(chunks)
     vecs = []
     for i in range(0, len(texts), batch_size):
         v = model.encode(
@@ -439,7 +439,7 @@ class Index:
         if not chunks:
             return None
 
-        texts = [c.content for c in chunks]
+        texts = _embedding_texts(chunks)
         emb = _embed_texts(texts, self._embed_model, self._embed_cfg.batch_size)
         self._store.add_document(chunks, emb, namespace=namespace_id, domain_id=domain_id)
         self._store.vector.rebuild_fts_index()

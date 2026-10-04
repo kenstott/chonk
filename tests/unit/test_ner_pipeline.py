@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 20988944-4fc2-4299-bd0a-487b5d812cd2
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holders.
 
 """Tests for SchemaVocabBuilder and NerPipeline."""
 
@@ -231,7 +226,9 @@ class TestNerPipelineDbEnrich:
 
     def test_schema_term_counts(self):
         p = NerPipeline(db_enrich=True)
-        p.add_tables([_FakeTable("orders", ["order_id", "amount"])])
+        # "amount" alone is a generic column name and is not counted; see
+        # test_schema_vocab_generic_terms.py
+        p.add_tables([_FakeTable("orders", ["order_id", "order_total", "amount"])])
         counts = p.schema_term_counts()
         assert counts["tables"] == 1
         assert counts["columns"] == 2

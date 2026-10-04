@@ -1,11 +1,9 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 90ffcf48-53ce-4e1d-b958-bbb627326d6f
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
-"""Unit tests for stdlib-only extractors (HtmlExtractor, TextExtractor, MarkdownExtractor, YamlExtractor) and detect_extractor."""
+"""Unit tests for stdlib-only extractors and detect_extractor.
+
+Covers HtmlExtractor, TextExtractor, MarkdownExtractor, and YamlExtractor.
+"""
 
 import pytest
 
@@ -18,6 +16,7 @@ from chonk.extractors._yaml import YamlExtractor
 # =============================================================================
 # HtmlExtractor
 # =============================================================================
+
 
 class TestHtmlExtractor:
     def test_h1_to_markdown_heading(self):
@@ -111,6 +110,7 @@ class TestHtmlExtractor:
 # TextExtractor
 # =============================================================================
 
+
 class TestTextExtractor:
     def test_utf8_decode(self):
         data = b"hello world"
@@ -169,6 +169,7 @@ class TestTextExtractor:
 # detect_extractor
 # =============================================================================
 
+
 class TestDetectExtractor:
     def test_detect_html(self):
         assert isinstance(detect_extractor("html"), HtmlExtractor)
@@ -181,26 +182,32 @@ class TestDetectExtractor:
 
     def test_detect_csv(self):
         from chonk.extractors._csv import CsvExtractor
+
         assert isinstance(detect_extractor("csv"), CsvExtractor)
 
     def test_detect_json(self):
         from chonk.extractors._json import JsonExtractor
+
         assert isinstance(detect_extractor("json"), JsonExtractor)
 
     def test_detect_pdf(self):
         from chonk.extractors._pdf import PdfExtractor
+
         assert isinstance(detect_extractor("pdf"), PdfExtractor)
 
     def test_detect_docx(self):
         from chonk.extractors._docx import DocxExtractor
+
         assert isinstance(detect_extractor("docx"), DocxExtractor)
 
     def test_detect_xlsx(self):
         from chonk.extractors._xlsx import XlsxExtractor
+
         assert isinstance(detect_extractor("xlsx"), XlsxExtractor)
 
     def test_detect_pptx(self):
         from chonk.extractors._pptx import PptxExtractor
+
         assert isinstance(detect_extractor("pptx"), PptxExtractor)
 
     def test_detect_yaml(self):
@@ -214,6 +221,7 @@ class TestDetectExtractor:
 # =============================================================================
 # MarkdownExtractor
 # =============================================================================
+
 
 class TestMarkdownExtractor:
     def test_passthrough_plain_markdown(self):
@@ -257,6 +265,7 @@ class TestMarkdownExtractor:
 # =============================================================================
 # YamlExtractor
 # =============================================================================
+
 
 class TestYamlExtractor:
     def test_simple_mapping(self):
@@ -313,9 +322,11 @@ class TestYamlExtractor:
 # CsvExtractor
 # =============================================================================
 
+
 class TestCsvExtractor:
     def test_renders_markdown_table(self):
         from chonk.extractors._csv import CsvExtractor
+
         data = b"name,age\nAlice,30\nBob,25"
         result = CsvExtractor().extract(data)
         assert "| name |" in result
@@ -326,29 +337,35 @@ class TestCsvExtractor:
 
     def test_pipe_chars_escaped(self):
         from chonk.extractors._csv import CsvExtractor
+
         data = b"col\nval|ue"
         result = CsvExtractor().extract(data)
         assert "\\|" in result
 
     def test_empty_csv_returns_empty(self):
         from chonk.extractors._csv import CsvExtractor
+
         result = CsvExtractor().extract(b"")
         assert result == ""
 
     def test_can_handle_csv(self):
         from chonk.extractors._csv import CsvExtractor
+
         assert CsvExtractor().can_handle("csv")
 
     def test_can_handle_tsv(self):
         from chonk.extractors._csv import CsvExtractor
+
         assert CsvExtractor().can_handle("tsv")
 
     def test_cannot_handle_text(self):
         from chonk.extractors._csv import CsvExtractor
+
         assert not CsvExtractor().can_handle("text")
 
     def test_tab_separated(self):
         from chonk.extractors._csv import CsvExtractor
+
         data = b"name\tage\nAlice\t30"
         result = CsvExtractor().extract(data)
         assert "Alice" in result
@@ -359,6 +376,7 @@ class TestCsvExtractor:
 # OdfExtractor
 # =============================================================================
 
+
 def _make_odt(paragraphs: list[str], headings: list[tuple[int, str]] | None = None) -> bytes:
     """Build a minimal ODT document in memory using odfpy."""
     pytest.importorskip("odf")
@@ -368,7 +386,7 @@ def _make_odt(paragraphs: list[str], headings: list[tuple[int, str]] | None = No
     from odf.text import H, P
 
     doc = OpenDocumentText()
-    for level, text in (headings or []):
+    for level, text in headings or []:
         h = H(outlinelevel=level, text=text)
         doc.text.addElement(h)
     for text in paragraphs:
@@ -431,6 +449,7 @@ def _make_odp(slides: list[list[str]]) -> bytes:
 class TestOdfExtractor:
     def test_odt_paragraph_text(self):
         from chonk.extractors._odf import OdfExtractor
+
         data = _make_odt(["Hello world", "Second paragraph"])
         result = OdfExtractor().extract(data)
         assert "Hello world" in result
@@ -438,6 +457,7 @@ class TestOdfExtractor:
 
     def test_odt_heading_levels(self):
         from chonk.extractors._odf import OdfExtractor
+
         data = _make_odt([], headings=[(1, "Chapter One"), (2, "Section")])
         result = OdfExtractor().extract(data)
         assert "# Chapter One" in result
@@ -445,6 +465,7 @@ class TestOdfExtractor:
 
     def test_ods_sheet_rows(self):
         from chonk.extractors._odf import OdfExtractor
+
         data = _make_ods({"Sales": [["Name", "Amount"], ["Alice", "100"]]})
         result = OdfExtractor().extract(data)
         assert "Sales" in result
@@ -453,52 +474,64 @@ class TestOdfExtractor:
 
     def test_ods_multiple_sheets(self):
         from chonk.extractors._odf import OdfExtractor
-        data = _make_ods({
-            "Sheet1": [["a", "b"]],
-            "Sheet2": [["c", "d"]],
-        })
+
+        data = _make_ods(
+            {
+                "Sheet1": [["a", "b"]],
+                "Sheet2": [["c", "d"]],
+            }
+        )
         result = OdfExtractor().extract(data)
         assert "Sheet1" in result
         assert "Sheet2" in result
 
     def test_odp_slide_text(self):
         from chonk.extractors._odf import OdfExtractor
+
         data = _make_odp([["Title of slide", "Bullet point"]])
         result = OdfExtractor().extract(data)
         assert "Slide 1" in result
 
     def test_can_handle_odt(self):
         from chonk.extractors._odf import OdfExtractor
+
         assert OdfExtractor().can_handle("odt")
 
     def test_can_handle_ods(self):
         from chonk.extractors._odf import OdfExtractor
+
         assert OdfExtractor().can_handle("ods")
 
     def test_can_handle_odp(self):
         from chonk.extractors._odf import OdfExtractor
+
         assert OdfExtractor().can_handle("odp")
 
     def test_cannot_handle_docx(self):
         from chonk.extractors._odf import OdfExtractor
+
         assert not OdfExtractor().can_handle("docx")
 
     def test_detect_odt(self):
         from chonk.extractors._odf import OdfExtractor
+
         assert isinstance(detect_extractor("odt"), OdfExtractor)
 
     def test_detect_ods(self):
         from chonk.extractors._odf import OdfExtractor
+
         assert isinstance(detect_extractor("ods"), OdfExtractor)
 
     def test_detect_odp(self):
         from chonk.extractors._odf import OdfExtractor
+
         assert isinstance(detect_extractor("odp"), OdfExtractor)
 
 
 # =============================================================================
 # EmailExtractor
 # =============================================================================
+
 
 def _make_email(
     subject: str = "Test Subject",
@@ -541,18 +574,21 @@ def _make_email(
 class TestEmailExtractor:
     def test_extracts_body(self):
         from chonk.extractors._email import EmailExtractor
+
         data = _make_email(body="This is the email body.")
         result = EmailExtractor().extract(data)
         assert "This is the email body." in result
 
     def test_extracts_subject_header(self):
         from chonk.extractors._email import EmailExtractor
+
         data = _make_email(subject="Weekly Report")
         result = EmailExtractor().extract(data)
         assert "Subject: Weekly Report" in result
 
     def test_extracts_from_header(self):
         from chonk.extractors._email import EmailExtractor
+
         data = _make_email(from_="sender@example.com")
         result = EmailExtractor().extract(data)
         assert "From:" in result
@@ -560,6 +596,7 @@ class TestEmailExtractor:
 
     def test_extracts_to_header(self):
         from chonk.extractors._email import EmailExtractor
+
         data = _make_email(to="recipient@example.com")
         result = EmailExtractor().extract(data)
         assert "To:" in result
@@ -567,6 +604,7 @@ class TestEmailExtractor:
 
     def test_html_body_stripped(self):
         from chonk.extractors._email import EmailExtractor
+
         data = _make_email(body="<h1>Hello</h1><p>World</p>", body_type="html")
         result = EmailExtractor().extract(data)
         assert "<h1>" not in result
@@ -575,22 +613,27 @@ class TestEmailExtractor:
 
     def test_can_handle_email(self):
         from chonk.extractors._email import EmailExtractor
+
         assert EmailExtractor().can_handle("email")
 
     def test_can_handle_eml(self):
         from chonk.extractors._email import EmailExtractor
+
         assert EmailExtractor().can_handle("eml")
 
     def test_cannot_handle_text(self):
         from chonk.extractors._email import EmailExtractor
+
         assert not EmailExtractor().can_handle("text")
 
     def test_cannot_handle_html(self):
         from chonk.extractors._email import EmailExtractor
+
         assert not EmailExtractor().can_handle("html")
 
     def test_no_attachments_by_default(self):
         from chonk.extractors._email import EmailExtractor
+
         attachment_data = b"Name,Score\nAlice,90"
         data = _make_email(
             body="See attached.",
@@ -601,6 +644,7 @@ class TestEmailExtractor:
 
     def test_includes_attachments_when_enabled(self):
         from chonk.extractors._email import EmailExtractor
+
         attachment_data = b"Name,Score\nAlice,90"
         data = _make_email(
             body="See attached.",
@@ -612,10 +656,12 @@ class TestEmailExtractor:
 
     def test_detect_email(self):
         from chonk.extractors._email import EmailExtractor
+
         assert isinstance(detect_extractor("email"), EmailExtractor)
 
     def test_detect_eml(self):
         from chonk.extractors._email import EmailExtractor
+
         assert isinstance(detect_extractor("eml"), EmailExtractor)
 
 

@@ -1,22 +1,44 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: b373fbc0-6551-4310-9233-1c5f026d0b51
 
 """Unit tests for co-occurrence matrix and cluster map."""
 
 import pytest
 
-from chonk.ner._vocabulary import VocabularyMatcher
-from chonk.ner._index import EntityIndex
 from chonk.cluster._cooccurrence import CooccurrenceMatrix
 from chonk.cluster._map import ClusterMap
 from chonk.models import ClusterRecord
-
+from chonk.ner._index import EntityIndex
+from chonk.ner._vocabulary import VocabularyMatcher
 
 SAMPLE_ENTITIES = [
-    {"id": "ent_a", "name": "entity a", "display_name": "Entity A", "type": "concept", "aliases": []},
-    {"id": "ent_b", "name": "entity b", "display_name": "Entity B", "type": "concept", "aliases": []},
-    {"id": "ent_c", "name": "entity c", "display_name": "Entity C", "type": "concept", "aliases": []},
-    {"id": "ent_d", "name": "entity d", "display_name": "Entity D", "type": "concept", "aliases": []},
+    {
+        "id": "ent_a",
+        "name": "entity a",
+        "display_name": "Entity A",
+        "type": "concept",
+        "aliases": [],
+    },
+    {
+        "id": "ent_b",
+        "name": "entity b",
+        "display_name": "Entity B",
+        "type": "concept",
+        "aliases": [],
+    },
+    {
+        "id": "ent_c",
+        "name": "entity c",
+        "display_name": "Entity C",
+        "type": "concept",
+        "aliases": [],
+    },
+    {
+        "id": "ent_d",
+        "name": "entity d",
+        "display_name": "Entity D",
+        "type": "concept",
+        "aliases": [],
+    },
 ]
 
 
@@ -97,8 +119,9 @@ class TestClusterMap:
     def test_ab_in_same_cluster(self):
         pytest.importorskip("sklearn")
         idx = _build_index()
-        cmap = ClusterMap.build(idx, algorithm="agglomerative",
-                                distance_threshold=0.5, min_cooccurrence=2)
+        cmap = ClusterMap.build(
+            idx, algorithm="agglomerative", distance_threshold=0.5, min_cooccurrence=2
+        )
         cluster_a = cmap.get_cluster("ent_a")
         cluster_b = cmap.get_cluster("ent_b")
         assert cluster_a is not None
@@ -138,8 +161,9 @@ class TestClusterMap:
     def test_cohesion_score_non_negative(self):
         pytest.importorskip("sklearn")
         idx = _build_index()
-        cmap = ClusterMap.build(idx, algorithm="agglomerative",
-                                normalization="raw", min_cooccurrence=2)
+        cmap = ClusterMap.build(
+            idx, algorithm="agglomerative", normalization="raw", min_cooccurrence=2
+        )
         for rec in cmap.all_clusters():
             assert rec.cohesion_score >= 0.0
 
@@ -147,6 +171,5 @@ class TestClusterMap:
         pytest.importorskip("sklearn")
         idx = _build_index()
         # DBSCAN with relaxed threshold
-        cmap = ClusterMap.build(idx, algorithm="dbscan",
-                                distance_threshold=0.8, min_cooccurrence=2)
+        cmap = ClusterMap.build(idx, algorithm="dbscan", distance_threshold=0.8, min_cooccurrence=2)
         assert cmap.entity_count() >= 1

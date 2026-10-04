@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 3a7e2f1d-b849-4c8e-9d01-e5f6a2b3c4d7
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """JSON / JSONL extractor — emits markdown with key-path breadcrumb headings."""
 

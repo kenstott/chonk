@@ -928,6 +928,13 @@ index = chonk.build("my_config.yaml")
 
 That's it. One call runs: ingest → embed → FTS → NER → community. Each phase is skipped if already built (idempotent). SVO graph is opt-in via config.
 
+From the shell:
+
+```bash
+chonk build my_config.yaml            # or: python -m chonk build my_config.yaml
+chonk build my_config.yaml --force    # delete the store and rebuild every phase
+```
+
 Config file (`my_config.yaml`):
 
 ```yaml

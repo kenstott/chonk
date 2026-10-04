@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 7c1e2a90-4d3b-4f2e-9a6c-2b8f1d5e0a47
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Horizontal-scale worker / coordinator and PostgreSQL queue helpers.
 

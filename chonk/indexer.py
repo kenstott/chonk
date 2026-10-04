@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 8a3c2e91-7f4b-4e5d-b6a8-0d1f9c3e5b7a
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Background source indexer with progress callbacks and safe abort."""
 

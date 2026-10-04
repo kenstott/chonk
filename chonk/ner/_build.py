@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: c8346bd4-3a05-4e2b-b9bb-03772c391075
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """build_ner — run NER on a Store and persist results to chunk_entities."""
 

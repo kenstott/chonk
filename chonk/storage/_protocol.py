@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: fb0dc27c-4ed9-413d-ae7f-be8255a0d901
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """VectorBackend protocol — implemented by DuckDBVectorBackend and PgVectorBackend."""
 

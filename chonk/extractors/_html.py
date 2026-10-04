@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 4ad05fa2-5f30-41e3-b3ed-9ca4ec3e6a84
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """HTML extractor — converts HTML to Markdown using stdlib html.parser."""
 

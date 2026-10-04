@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 6867f7d9-7f36-462c-b2a9-6c425a1470cb
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """EDGAR inline XBRL extractor — extracts prose sections from SEC 10-K filings.
 

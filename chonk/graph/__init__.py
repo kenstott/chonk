@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: aa608ab8-c43c-43cc-9402-fa4270caaa5e
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Graph primitives for Phase 4 GraphRAG extensions."""
 

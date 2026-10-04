@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: f1a2b3c4-d5e6-7f8a-9b0c-d1e2f3a4b5c6
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Pinecone vector backend for chonk.
 

@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 4f7a2e9b-1c3d-4e8f-a6b0-5d2c9f1e7a3b
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Live integration tests for S3Transport and DirectoryCrawler (S3) against
 chinook-athena-us-west-1.
@@ -12,6 +7,7 @@ Skipped automatically when AWS_ACCESS_KEY_ID is not in the environment.
 
     pytest tests/integration/test_s3.py -v -s
 """
+
 from __future__ import annotations
 
 import os
@@ -74,10 +70,12 @@ class TestS3TransportLive:
         print(f"  document_name: {chunks[0].document_name}")
 
     def test_fetch_nonexistent_raises(self):
+        from botocore.exceptions import ClientError
+
         from chonk.transports import S3Transport
 
         t = S3Transport()
-        with pytest.raises(Exception):
+        with pytest.raises(ClientError):
             t.fetch(f"s3://{_BUCKET}/nonexistent/path/that/does/not/exist.csv")
 
 

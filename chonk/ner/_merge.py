@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 09ae64ff-4224-459c-b6ee-44087348fc71
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Utilities for merging entity matches from multiple matchers.
 
@@ -40,14 +35,13 @@ from ._vocabulary import EntityMatch
 # Characters to strip from the leading/trailing edges of generic spans.
 # Includes paired delimiters, operators, and common punctuation that
 # NER models often absorb into entity boundaries.
-_BOUNDARY_CHARS = frozenset(
-    '()[]{}<>*&^%$#@!+=~`\'"\\|/?:;,.—–-'
-)
+_BOUNDARY_CHARS = frozenset("()[]{}<>*&^%$#@!+=~`'\"\\|/?:;,.—–-")
 
 
 # ------------------------------------------------------------------
 # Internal helpers
 # ------------------------------------------------------------------
+
 
 def _strip_span(text: str, start: int, end: int) -> tuple[int, int] | None:
     """Return adjusted (start, end) after stripping boundary chars.
@@ -82,6 +76,7 @@ def _overlaps(a: tuple[int, int], b: tuple[int, int]) -> bool:
 # ------------------------------------------------------------------
 # Public API
 # ------------------------------------------------------------------
+
 
 def merge_matches(
     vocab_matches: list[EntityMatch],
@@ -124,15 +119,17 @@ def merge_matches(
             if not any(_overlaps(span, vs) for vs in vocab_span_set):
                 kept_spans.append(span)
         if kept_spans:
-            surviving_generic.append(EntityMatch(
-                entity_id=gm.entity_id,
-                name=gm.name,
-                display_name=gm.display_name,
-                entity_type=gm.entity_type,
-                frequency=len(kept_spans),
-                positions=[s[0] for s in kept_spans],
-                spans=kept_spans,
-            ))
+            surviving_generic.append(
+                EntityMatch(
+                    entity_id=gm.entity_id,
+                    name=gm.name,
+                    display_name=gm.display_name,
+                    entity_type=gm.entity_type,
+                    frequency=len(kept_spans),
+                    positions=[s[0] for s in kept_spans],
+                    spans=kept_spans,
+                )
+            )
 
     # Combine and dedup by entity_id (handles rare case where both matchers
     # independently produce the same canonical ID).

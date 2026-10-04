@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: ac16ba48-17e2-4c1e-aedc-6ee35290f4c5
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Unit tests for PythonExtractor, TypeScriptExtractor, and JavaExtractor."""
 
@@ -16,6 +11,7 @@ from chonk.extractors._typescript import TypeScriptExtractor
 # =============================================================================
 # PythonExtractor
 # =============================================================================
+
 
 class TestPythonExtractor:
     def test_class_becomes_h1(self):
@@ -81,6 +77,7 @@ class TestPythonExtractor:
 # TypeScriptExtractor
 # =============================================================================
 
+
 class TestTypeScriptExtractor:
     def test_class_becomes_h1(self):
         src = b"class MyService {\n  run() {}\n}\n"
@@ -140,6 +137,7 @@ class TestTypeScriptExtractor:
 # JavaExtractor
 # =============================================================================
 
+
 class TestJavaExtractor:
     def test_class_becomes_h1(self):
         src = b"public class Foo {\n  void bar() {}\n}\n"
@@ -157,7 +155,10 @@ class TestJavaExtractor:
         assert "## doStuff" in result
 
     def test_javadoc_emitted_as_prose(self):
-        src = b"/** Main entry point. */\npublic class App {\n  public static void main(String[] args) {}\n}\n"
+        src = (
+            b"/** Main entry point. */\npublic class App {\n"
+            b"  public static void main(String[] args) {}\n}\n"
+        )
         result = JavaExtractor().extract(src)
         assert "Main entry point." in result
 
@@ -190,6 +191,7 @@ class TestJavaExtractor:
 # =============================================================================
 # annotate() tests
 # =============================================================================
+
 
 class TestPythonAnnotate:
     _SRC = b"""class MyClass:

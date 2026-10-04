@@ -21,12 +21,21 @@ Usage:
         [--local-embed-model BAAI/bge-large-en-v1.5]
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import re
 import sys
 from collections import defaultdict
+from collections.abc import Callable
+from datetime import date
 from pathlib import Path
+from types import ModuleType
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import numpy as np
 
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
@@ -34,22 +43,45 @@ sys.path.insert(0, str(ROOT))
 # ── Abstention / hallucination detection ────────────────────────────────────
 
 _ABSTENTION_PHRASES = [
-    "not in context", "not in the context", "not mentioned", "not appear in",
-    "no information", "cannot determine", "cannot be answered", "unable to",
-    "does not contain", "not provided", "not available", "context does not",
-    "context provided does not", "not found in", "no evidence",
-    "not present in", "does not exist in", "not exist in", "no mention of",
-    "not included in", "absent from the", "not referenced", "not listed in",
+    "not in context",
+    "not in the context",
+    "not mentioned",
+    "not appear in",
+    "no information",
+    "cannot determine",
+    "cannot be answered",
+    "unable to",
+    "does not contain",
+    "not provided",
+    "not available",
+    "context does not",
+    "context provided does not",
+    "not found in",
+    "no evidence",
+    "not present in",
+    "does not exist in",
+    "not exist in",
+    "no mention of",
+    "not included in",
+    "absent from the",
+    "not referenced",
+    "not listed in",
 ]
 
 # Model hedges its source while still asserting an answer — signals confabulation.
 # Phrases must be hedging constructions ("based on X", "X suggests"), not mere
 # locatives ("in the provided context" describing where something is absent).
 _HALLUCINATION_PHRASES = [
-    "based on the context", "based on the information provided",
-    "based on the provided context", "based on the given context",
-    "according to the context", "the context suggests", "the context indicates",
-    "from the context", "as per the context", "and based on the context",
+    "based on the context",
+    "based on the information provided",
+    "based on the provided context",
+    "based on the given context",
+    "according to the context",
+    "the context suggests",
+    "the context indicates",
+    "from the context",
+    "as per the context",
+    "and based on the context",
 ]
 
 
@@ -65,21 +97,23 @@ def _is_hallucination_hedge(text: str) -> bool:
 
 # ── Boolean scorer ──────────────────────────────────────────────────────────
 
-_YES_RE = re.compile(r'\b(yes|true|correct|affirmative|indeed|both|same|equivalent|identical)\b', re.I)
-_NO_RE  = re.compile(
-    r'\b('
+_YES_RE = re.compile(
+    r"\b(yes|true|correct|affirmative|indeed|both|same|equivalent|identical)\b", re.I
+)
+_NO_RE = re.compile(
+    r"\b("
     # "no" as a direct answer — exclude when followed by abstention nouns
-    r'no(?!\s+(?:information|evidence|mention|data|details?|records?|'
-    r'reference|proof|context|content|available|present|found|listed|included))\b'
-    r'|false|incorrect|not the same|different|neither|absent|none'
-    r'|not\s+(?:as\s+)?(?:a\s+)?separate\b'
-    r'|not\s+treated(?:\s+as\b)?'
-    r'|not\s+(?:an?\s+)?independent\b'
-    r'|not\s+distinct\b'
-    r'|not\s+(?:considered|classified|identified|recognized|designated)\s+as\b'
-    r'|does\s+not\s+(?:appear|seem)\s+to\s+be\b'
-    r')',
-    re.I
+    r"no(?!\s+(?:information|evidence|mention|data|details?|records?|"
+    r"reference|proof|context|content|available|present|found|listed|included))\b"
+    r"|false|incorrect|not the same|different|neither|absent|none"
+    r"|not\s+(?:as\s+)?(?:a\s+)?separate\b"
+    r"|not\s+treated(?:\s+as\b)?"
+    r"|not\s+(?:an?\s+)?independent\b"
+    r"|not\s+distinct\b"
+    r"|not\s+(?:considered|classified|identified|recognized|designated)\s+as\b"
+    r"|does\s+not\s+(?:appear|seem)\s+to\s+be\b"
+    r")",
+    re.I,
 )
 
 
@@ -89,10 +123,7 @@ def _extract_bool(text: str) -> bool | None:
     # (e.g. "same" inside "not the same" should not count as YES).
     no_spans = [(m.start(), m.end()) for m in _NO_RE.finditer(t)]
     yes_matches = _YES_RE.finditer(t)
-    yes = any(
-        not any(ns <= m.start() < ne for ns, ne in no_spans)
-        for m in yes_matches
-    )
+    yes = any(not any(ns <= m.start() < ne for ns, ne in no_spans) for m in yes_matches)
     no = bool(no_spans)
     if yes and not no:
         return True
@@ -105,13 +136,12 @@ def _extract_bool(text: str) -> bool | None:
     if first in ("no", "false"):
         return False
     # first-sentence heuristic — main claim is usually stated up front
-    sentences = re.split(r'(?<=[.!?])\s+', t)
+    sentences = re.split(r"(?<=[.!?])\s+", t)
     if sentences:
         s0 = sentences[0].strip()
         no_spans_s0 = [(m.start(), m.end()) for m in _NO_RE.finditer(s0)]
         s0_yes = any(
-            not any(ns <= m.start() < ne for ns, ne in no_spans_s0)
-            for m in _YES_RE.finditer(s0)
+            not any(ns <= m.start() < ne for ns, ne in no_spans_s0) for m in _YES_RE.finditer(s0)
         )
         s0_no = bool(no_spans_s0)
         if s0_yes and not s0_no:
@@ -125,8 +155,7 @@ def _extract_bool(text: str) -> bool | None:
             continue
         no_spans_s = [(m.start(), m.end()) for m in _NO_RE.finditer(s)]
         s_yes = any(
-            not any(ns <= m.start() < ne for ns, ne in no_spans_s)
-            for m in _YES_RE.finditer(s)
+            not any(ns <= m.start() < ne for ns, ne in no_spans_s) for m in _YES_RE.finditer(s)
         )
         s_no = bool(no_spans_s)
         if s_yes and not s_no:
@@ -163,27 +192,40 @@ def score_boolean(generated: str, gold_value: bool) -> float:
 
 # ── Date scorer ─────────────────────────────────────────────────────────────
 
-import re as _re
+import re as _re  # noqa: E402  # kept local to the date-scorer section
 
 _DATE_RE = _re.compile(
-    r'\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})'          # YYYY-MM-DD / YYYY/M/D
-    r'|(\d{1,2})[-/](\d{1,2})[-/](\d{4})'            # MM-DD-YYYY / M/D/YYYY
-    r'|(\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\.?\s+\d{1,2},?\s+\d{4})'  # Month D, YYYY
-    r'|(\b\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\.?\s+\d{4})',   # D Month YYYY
+    r"\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})"  # YYYY-MM-DD / YYYY/M/D
+    r"|(\d{1,2})[-/](\d{1,2})[-/](\d{4})"  # MM-DD-YYYY / M/D/YYYY
+    # Month D, YYYY
+    r"|(\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\.?\s+\d{1,2},?\s+\d{4})"
+    # D Month YYYY
+    r"|(\b\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\.?\s+\d{4})",
     _re.IGNORECASE,
 )
 
-def _parse_date(text: str):
+
+def _parse_date(text: str) -> date | None:
     m = _DATE_RE.search(text)
     if not m:
         return None
     s = m.group(0).strip().rstrip(",")
     # Try ISO-ish first
-    for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%m-%d-%Y", "%m/%d/%Y",
-                "%B %d %Y", "%B %d, %Y", "%b %d %Y", "%b %d, %Y",
-                "%d %B %Y", "%d %b %Y"):
+    for fmt in (
+        "%Y-%m-%d",
+        "%Y/%m/%d",
+        "%m-%d-%Y",
+        "%m/%d/%Y",
+        "%B %d %Y",
+        "%B %d, %Y",
+        "%b %d %Y",
+        "%b %d, %Y",
+        "%d %B %Y",
+        "%d %b %Y",
+    ):
         try:
             from datetime import datetime
+
             return datetime.strptime(s, fmt).date()
         except ValueError:
             pass
@@ -205,68 +247,104 @@ def score_date(generated: str, gold_value: str, tolerance_days: int = 0) -> floa
 
 # ── Number scorer ───────────────────────────────────────────────────────────
 
-_FLOAT_RE = re.compile(r'(?<![A-Za-z])-?\d+(?:\.\d+)?')
-_CVE_RE  = re.compile(r'CVE-\d{4}-\d+', re.IGNORECASE)
-_PATENT_ID_RE = re.compile(r'\b(US)?\d{7,8}\b')
-_DATE_STR_RE = re.compile(r'\b\d{4}[-/]\d{1,2}[-/]\d{1,2}\b')
-_YEAR_RE = re.compile(r'\b(19|20)\d{2}\b')
+_FLOAT_RE = re.compile(r"(?<![A-Za-z])-?\d+(?:\.\d+)?")
+_CVE_RE = re.compile(r"CVE-\d{4}-\d+", re.IGNORECASE)
+_PATENT_ID_RE = re.compile(r"\b(US)?\d{7,8}\b")
+_DATE_STR_RE = re.compile(r"\b\d{4}[-/]\d{1,2}[-/]\d{1,2}\b")
+_YEAR_RE = re.compile(r"\b(19|20)\d{2}\b")
 _MONTH_DAY_RE = re.compile(
-    r'\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|'
-    r'Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)'
-    r'\.?\s+\d{1,2}\b',
+    r"\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
+    r"Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
+    r"\.?\s+\d{1,2}\b",
     re.I,
 )
-_SEC_FORM_RE = re.compile(r'\b10-[KkQq][A-Za-z]?\b')
-_FISCAL_YEAR_RE = re.compile(r'\b(?:FY|Q[1-4])\s*\d{2,4}\b', re.I)
+_SEC_FORM_RE = re.compile(r"\b10-[KkQq][A-Za-z]?\b")
+_FISCAL_YEAR_RE = re.compile(r"\b(?:FY|Q[1-4])\s*\d{2,4}\b", re.I)
 
 _WORD_TO_INT = {
-    'zero': 0, 'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
-    'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
-    'eleven': 11, 'twelve': 12, 'thirteen': 13, 'fourteen': 14, 'fifteen': 15,
-    'sixteen': 16, 'seventeen': 17, 'eighteen': 18, 'nineteen': 19, 'twenty': 20,
-    'thirty': 30, 'forty': 40, 'fifty': 50, 'hundred': 100,
+    "zero": 0,
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "eleven": 11,
+    "twelve": 12,
+    "thirteen": 13,
+    "fourteen": 14,
+    "fifteen": 15,
+    "sixteen": 16,
+    "seventeen": 17,
+    "eighteen": 18,
+    "nineteen": 19,
+    "twenty": 20,
+    "thirty": 30,
+    "forty": 40,
+    "fifty": 50,
+    "hundred": 100,
 }
-_WORD_NUM_RE = re.compile(
-    r'\b(' + '|'.join(_WORD_TO_INT) + r')\b', re.I
-)
+_WORD_NUM_RE = re.compile(r"\b(" + "|".join(_WORD_TO_INT) + r")\b", re.I)
 
 # Expand bare financial abbreviations to full words before quantulum3 parsing.
 # MM and M are both treated as million; B as billion; K as thousand; T as trillion.
 # Only matches when immediately after a digit (no $ prefix — those work natively).
-_FIN_ABBREV_RE = re.compile(r'(?<=\d)\s*(MM|B|M|K|T)\b', re.IGNORECASE)
-_FIN_ABBREV_MAP = {'mm': 'million', 'b': 'billion', 'm': 'million', 'k': 'thousand', 't': 'trillion'}
+_FIN_ABBREV_RE = re.compile(r"(?<=\d)\s*(MM|B|M|K|T)\b", re.IGNORECASE)
+_FIN_ABBREV_MAP = {
+    "mm": "million",
+    "b": "billion",
+    "m": "million",
+    "k": "thousand",
+    "t": "trillion",
+}
 
-# Scale words → multiplier — used as fallback when quantulum3 is unavailable
+# Scale words → multiplier — used when quantulum3 finds no currency quantity
 _SCALE_MAP = {
-    'trillion': 1e12, 'trillions': 1e12,
-    'billion':  1e9,  'billions':  1e9,
-    'million':  1e6,  'millions':  1e6,
-    'thousand': 1e3,  'thousands': 1e3,
-    'mm': 1e6, 'b': 1e9, 'm': 1e6, 'k': 1024, 't': 1e12,
+    "trillion": 1e12,
+    "trillions": 1e12,
+    "billion": 1e9,
+    "billions": 1e9,
+    "million": 1e6,
+    "millions": 1e6,
+    "thousand": 1e3,
+    "thousands": 1e3,
+    "mm": 1e6,
+    "b": 1e9,
+    "m": 1e6,
+    "k": 1024,
+    "t": 1e12,
 }
 _SCALE_WORD_RE = re.compile(
-    r'\b(trillion|billion|million|thousand)s?\b'
-    r'|(?<=\d)(MM|B|M|K|T)\b',
+    r"\b(trillion|billion|million|thousand)s?\b"
+    r"|(?<=\d)(MM|B|M|K|T)\b",
     re.IGNORECASE,
 )
 
-_QPARSER = None
+_QPARSER: ModuleType | None = None
 
 
-def _get_qparser():
+def _get_qparser() -> ModuleType:
+    """quantulum3's parser. Required: without it financial values score differently."""
     global _QPARSER
     if _QPARSER is None:
-        try:
-            from quantulum3 import parser as qp
-            _QPARSER = qp
-        except ImportError:
-            _QPARSER = False
-    return _QPARSER if _QPARSER is not False else None
+        from quantulum3 import parser as qp
+
+        _QPARSER = qp
+    return _QPARSER
 
 
 _Q_GOOD_UNITS = {
-    'dollar', 'united states dollar', 'euro', 'pound sterling',
-    'canadian dollar', 'australian dollar', 'dimensionless',
+    "dollar",
+    "united states dollar",
+    "euro",
+    "pound sterling",
+    "canadian dollar",
+    "australian dollar",
+    "dimensionless",
 }
 
 
@@ -280,32 +358,28 @@ def _parse_financial(text: str) -> float | None:
     returns no usable quantity.
     """
     # Strip noise patterns before any numeric extraction
-    clean = _CVE_RE.sub('', text)
-    clean = _PATENT_ID_RE.sub('', clean)
-    clean = _DATE_STR_RE.sub('', clean)
-    clean = _YEAR_RE.sub('', clean)
+    clean = _CVE_RE.sub("", text)
+    clean = _PATENT_ID_RE.sub("", clean)
+    clean = _DATE_STR_RE.sub("", clean)
+    clean = _YEAR_RE.sub("", clean)
 
     # Expand bare abbreviations: "10.9B" → "10.9 billion", "716.9MM" → "716.9 million"
-    expanded = _FIN_ABBREV_RE.sub(
-        lambda m: ' ' + _FIN_ABBREV_MAP[m.group(1).lower()], clean
-    )
+    expanded = _FIN_ABBREV_RE.sub(lambda m: " " + _FIN_ABBREV_MAP[m.group(1).lower()], clean)
 
-    qp = _get_qparser()
-    if qp is not None:
-        quants = qp.parse(expanded)
-        for q in quants:
-            if q.unit.name in _Q_GOOD_UNITS and q.value != 0:
-                return float(q.value)
+    for q in _get_qparser().parse(expanded):
+        if q.unit.name in _Q_GOOD_UNITS and q.value != 0:
+            return float(q.value)
 
-    # Fallback: regex scale-word matching
-    num_clean = expanded.replace(',', '').replace('$', '').replace('€', '').replace('£', '')
+    # No currency quantity found: regex scale-word matching
+    num_clean = expanded.replace(",", "").replace("$", "").replace("€", "").replace("£", "")
     m = _FLOAT_RE.search(num_clean)
     if not m:
         return None
     val = float(m.group())
     sm = _SCALE_WORD_RE.search(
-        expanded[max(0, expanded.find(m.group()) - 5):
-                 expanded.find(m.group()) + len(m.group()) + 30]
+        expanded[
+            max(0, expanded.find(m.group()) - 5) : expanded.find(m.group()) + len(m.group()) + 30
+        ]
     )
     if sm:
         scale = _SCALE_MAP.get(sm.group(0).lower())
@@ -324,14 +398,14 @@ def _extract_number(text: str) -> float | None:
         word_val = None
 
     # Strip patterns that embed misleading numbers before extracting
-    cleaned = _CVE_RE.sub('', text)
-    cleaned = _SEC_FORM_RE.sub('', cleaned)       # strip "10-K", "10-Q"
-    cleaned = _FISCAL_YEAR_RE.sub('', cleaned)    # strip "FY2025", "Q1 2026"
-    cleaned = _PATENT_ID_RE.sub('', cleaned)
-    cleaned = _DATE_STR_RE.sub('', cleaned)
-    cleaned = _MONTH_DAY_RE.sub('', cleaned)      # strip "September 30", "Dec 31"
-    cleaned = _YEAR_RE.sub('', cleaned)
-    cleaned = cleaned.replace(',', '')
+    cleaned = _CVE_RE.sub("", text)
+    cleaned = _SEC_FORM_RE.sub("", cleaned)  # strip "10-K", "10-Q"
+    cleaned = _FISCAL_YEAR_RE.sub("", cleaned)  # strip "FY2025", "Q1 2026"
+    cleaned = _PATENT_ID_RE.sub("", cleaned)
+    cleaned = _DATE_STR_RE.sub("", cleaned)
+    cleaned = _MONTH_DAY_RE.sub("", cleaned)  # strip "September 30", "Dec 31"
+    cleaned = _YEAR_RE.sub("", cleaned)
+    cleaned = cleaned.replace(",", "")
     m = _FLOAT_RE.search(cleaned)
     digit_val = float(m.group()) if m else None
 
@@ -345,14 +419,15 @@ def _number_matches(val: float, gold: float, tolerance: float) -> bool:
     return abs(val - gold) <= tolerance
 
 
-def score_number(generated: str, gold_value: float, tolerance: float = 0.0,
-                 unit: str | None = None) -> float:
+def score_number(
+    generated: str, gold_value: float, tolerance: float = 0.0, unit: str | None = None
+) -> float:
     if _is_abstention(generated):
         return 0.0
 
     # For financial (billion USD) values: parse with full denomination resolution,
     # then normalise to billions for comparison.
-    if unit == 'billion USD':
+    if unit == "billion USD":
         raw = _parse_financial(generated)
         if raw is None:
             return 0.0
@@ -372,13 +447,14 @@ def score_number(generated: str, gold_value: float, tolerance: float = 0.0,
 
     # Partial credit: gold value appears somewhere in the text but wasn't first.
     # Useful for agentic planners — the correct fact is present but buried.
-    cleaned = _CVE_RE.sub('', generated)
-    cleaned = _PATENT_ID_RE.sub('', cleaned)
-    cleaned = _DATE_STR_RE.sub('', cleaned)
-    cleaned = _YEAR_RE.sub('', cleaned)
-    cleaned = cleaned.replace(',', '')
+    cleaned = _CVE_RE.sub("", generated)
+    cleaned = _PATENT_ID_RE.sub("", cleaned)
+    cleaned = _DATE_STR_RE.sub("", cleaned)
+    cleaned = _YEAR_RE.sub("", cleaned)
+    cleaned = cleaned.replace(",", "")
     all_nums = [float(m) for m in _FLOAT_RE.findall(cleaned)]
-    if any(_number_matches(n, gold_value, max(tolerance, abs(gold_value) * 0.01)) for n in all_nums):
+    rel_tol = max(tolerance, abs(gold_value) * 0.01)
+    if any(_number_matches(n, gold_value, rel_tol) for n in all_nums):
         return 0.5
 
     return 0.0
@@ -387,14 +463,13 @@ def score_number(generated: str, gold_value: float, tolerance: float = 0.0,
 # ── Entity scorer ───────────────────────────────────────────────────────────
 
 _FILLER_WORDS_RE = re.compile(
-    r'\b(version|ver|v|release|update|patch|build|edition|rev|revision)\b\.?',
-    re.I
+    r"\b(version|ver|v|release|update|patch|build|edition|rev|revision)\b\.?", re.I
 )
 
 
 def _normalize_entity(s: str) -> str:
-    s = _FILLER_WORDS_RE.sub('', s)
-    return re.sub(r'[^a-z0-9]', '', s.lower())
+    s = _FILLER_WORDS_RE.sub("", s)
+    return re.sub(r"[^a-z0-9]", "", s.lower())
 
 
 def score_entity(generated: str, gold_values: list[str], match_mode: str = "exact") -> float:
@@ -402,20 +477,20 @@ def score_entity(generated: str, gold_values: list[str], match_mode: str = "exac
         return 0.3
     norm_gold = {_normalize_entity(g) for g in gold_values}
     # extract candidate entities: capitalised tokens, CVE-like, patent-like
-    tokens = re.findall(r'CVE-[\d-]+|patent[_\s]?\w+|\b[A-Z][A-Za-z0-9\s,\.]+', generated)
-    tokens += re.findall(r'\b\d+\b', generated)  # bare numbers (counts, IDs)
+    tokens = re.findall(r"CVE-[\d-]+|patent[_\s]?\w+|\b[A-Z][A-Za-z0-9\s,\.]+", generated)
+    tokens += re.findall(r"\b\d+\b", generated)  # bare numbers (counts, IDs)
     # Version strings (e.g. "26.4", "147.0.7727.55") — only when gold contains versions,
     # to avoid diluting F1 precision on non-version entity questions.
-    if any(re.search(r'\d+\.\d+', g) for g in gold_values):
-        tokens += re.findall(r'\d+(?:\.\d+)+', generated)
+    if any(re.search(r"\d+\.\d+", g) for g in gold_values):
+        tokens += re.findall(r"\d+(?:\.\d+)+", generated)
     # Also add individual words so "Google Chrome product." → {'google', 'chrome', 'product'}
-    tokens += re.findall(r'\b[a-zA-Z][a-zA-Z0-9]+\b', generated)
+    tokens += re.findall(r"\b[a-zA-Z][a-zA-Z0-9]+\b", generated)
     # N-gram sliding window to catch multi-word entities like "macOS Tahoe 26.4"
-    words = re.findall(r'\S+', generated)
+    words = re.findall(r"\S+", generated)
     max_ng = max((len(g.split()) for g in gold_values), default=1)
     for n in range(2, min(max_ng + 1, 8)):
         for i in range(len(words) - n + 1):
-            tokens.append(' '.join(words[i:i + n]))
+            tokens.append(" ".join(words[i : i + n]))
     norm_pred = {_normalize_entity(t) for t in tokens if t.strip()}
 
     norm_gen = _normalize_entity(generated)
@@ -459,13 +534,16 @@ def score_entity(generated: str, gold_values: list[str], match_mode: str = "exac
             return 0.3
         return 0.0
     precision = tp / len(norm_pred) if norm_pred else 0.0
-    recall    = tp / len(norm_gold) if norm_gold else 0.0
+    recall = tp / len(norm_gold) if norm_gold else 0.0
     return 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
 
 
 # ── Text scorer ─────────────────────────────────────────────────────────────
 
-def score_text(generated: str, gold_value: str, embedder=None) -> float:
+
+def score_text(
+    generated: str, gold_value: str, embedder: Callable[[str], np.ndarray] | None = None
+) -> float:
     if _is_abstention(generated[:200]):
         return 0.3
     if not generated.strip() or not gold_value.strip():
@@ -473,6 +551,7 @@ def score_text(generated: str, gold_value: str, embedder=None) -> float:
     if embedder is None:
         raise ValueError("score_text requires an embedder; pass --local-embed-model")
     import numpy as np
+
     vg = embedder(gold_value)
     vp = embedder(generated)
     cos = float(np.dot(vg, vp) / (np.linalg.norm(vg) * np.linalg.norm(vp) + 1e-9))
@@ -485,21 +564,21 @@ def score_text(generated: str, gold_value: str, embedder=None) -> float:
 # SRR evidence_used entries contain passage text rather than document IDs, so we
 # match corpus-characteristic strings across CVE, patent, SEC, and CPE corpora.
 _EVIDENCE_ID_RE = re.compile(
-    r'CVE-\d{4}-\d+'                                               # full CVE ID
-    r'|\bCVE[s]?\b'                                                # bare CVE mention
-    r'|\b(?:NVD|CPE)\b'                                           # NVD/CPE databases
-    r'|US\d{6,8}'                                                  # US patent number
-    r'|\b\w{2,8}_10[kK]'                                          # ticker_10k filing
-    r'|Form\s+10-[KQ]'                                            # SEC form reference
-    r'|\bassignee\b'                                               # patent assignee field
-    r'|\b(?:apple|google|alphabet|meta|amazon|netflix|microsoft)/\w+'  # CPE vendor/product
-    r'|This issue (?:is fixed|affects)'                            # CVE advisory text
-    r'|\bvulnerability\b'                                          # CVE description keyword
-    r'|votes?\s+per\s+share'                                      # SEC stock structure
-    r'|\bticker\s+[A-Z]{1,6}\b'                                  # SEC ticker reference
-    r'|\$\s*\d[\d,.]*\s*(?:million|billion)'                      # financial figures
-    r'|\bLEI[:\s]'                                                # GLEIF LEI reference
-    r'|\bpat(?:ent)?[_\s]\d+',                                   # patent reference
+    r"CVE-\d{4}-\d+"  # full CVE ID
+    r"|\bCVE[s]?\b"  # bare CVE mention
+    r"|\b(?:NVD|CPE)\b"  # NVD/CPE databases
+    r"|US\d{6,8}"  # US patent number
+    r"|\b\w{2,8}_10[kK]"  # ticker_10k filing
+    r"|Form\s+10-[KQ]"  # SEC form reference
+    r"|\bassignee\b"  # patent assignee field
+    r"|\b(?:apple|google|alphabet|meta|amazon|netflix|microsoft)/\w+"  # CPE vendor/product
+    r"|This issue (?:is fixed|affects)"  # CVE advisory text
+    r"|\bvulnerability\b"  # CVE description keyword
+    r"|votes?\s+per\s+share"  # SEC stock structure
+    r"|\bticker\s+[A-Z]{1,6}\b"  # SEC ticker reference
+    r"|\$\s*\d[\d,.]*\s*(?:million|billion)"  # financial figures
+    r"|\bLEI[:\s]"  # GLEIF LEI reference
+    r"|\bpat(?:ent)?[_\s]\d+",  # patent reference
     re.IGNORECASE,
 )
 
@@ -520,21 +599,31 @@ def _evidence_is_grounded(srr_data: dict) -> bool:
 
 # ── Dispatcher ──────────────────────────────────────────────────────────────
 
-def score_one(generated: str, schema: dict, embedder=None,
-              srr_data: dict | None = None) -> float:
+
+def score_one(
+    generated: str,
+    schema: dict,
+    embedder: Callable[[str], np.ndarray] | None = None,
+    srr_data: dict | None = None,
+) -> float:
     ct = schema.get("check_type", "text")
     val = schema.get("value")
     if ct == "boolean":
         base = score_boolean(generated, bool(val))
     elif ct == "number":
         try:
-            gold_num = float(val) if val is not None else _extract_number(str(schema.get("gold_answer", "")))
+            gold_num = (
+                float(val)
+                if val is not None
+                else _extract_number(str(schema.get("gold_answer", "")))
+            )
         except (TypeError, ValueError):
             gold_num = None
         if gold_num is None:
             return float("nan")
-        base = score_number(generated, gold_num, schema.get("tolerance", 0.0),
-                            unit=schema.get("unit"))
+        base = score_number(
+            generated, gold_num, schema.get("tolerance", 0.0), unit=schema.get("unit")
+        )
     elif ct == "date":
         base = score_date(generated, str(val) if val else "", schema.get("tolerance_days", 0))
     elif ct == "entity":
@@ -557,19 +646,24 @@ def score_one(generated: str, schema: dict, embedder=None,
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 
-def main():
+
+def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--schemas", required=True)
     ap.add_argument("--results", required=True)
     ap.add_argument("--out", required=True)
-    ap.add_argument("--local-embed-model", default=None,
-                    help="Local sentence-transformer model for text check_type "
-                         "(e.g. BAAI/bge-large-en-v1.5). Falls back to ROUGE-L if omitted.")
+    ap.add_argument(
+        "--local-embed-model",
+        default=None,
+        help="Local sentence-transformer model for text check_type "
+        "(e.g. BAAI/bge-large-en-v1.5). Falls back to ROUGE-L if omitted.",
+    )
     args = ap.parse_args()
 
     embedder = None
     if args.local_embed_model:
         from sentence_transformers import SentenceTransformer as _ST
+
         _model = _ST(args.local_embed_model)
         _embed_cache: dict[str, list[float]] = {}
 
@@ -604,22 +698,23 @@ def main():
         s = score_one(generated, schema, embedder=embedder, srr_data=r.get("srr"))
         qt = r.get("question_type", "?")
         scores_by_type[qt].append(s)
-        per_question.append({
-            "id": qid,
-            "question_type": qt,
-            "check_type": schema.get("check_type"),
-            "score": s,
-            "generated": generated[:120],
-            "gold": r.get("gold_answer", "")[:80],
-        })
+        per_question.append(
+            {
+                "id": qid,
+                "question_type": qt,
+                "check_type": schema.get("check_type"),
+                "score": s,
+                "generated": generated[:120],
+                "gold": r.get("gold_answer", "")[:80],
+            }
+        )
 
-    overall_scores = [s for ss in scores_by_type.values() for s in ss
-                      if s == s]  # exclude NaN
+    overall_scores = [s for ss in scores_by_type.values() for s in ss if s == s]  # exclude NaN
     overall = sum(overall_scores) / len(overall_scores) if overall_scores else 0.0
 
     output = {
         "overall": overall,
-        "by_type": {qt: sum(ss)/len(ss) for qt, ss in scores_by_type.items() if ss},
+        "by_type": {qt: sum(ss) / len(ss) for qt, ss in scores_by_type.items() if ss},
         "per_question": per_question,
     }
 

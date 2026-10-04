@@ -1,9 +1,9 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 9f4d18db-0f85-4aa2-ae8a-360b5566e609
 """Unit tests for chonk.indexer — Indexer + IndexHandle."""
 
 from __future__ import annotations
 
+import sys
 import threading
 
 import numpy as np
@@ -175,9 +175,6 @@ def test_index_source_async(tmp_store, txt_dir):
 # ---------------------------------------------------------------------------
 # Registry tests
 # ---------------------------------------------------------------------------
-
-
-import sys
 
 
 def _reg():

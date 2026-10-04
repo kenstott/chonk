@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: a1b2c3d4-e5f6-7890-abcd-ef0123456789
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """CweRenderer — renders MITRE CWE XML catalog into per-weakness markdown."""
 

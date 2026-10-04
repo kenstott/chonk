@@ -1,5 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 5a1d7c93-4f60-42be-9b18-6c0e2a7d4e51
 
 """Shared test fixtures and invariant helpers."""
 

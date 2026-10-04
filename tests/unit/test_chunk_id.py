@@ -1,7 +1,6 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 0e3b6a41-9c2f-4d18-8a75-2b41d0f6e9c7
 
-"""Tests for chunk ID derivation and index schema versioning (fixed.md phase 1)."""
+"""Tests for chunk ID derivation and index schema versioning."""
 
 from __future__ import annotations
 

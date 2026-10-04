@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 5b8e2a4f-9c1d-4e7b-a3f6-0d2c8e5b1a7f
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """GmailCrawler — index Gmail messages via the Gmail REST API.
 

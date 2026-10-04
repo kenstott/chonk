@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 90c28675-05a4-4497-abde-b508cfcdc9bb
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Answer generation primitives: AnswerContext, PromptBuilder, AnswerGenerator, Answer."""
 

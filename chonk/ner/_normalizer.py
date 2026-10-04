@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 28586822-f88c-49bc-8c5d-0b9ae24534c8
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Entity name normalizer for deduplication.
 
@@ -11,9 +6,8 @@ Pipeline per entity string:
 1. Strip leading/trailing whitespace and symbols (brackets, quotes, punctuation).
 2. Collapse internal whitespace.
 3. Split on camelCase boundaries or underscores if no spaces are present.
-4. Singularize the last token using ``inflect`` (head-noun rule).
-   - ``inflect.singular_noun`` returns False for already-singular words → no-op.
-   - Words in ``SINGULAR_EXCEPTIONS`` are never singularized.
+4. Singularize the last token (head-noun rule) with the dictionary-based
+   :func:`chonk.ner._singular.singularize`; acronyms are left alone.
 5. Re-join tokens preserving original separator style.
 
 ``normalize_entity`` → canonical display form (preserves acronym casing).
@@ -23,21 +17,8 @@ Pipeline per entity string:
 from __future__ import annotations
 
 import re
-from typing import Any
 
-# Words that inflect mis-singularizes for typical data-domain use.
-SINGULAR_EXCEPTIONS: frozenset[str] = frozenset(
-    {
-        "data",
-        "metadata",
-        "criteria",  # domain often uses "criteria" as singular
-        "media",
-        "agenda",
-        "stamina",
-        "trivia",
-        "insignia",
-    }
-)
+from ._singular import SINGULAR_EXCEPTIONS, singularize
 
 # Compiled patterns
 _LEADING_TRAILING_SYMBOLS = re.compile(r"^[^\w\s]+|[^\w\s]+$", re.UNICODE)
@@ -54,39 +35,13 @@ def _is_acronym(word: str) -> bool:
 
 
 def _singularize(word: str) -> str:
-    """Singularize *word*; return original if already singular, unknown, or an acronym."""
-    if not word:
+    """Singularize *word*, keeping acronyms and a leading capital."""
+    if not word or _is_acronym(word):
         return word
-    if _is_acronym(word):
+    singular = singularize(word.lower())
+    if singular == word.lower():
         return word
-    lower = word.lower()
-    if lower in SINGULAR_EXCEPTIONS:
-        return word
-    try:
-        import inflect as _inflect_mod  # noqa: F401
-
-        _engine = _get_engine()
-        result = _engine.singular_noun(word)  # type: ignore[arg-type]  # inflect stub uses Word, runtime accepts str
-        if result is False:
-            return word
-        # Preserve original casing style on the singular form
-        if word[0].isupper() and not _is_acronym(word):
-            return result.capitalize() if result else word
-        return result
-    except ImportError:
-        return word
-
-
-_inflect_engine: Any = None  # noqa: ANN401
-
-
-def _get_engine() -> Any:  # noqa: ANN401
-    global _inflect_engine
-    if _inflect_engine is None:
-        import inflect
-
-        _inflect_engine = inflect.engine()
-    return _inflect_engine
+    return singular.capitalize() if word[0].isupper() else singular
 
 
 def _split_tokens(text: str) -> tuple[list[str], str]:
@@ -178,17 +133,8 @@ class EntityNormalizer:
         if not tokens:
             return ""
         last = tokens[-1]
-        if not _is_acronym(last) and last.lower() not in self._exceptions:
-            try:
-                result = _get_engine().singular_noun(last)  # type: ignore[arg-type]  # inflect stub uses Word, runtime accepts str
-                if result is not False:
-                    tokens[-1] = (
-                        result.capitalize()
-                        if last[0].isupper() and not _is_acronym(last)
-                        else result
-                    )
-            except ImportError:
-                pass
+        if last.lower() not in self._exceptions:
+            tokens[-1] = _singularize(last)
         return sep.join(tokens)
 
     def canonical_key(self, entity: str) -> str:

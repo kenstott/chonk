@@ -1,0 +1,3 @@
+# Vector + BM25 baselines matched to the hybrid leaders
+fang_vector_bm25_bc_k30_rerank_srr_mini
+fang_vector_bm25_bc_k50_rerank_srr_mini

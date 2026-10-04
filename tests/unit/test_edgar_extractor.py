@@ -1,14 +1,8 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 393b2d0b-7f67-40b3-8a85-ddafd75d5456
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Unit tests for EdgarExtractor — EDGAR inline XBRL HTML extractor."""
-from __future__ import annotations
 
-import pytest
+from __future__ import annotations
 
 from chonk.extractors._edgar import (
     EdgarExtractor,
@@ -16,7 +10,6 @@ from chonk.extractors._edgar import (
     _parse_toc,
     _strip_tags,
 )
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Shared test fixtures
@@ -107,6 +100,7 @@ _PLAIN_HTML = b"<html><body><p>Regular HTML, no XBRL.</p></body></html>"
 # _strip_tags
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestStripTags:
     def test_removes_p_tags(self):
         assert "Hello world" in _strip_tags("<p>Hello world</p>")
@@ -143,6 +137,7 @@ class TestStripTags:
 # ─────────────────────────────────────────────────────────────────────────────
 # _parse_toc
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestParseToc:
     def test_extracts_item_numbers(self):
@@ -204,6 +199,7 @@ class TestParseToc:
 # ─────────────────────────────────────────────────────────────────────────────
 # _extract_edgar_prose
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestExtractEdgarProse:
     def test_includes_item_1a_risk_factors(self):
@@ -278,6 +274,7 @@ class TestExtractEdgarProse:
 # ─────────────────────────────────────────────────────────────────────────────
 # EdgarExtractor
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestEdgarExtractor:
     def setup_method(self):
@@ -373,13 +370,16 @@ class TestEdgarExtractor:
 # Integration with DocumentLoader
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestEdgarWithDocumentLoader:
     """Verify the extractor plugs into DocumentLoader correctly."""
 
     def test_load_bytes_produces_chunks(self):
         from chonk import DocumentLoader
+
         loader = DocumentLoader(
-            min_chunk_size=400, max_chunk_size=400,
+            min_chunk_size=400,
+            max_chunk_size=400,
             extra_extractors=[EdgarExtractor()],
         )
         chunks = loader.load_bytes(
@@ -391,8 +391,10 @@ class TestEdgarWithDocumentLoader:
 
     def test_chunks_have_document_name(self):
         from chonk import DocumentLoader
+
         loader = DocumentLoader(
-            min_chunk_size=400, max_chunk_size=400,
+            min_chunk_size=400,
+            max_chunk_size=400,
             extra_extractors=[EdgarExtractor()],
         )
         chunks = loader.load_bytes(
@@ -404,8 +406,10 @@ class TestEdgarWithDocumentLoader:
 
     def test_chunks_have_section_breadcrumbs(self):
         from chonk import DocumentLoader
+
         loader = DocumentLoader(
-            min_chunk_size=400, max_chunk_size=400,
+            min_chunk_size=400,
+            max_chunk_size=400,
             extra_extractors=[EdgarExtractor()],
         )
         chunks = loader.load_bytes(
@@ -419,8 +423,10 @@ class TestEdgarWithDocumentLoader:
 
     def test_embedding_content_includes_doc_name(self):
         from chonk import DocumentLoader
+
         loader = DocumentLoader(
-            min_chunk_size=400, max_chunk_size=400,
+            min_chunk_size=400,
+            max_chunk_size=400,
             enrich_context=True,
             extra_extractors=[EdgarExtractor()],
         )
@@ -435,8 +441,10 @@ class TestEdgarWithDocumentLoader:
 
     def test_embedding_content_includes_section(self):
         from chonk import DocumentLoader
+
         loader = DocumentLoader(
-            min_chunk_size=400, max_chunk_size=400,
+            min_chunk_size=400,
+            max_chunk_size=400,
             enrich_context=True,
             extra_extractors=[EdgarExtractor()],
         )
@@ -452,12 +460,17 @@ class TestEdgarWithDocumentLoader:
 
     def test_naive_and_contextual_differ(self):
         from chonk import DocumentLoader
+
         naive = DocumentLoader(
-            min_chunk_size=400, max_chunk_size=400, enrich_context=False,
+            min_chunk_size=400,
+            max_chunk_size=400,
+            enrich_context=False,
             extra_extractors=[EdgarExtractor()],
         )
         ctx = DocumentLoader(
-            min_chunk_size=400, max_chunk_size=400, enrich_context=True,
+            min_chunk_size=400,
+            max_chunk_size=400,
+            enrich_context=True,
             extra_extractors=[EdgarExtractor()],
         )
         n_chunks = naive.load_bytes(_FULL_10K_HTML.encode(), name="x", doc_type="edgar")
@@ -466,15 +479,16 @@ class TestEdgarWithDocumentLoader:
         assert len(n_chunks) == len(c_chunks)
         # But embedding_content differs for sectioned chunks
         diffs = [
-            i for i, (n, c) in enumerate(zip(n_chunks, c_chunks))
+            i
+            for i, (n, c) in enumerate(zip(n_chunks, c_chunks, strict=False))
             if n.embedding_content != c.embedding_content
         ]
         assert len(diffs) > 0
 
     def test_globally_registered_extractor(self):
         """register_extractor() adds extractor to global registry found by detect_extractor."""
-        from chonk.extractors import register_extractor, detect_extractor
         import chonk.extractors as _ext_mod
+        from chonk.extractors import detect_extractor, register_extractor
 
         class _CustomEdgar(EdgarExtractor):
             def can_handle(self, doc_type: str) -> bool:

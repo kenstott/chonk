@@ -1,7 +1,6 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: b73e9d04-2c85-41fa-9e6d-5a0c8b1f7d32
 
-"""Tests for prune_documents — removal of deleted source documents (fixed.md phase 3)."""
+"""Tests for prune_documents — removal of deleted source documents."""
 
 from __future__ import annotations
 

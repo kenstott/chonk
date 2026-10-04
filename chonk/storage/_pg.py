@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: b9e1f2a3-4c5d-6e7f-8a9b-0c1d2e3f4a5b
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """PostgreSQL + pgvector backend for chonk."""
 

@@ -1,5 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 1b4a75e7-8644-479d-b039-4cb3106c19d4
 """Unit tests for EntityNormalizer, normalize_entity, canonical_key."""
 
 from __future__ import annotations

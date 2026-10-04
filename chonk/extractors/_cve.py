@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: f1e2d3c4-b5a6-7890-abcd-ef1234567890
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """CveRenderer — renders NVD API v2 CVE records into per-record markdown."""
 

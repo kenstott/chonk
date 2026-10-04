@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: c3f5a8b2-4d7e-4c9f-b6d3-2e1a7f0b5c8d
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """SolrCrawler — index documents from Apache Solr via the JSON query API.
 

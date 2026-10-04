@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: fb7bd5bb-73d0-4da4-b758-8ee2afc3b3c6
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """
 EDGAR Scale Demo — clustering separation at 4, 10, 25, 50 companies.

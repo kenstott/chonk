@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 30f89af3-4903-4608-8b49-b0c2dd8e6d73
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Markdown extractor — strips YAML frontmatter and returns clean markdown text."""
 

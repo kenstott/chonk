@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 977eefa1-3279-4be9-b5b5-c606a823ecf7
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Lookup table extractor — one markdown section per row for dense entity retrieval."""
 

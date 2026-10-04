@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 7c041a67-b831-4f86-8892-4e15e60270d7
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Integration tests for the EDGAR 10-K pipeline.
 
@@ -11,6 +6,7 @@ These tests verify the full fetch → extract → chunk → enrich pipeline usin
 mocked HTTP and a realistic but compact EDGAR HTML fixture.  No network
 requests are made.
 """
+
 from __future__ import annotations
 
 import json
@@ -142,24 +138,28 @@ _MSFT_HTML = b"""\
 </body>
 </html>"""
 
+
 # Fake EDGAR submissions JSON (minimal structure)
 def _fake_submissions(cik: str, acc_no: str, doc: str) -> bytes:
-    return json.dumps({
-        "cik": int(cik),
-        "filings": {
-            "recent": {
-                "form": ["10-K", "10-Q"],
-                "accessionNumber": [acc_no, "0000000000-24-000001"],
-                "primaryDocument": [doc, "q1.htm"],
-                "filingDate": ["2024-11-01", "2024-08-01"],
-            }
+    return json.dumps(
+        {
+            "cik": int(cik),
+            "filings": {
+                "recent": {
+                    "form": ["10-K", "10-Q"],
+                    "accessionNumber": [acc_no, "0000000000-24-000001"],
+                    "primaryDocument": [doc, "q1.htm"],
+                    "filingDate": ["2024-11-01", "2024-08-01"],
+                }
+            },
         }
-    }).encode()
+    ).encode()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Unit-level extraction tests (no HTTP)
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestEdgarPipelineExtraction:
     """Verify EdgarExtractor produces correct markdown on our fixture HTMLs."""
@@ -197,11 +197,12 @@ class TestEdgarPipelineExtraction:
 # Full pipeline: DocumentLoader.load_bytes with EdgarExtractor
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TestEdgarDocumentLoader:
 
+class TestEdgarDocumentLoader:
     def _load(self, html: bytes, name: str, enrich_context: bool = True) -> list[DocumentChunk]:
         loader = DocumentLoader(
-            min_chunk_size=400, max_chunk_size=400,
+            min_chunk_size=400,
+            max_chunk_size=400,
             enrich_context=enrich_context,
             extra_extractors=[EdgarExtractor()],
         )
@@ -301,6 +302,7 @@ class TestEdgarDocumentLoader:
 # Mocked HTTP: edgar_demo._get_latest_10k_url
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestEdgarDemoFetchHelpers:
     """Test the EDGAR fetch helpers with mocked HTTP, without touching the network."""
 
@@ -319,17 +321,19 @@ class TestEdgarDemoFetchHelpers:
     def test_get_latest_10k_url_raises_when_no_10k(self):
         from demo.edgar_demo import _get_latest_10k_url
 
-        fake_json = json.dumps({
-            "cik": 320193,
-            "filings": {
-                "recent": {
-                    "form": ["10-Q", "8-K"],
-                    "accessionNumber": ["0000320193-24-000001", "0000320193-24-000002"],
-                    "primaryDocument": ["q1.htm", "8k.htm"],
-                    "filingDate": ["2024-08-01", "2024-05-01"],
-                }
+        fake_json = json.dumps(
+            {
+                "cik": 320193,
+                "filings": {
+                    "recent": {
+                        "form": ["10-Q", "8-K"],
+                        "accessionNumber": ["0000320193-24-000001", "0000320193-24-000002"],
+                        "primaryDocument": ["q1.htm", "8k.htm"],
+                        "filingDate": ["2024-08-01", "2024-05-01"],
+                    }
+                },
             }
-        }).encode()
+        ).encode()
 
         with patch("demo.edgar_demo._http_get", return_value=fake_json):
             with pytest.raises(RuntimeError, match="No 10-K"):
@@ -379,25 +383,30 @@ class TestEdgarDemoFetchHelpers:
 # QUERIES sanity checks
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestEdgarQueriesStructure:
     from demo.edgar_demo import QUERIES
 
     def test_queries_nonempty(self):
         from demo.edgar_demo import QUERIES
+
         assert len(QUERIES) > 0
 
     def test_each_query_is_string(self):
         from demo.edgar_demo import QUERIES
+
         for q in QUERIES:
             assert isinstance(q, str) and len(q) > 0
 
     def test_queries_are_topic_based(self):
         from demo.edgar_demo import QUERIES
+
         # Queries should be topic phrases, not empty
         assert all(len(q.split()) >= 2 for q in QUERIES)
 
     def test_queries_cover_rag_topics(self):
         from demo.edgar_demo import QUERIES
+
         combined = " ".join(QUERIES).lower()
         # Should span common 10-K topics
         assert any(w in combined for w in ("risk", "tax", "revenue", "currency", "cyber"))
@@ -407,12 +416,14 @@ class TestEdgarQueriesStructure:
 # End-to-end retrieval demonstration (no network, fixture data)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestEdgarRetrieval:
     """Demonstrate that contextual chunking improves retrieval on EDGAR fixtures."""
 
     def _build_corpus(self, enrich_context: bool):
         loader = DocumentLoader(
-            min_chunk_size=300, max_chunk_size=300,
+            min_chunk_size=300,
+            max_chunk_size=300,
             enrich_context=enrich_context,
             extra_extractors=[EdgarExtractor()],
         )
@@ -427,7 +438,8 @@ class TestEdgarRetrieval:
         import re
         from collections import Counter
 
-        def tok(t): return re.findall(r"[a-z][a-z0-9]*", t.lower())
+        def tok(t):
+            return re.findall(r"[a-z][a-z0-9]*", t.lower())
 
         texts = [c.embedding_content if use_embedding else c.content for c in chunks]
         vocab = sorted({w for t in texts for w in tok(t)})
@@ -435,19 +447,25 @@ class TestEdgarRetrieval:
         idf = {w: math.log((n + 1) / (sum(1 for t in texts if w in tok(t)) + 1)) + 1 for w in vocab}
 
         def vec(t):
-            toks = tok(t); n_ = len(toks)
-            if not n_: return [0.0] * len(vocab)
+            toks = tok(t)
+            n_ = len(toks)
+            if not n_:
+                return [0.0] * len(vocab)
             tf = Counter(toks)
             return [tf.get(w, 0) / n_ * idf.get(w, 0) for w in vocab]
 
         def cos(a, b):
-            d = sum(x * y for x, y in zip(a, b))
+            d = sum(x * y for x, y in zip(a, b, strict=False))
             ma = math.sqrt(sum(x * x for x in a))
             mb = math.sqrt(sum(x * x for x in b))
             return d / (ma * mb) if ma and mb else 0.0
 
         qv = vec(query)
-        scored = sorted(zip([cos(qv, vec(t)) for t in texts], chunks), key=lambda x: x[0], reverse=True)
+        scored = sorted(
+            zip([cos(qv, vec(t)) for t in texts], chunks, strict=False),
+            key=lambda x: x[0],
+            reverse=True,
+        )
         return [c for _, c in scored[:k]]
 
     def test_azure_query_finds_msft_contextually(self):

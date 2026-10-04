@@ -1,12 +1,6 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: cde8ac31-a3e1-42a8-a5d1-5b80b61f4f3d
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Integration tests for DocumentLoader using LocalTransport + TextExtractor."""
-
 
 from chonk import DocumentLoader
 
@@ -38,6 +32,7 @@ class TestDocumentLoaderMarkdown:
 
     def test_chunks_are_document_chunks(self, tmp_path):
         from chonk import DocumentChunk
+
         f = tmp_path / "sample.md"
         f.write_text(SAMPLE_MARKDOWN)
         chunks = DocumentLoader().load(str(f))
@@ -85,7 +80,9 @@ class TestDocumentLoaderMarkdown:
 class TestDocumentLoaderText:
     def test_load_text_returns_chunks(self):
         loader = DocumentLoader()
-        chunks = loader.load_text("Paragraph one.\n\nParagraph two.\n\nParagraph three.", "test.txt")
+        chunks = loader.load_text(
+            "Paragraph one.\n\nParagraph two.\n\nParagraph three.", "test.txt"
+        )
         assert len(chunks) >= 1
 
     def test_load_text_content_present(self):
@@ -107,14 +104,14 @@ class TestDocumentLoaderText:
 
     def test_load_bytes_with_enrichment(self):
         loader = DocumentLoader(enrich_context=True)
-        chunks = loader.load_bytes(
-            b"# Intro\n\nSection content here.", "doc.md", doc_type="text"
-        )
+        chunks = loader.load_bytes(b"# Intro\n\nSection content here.", "doc.md", doc_type="text")
         assert all(c.embedding_content is not None for c in chunks)
 
     def test_load_html_bytes(self):
         loader = DocumentLoader()
-        chunks = loader.load_bytes(b"<h1>Title</h1><p>Body text here.</p>", "page.html", doc_type="html")
+        chunks = loader.load_bytes(
+            b"<h1>Title</h1><p>Body text here.</p>", "page.html", doc_type="html"
+        )
         assert len(chunks) >= 1
         full_text = " ".join(c.content for c in chunks)
         assert "Title" in full_text or "Body" in full_text

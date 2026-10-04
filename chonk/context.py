@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 79a01dcf-aad6-4086-a01a-4b3465b18e71
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Contextual enrichment — prepend document name and section path into embedding_content.
 

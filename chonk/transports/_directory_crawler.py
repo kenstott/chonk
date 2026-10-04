@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: e0e29635-1d0f-4b13-9765-7bfd1073e44a
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """DirectoryCrawler — recursive file discovery for local paths and S3 prefixes.
 

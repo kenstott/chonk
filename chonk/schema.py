@@ -1,11 +1,7 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: b4f1a2e3-8c9d-4e5f-a6b7-c8d9e0f1a2b3
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Structured metadata models for schema and API document loading."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

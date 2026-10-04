@@ -1,12 +1,6 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: db6662f3-b348-4d85-9bc9-6371616ddc70
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Tests for chonk chunking primitives."""
-
 
 from chonk import (
     NOVEL_STRUCTURAL_LEVELS,
@@ -21,6 +15,7 @@ from chonk import (
 # =============================================================================
 # is_table_line
 # =============================================================================
+
 
 class TestIsTableLine:
     def test_markdown_table_row(self):
@@ -48,6 +43,7 @@ class TestIsTableLine:
 # =============================================================================
 # is_list_line
 # =============================================================================
+
 
 class TestIsListLine:
     def test_dash_list(self):
@@ -84,6 +80,7 @@ class TestIsListLine:
 # =============================================================================
 # merge_blocks
 # =============================================================================
+
 
 class TestMergeBlocks:
     def test_merge_consecutive_table_paragraphs(self):
@@ -179,6 +176,7 @@ class TestMergeBlocks:
 # chunk_document
 # =============================================================================
 
+
 class TestChunkDocument:
     def test_basic_chunking(self):
         content = "First paragraph.\n\nSecond paragraph.\n\nThird paragraph."
@@ -242,8 +240,9 @@ class TestChunkDocument:
 
     def test_breadcrumb_absent_when_disabled(self):
         content = "# Section\n\nSome text."
-        chunks = chunk_document("doc.md", content, min_chunk_size=5000, max_chunk_size=10000,
-                                include_breadcrumb=False)
+        chunks = chunk_document(
+            "doc.md", content, min_chunk_size=5000, max_chunk_size=10000, include_breadcrumb=False
+        )
         assert len(chunks) == 1
         assert not chunks[0].content.startswith("[")
         assert "Some text." in chunks[0].content
@@ -254,33 +253,48 @@ class TestChunkDocument:
         chunks = chunk_document("doc.md", content, min_chunk_size=100, max_chunk_size=200)
         table_chunks = [c for c in chunks if "[TABLE:" in c.content]
         assert len(table_chunks) >= 2
-        markers = {m for c in table_chunks for m in ["[TABLE:start]", "[TABLE:cont]", "[TABLE:end]"] if m in c.content}
+        markers = {
+            m
+            for c in table_chunks
+            for m in ["[TABLE:start]", "[TABLE:cont]", "[TABLE:end]"]
+            if m in c.content
+        }
         assert "[TABLE:start]" in markers
 
     def test_table_cont_chunks_include_header_row(self):
         header = "| Company | Q1 | Q2 | Total |"
-        sep    = "| --- | --- | --- | --- |"
-        rows   = "\n".join(f"| Co{i} | {i} | {i*2} | {i*3} |" for i in range(40))
+        sep = "| --- | --- | --- | --- |"
+        rows = "\n".join(f"| Co{i} | {i} | {i * 2} | {i * 3} |" for i in range(40))
         content = f"{header}\n{sep}\n{rows}"
-        chunks = chunk_document("fin.md", content, min_chunk_size=50, max_chunk_size=200,
-                                include_breadcrumb=False)
-        cont_chunks = [c for c in chunks if "[TABLE:cont]" in c.content and not c.content.startswith("[TABLE:start]")]
+        chunks = chunk_document(
+            "fin.md", content, min_chunk_size=50, max_chunk_size=200, include_breadcrumb=False
+        )
+        cont_chunks = [
+            c
+            for c in chunks
+            if "[TABLE:cont]" in c.content and not c.content.startswith("[TABLE:start]")
+        ]
         assert len(cont_chunks) >= 1
         for c in cont_chunks:
             assert header in c.content, f"Header row missing from cont chunk: {c.content[:120]}"
 
     def test_table_row_enrichment_in_embedding_content(self):
         header = "| Company | Q1 | Q2 | Total |"
-        sep    = "| --- | --- | --- | --- |"
-        rows   = "\n".join(f"| Co{i} | {i} | {i*2} | {i*3} |" for i in range(40))
+        sep = "| --- | --- | --- | --- |"
+        rows = "\n".join(f"| Co{i} | {i} | {i * 2} | {i * 3} |" for i in range(40))
         content = f"{header}\n{sep}\n{rows}"
-        chunks = chunk_document("fin.md", content, min_chunk_size=50, max_chunk_size=200,
-                                include_breadcrumb=False)
+        chunks = chunk_document(
+            "fin.md", content, min_chunk_size=50, max_chunk_size=200, include_breadcrumb=False
+        )
         table_chunks = [c for c in chunks if "[TABLE:" in c.content]
         assert len(table_chunks) >= 2
         for c in table_chunks:
-            assert c.embedding_content is not None, "embedding_content should be set for table chunks"
-            assert "company:" in c.embedding_content.lower(), f"enriched rows missing from embedding_content: {c.embedding_content[:120]}"
+            assert c.embedding_content is not None, (
+                "embedding_content should be set for table chunks"
+            )
+            assert "company:" in c.embedding_content.lower(), (
+                f"enriched rows missing from embedding_content: {c.embedding_content[:120]}"
+            )
             assert "total:" in c.embedding_content.lower()
             # content stays as original pipe format
             assert "|" in c.content
@@ -290,7 +304,12 @@ class TestChunkDocument:
         chunks = chunk_document("doc.md", items, min_chunk_size=100, max_chunk_size=200)
         list_chunks = [c for c in chunks if "[LIST:" in c.content]
         assert len(list_chunks) >= 2
-        markers = {m for c in list_chunks for m in ["[LIST:start]", "[LIST:cont]", "[LIST:end]"] if m in c.content}
+        markers = {
+            m
+            for c in list_chunks
+            for m in ["[LIST:start]", "[LIST:cont]", "[LIST:end]"]
+            if m in c.content
+        }
         assert "[LIST:start]" in markers
 
     def test_para_continuation_markers(self):
@@ -306,7 +325,9 @@ class TestChunkDocument:
         assert chunks == []
 
     def test_single_line_content(self):
-        chunks = chunk_document("line.txt", "Just one line.", min_chunk_size=100, max_chunk_size=1000)
+        chunks = chunk_document(
+            "line.txt", "Just one line.", min_chunk_size=100, max_chunk_size=1000
+        )
         assert len(chunks) == 1
         assert "Just one line." in chunks[0].content
         assert chunks[0].breadcrumb == "[line.txt]"
@@ -324,16 +345,18 @@ class TestChunkDocument:
         para = "The quick brown fox jumped over the lazy dog. " * 9  # ~414 chars
         content = "\n\n".join([para] * 100)  # ~41 k chars, no headers
         chunks = chunk_document(
-            "novel", content,
-            min_chunk_size=400, max_chunk_size=1200,
-            include_breadcrumb=True, include_doc_name=False,
+            "novel",
+            content,
+            min_chunk_size=400,
+            max_chunk_size=1200,
+            include_breadcrumb=True,
+            include_doc_name=False,
             promote_headings=False,
         )
         assert len(chunks) > 1, "headerless doc must produce multiple chunks"
-        assert all(
-            len(c.content) <= 1200 * 1.15
-            for c in chunks
-        ), "every chunk must respect max_chunk_size (with overflow margin)"
+        assert all(len(c.content) <= 1200 * 1.15 for c in chunks), (
+            "every chunk must respect max_chunk_size (with overflow margin)"
+        )
 
     def test_headerless_doc_no_paragraph_breaks_respects_max(self):
         # Regression: a large document with no \n\n and no \n must still be split
@@ -341,16 +364,18 @@ class TestChunkDocument:
         sentence = "The fox ran quickly across the field. "
         content = sentence * 3000  # ~111 k chars, no newlines, only sentence ends
         chunks = chunk_document(
-            "novel", content,
-            min_chunk_size=400, max_chunk_size=1200,
-            include_breadcrumb=False, include_doc_name=False,
+            "novel",
+            content,
+            min_chunk_size=400,
+            max_chunk_size=1200,
+            include_breadcrumb=False,
+            include_doc_name=False,
             promote_headings=False,
         )
         assert len(chunks) > 1, "document with no newlines must produce multiple chunks"
-        assert all(
-            len(c.content) <= 1200 * 1.15
-            for c in chunks
-        ), "every chunk must respect max_chunk_size"
+        assert all(len(c.content) <= 1200 * 1.15 for c in chunks), (
+            "every chunk must respect max_chunk_size"
+        )
 
     def test_headerless_doc_no_sentence_boundaries_respects_max(self):
         # Regression: a large document with no \n\n, no \n, and no .?! must still
@@ -358,16 +383,18 @@ class TestChunkDocument:
         # monolithic chunk.
         content = "word " * 45164  # ~225 k chars, no newlines, no sentence punctuation
         chunks = chunk_document(
-            "novel", content,
-            min_chunk_size=400, max_chunk_size=1200,
-            include_breadcrumb=False, include_doc_name=False,
+            "novel",
+            content,
+            min_chunk_size=400,
+            max_chunk_size=1200,
+            include_breadcrumb=False,
+            include_doc_name=False,
             promote_headings=False,
         )
         assert len(chunks) > 1, "document with no sentence boundaries must produce multiple chunks"
-        assert all(
-            len(c.content) <= 1200 * 1.15
-            for c in chunks
-        ), "every chunk must respect max_chunk_size"
+        assert all(len(c.content) <= 1200 * 1.15 for c in chunks), (
+            "every chunk must respect max_chunk_size"
+        )
 
     def test_emit_splits_tiny_tail_folded_into_next_chunk(self):
         # Regression: when Rule 3 fires and _split_at_sentences produces a last
@@ -390,34 +417,39 @@ class TestChunkDocument:
         max_size = 1200
         # hard_max = int(1200 * 1.15) = 1380
 
-        long_sentence = "The patient presented with severe symptoms requiring immediate medical care. "
+        long_sentence = (
+            "The patient presented with severe symptoms requiring immediate medical care. "
+        )
         # 19 repetitions = 1463 chars > hard_max(1380), last split piece ≈ 307 chars
         big_para = long_sentence * 19
 
-        filler_para = "X " * 250   # ~500 chars — flushed before big_para arrives
-        next_para   = "Y " * 200   # ~400 chars — should absorb the tiny tail
+        filler_para = "X " * 250  # ~500 chars — flushed before big_para arrives
+        next_para = "Y " * 200  # ~400 chars — should absorb the tiny tail
 
         content = f"{filler_para}\n\n{big_para}\n\n{next_para}"
 
         chunks = chunk_document(
-            "doc", content,
-            min_chunk_size=min_size, max_chunk_size=max_size,
-            include_breadcrumb=False, include_doc_name=False,
+            "doc",
+            content,
+            min_chunk_size=min_size,
+            max_chunk_size=max_size,
+            include_breadcrumb=False,
+            include_doc_name=False,
         )
 
         # The bug produces a tiny standalone chunk for the short tail sentence.
         # After the fix, no non-final chunk should be below min_chunk_size.
         non_final = chunks[:-1]
         tiny = [c for c in non_final if len(c.content) < min_size]
-        assert tiny == [], (
-            f"Non-final chunks below min_chunk_size={min_size} found: "
-            + str([(i, len(c.content), repr(c.content[:80])) for i, c in enumerate(chunks) if c in tiny])
+        assert tiny == [], f"Non-final chunks below min_chunk_size={min_size} found: " + str(
+            [(i, len(c.content), repr(c.content[:80])) for i, c in enumerate(chunks) if c in tiny]
         )
 
 
 # =============================================================================
 # overlap_chars
 # =============================================================================
+
 
 class TestOverlapChars:
     def _compute_overlap_tail(self, prev_content: str, overlap_chars: int) -> str:
@@ -427,11 +459,13 @@ class TestOverlapChars:
         tail = prev_content[-overlap_chars:]
         # if the cut is mid-word (char before cut and first char of tail are
         # both non-space), advance to the start of the next word
-        if (not prev_content[-(overlap_chars + 1): -(overlap_chars)].isspace()
-                and not tail[0].isspace()):
+        if (
+            not prev_content[-(overlap_chars + 1) : -(overlap_chars)].isspace()
+            and not tail[0].isspace()
+        ):
             space_pos = tail.find(" ")
             if space_pos != -1:
-                tail = tail[space_pos + 1:]
+                tail = tail[space_pos + 1 :]
         return tail
 
     def test_overlap_prepended_to_second_chunk(self):
@@ -444,8 +478,10 @@ class TestOverlapChars:
             "Pack my box with five dozen liquor jugs."
         )
         chunks = chunk_document(
-            "doc.md", content,
-            min_chunk_size=10, max_chunk_size=5000,
+            "doc.md",
+            content,
+            min_chunk_size=10,
+            max_chunk_size=5000,
             overlap_chars=20,
         )
         assert len(chunks) >= 2
@@ -460,8 +496,10 @@ class TestOverlapChars:
             "Pack my box with five dozen liquor jugs."
         )
         chunks = chunk_document(
-            "doc.md", content,
-            min_chunk_size=10, max_chunk_size=5000,
+            "doc.md",
+            content,
+            min_chunk_size=10,
+            max_chunk_size=5000,
             overlap_chars=20,
         )
         assert len(chunks) >= 2
@@ -477,10 +515,16 @@ class TestOverlapChars:
             "Pack my box with five dozen liquor jugs."
         )
         chunks_no_overlap = chunk_document(
-            "doc.md", content, min_chunk_size=10, max_chunk_size=5000,
+            "doc.md",
+            content,
+            min_chunk_size=10,
+            max_chunk_size=5000,
         )
         chunks_explicit_zero = chunk_document(
-            "doc.md", content, min_chunk_size=10, max_chunk_size=5000,
+            "doc.md",
+            content,
+            min_chunk_size=10,
+            max_chunk_size=5000,
             overlap_chars=0,
         )
         assert [c.content for c in chunks_no_overlap] == [c.content for c in chunks_explicit_zero]
@@ -493,13 +537,17 @@ class TestOverlapChars:
             "Pack my box with five dozen liquor jugs."
         )
         chunks_with_overlap = chunk_document(
-            "doc.md", content,
-            min_chunk_size=10, max_chunk_size=5000,
+            "doc.md",
+            content,
+            min_chunk_size=10,
+            max_chunk_size=5000,
             overlap_chars=30,
         )
         chunks_no_overlap = chunk_document(
-            "doc.md", content,
-            min_chunk_size=10, max_chunk_size=5000,
+            "doc.md",
+            content,
+            min_chunk_size=10,
+            max_chunk_size=5000,
             overlap_chars=0,
         )
         # First chunk is never prefixed — it must be identical regardless of overlap_chars
@@ -513,8 +561,10 @@ class TestOverlapChars:
             "Pack my box with five dozen liquor jugs."
         )
         chunks = chunk_document(
-            "doc.md", content,
-            min_chunk_size=10, max_chunk_size=5000,
+            "doc.md",
+            content,
+            min_chunk_size=10,
+            max_chunk_size=5000,
             overlap_chars=20,
         )
         assert [c.chunk_index for c in chunks] == list(range(len(chunks)))
@@ -523,6 +573,7 @@ class TestOverlapChars:
 # =============================================================================
 # Table continuation marker strip (integration)
 # =============================================================================
+
 
 class TestTableMarkerStrip:
     def test_strip_table_markers(self):
@@ -577,6 +628,7 @@ class TestTableMarkerStrip:
 # promote_plain_text_headers
 # =============================================================================
 
+
 class TestPromotePlainTextHeaders:
     # ── Question heuristic ────────────────────────────────────────────────────
 
@@ -592,12 +644,17 @@ class TestPromotePlainTextHeaders:
 
     def test_question_disabled(self):
         text = "What are the symptoms? Fever is common."
-        result = promote_plain_text_headers(text, promote_questions=False, promote_short_phrases=False)
+        result = promote_plain_text_headers(
+            text, promote_questions=False, promote_short_phrases=False
+        )
         assert "##" not in result
 
     def test_long_question_not_promoted(self):
         # Exceeds max_header_words * 2 threshold
-        text = "What are the primary clinical symptoms seen in patients with advanced disease? Fever is common."
+        text = (
+            "What are the primary clinical symptoms seen in patients with advanced disease? "
+            "Fever is common."
+        )
         result = promote_plain_text_headers(text, promote_short_phrases=False, max_header_words=4)
         assert "##" not in result
 
@@ -622,7 +679,9 @@ class TestPromotePlainTextHeaders:
 
     def test_short_phrase_disabled(self):
         text = "Introduction. Signs and symptoms Basal cell carcinoma is common."
-        result = promote_plain_text_headers(text, promote_short_phrases=False, promote_questions=False)
+        result = promote_plain_text_headers(
+            text, promote_short_phrases=False, promote_questions=False
+        )
         assert "##" not in result
 
     def test_short_phrase_exceeds_max_chars_not_promoted(self):
@@ -636,8 +695,12 @@ class TestPromotePlainTextHeaders:
     def test_chunk_document_promote_headings_creates_sections(self):
         text = "Introduction. Signs and symptoms Basal cell carcinoma is a common skin cancer."
         chunks = chunk_document(
-            "doc", text, min_chunk_size=10, max_chunk_size=500,
-            promote_headings=True, promote_questions=False,
+            "doc",
+            text,
+            min_chunk_size=10,
+            max_chunk_size=500,
+            promote_headings=True,
+            promote_questions=False,
         )
         section_types = {c.chunk_type for c in chunks}
         assert "section" in section_types or any("Signs and symptoms" in c.content for c in chunks)
@@ -647,7 +710,11 @@ class TestPromotePlainTextHeaders:
         text = "Introduction. Signs and symptoms Basal cell carcinoma is a common skin cancer."
         chunks_default = chunk_document("doc", text, min_chunk_size=10, max_chunk_size=500)
         chunks_promoted = chunk_document(
-            "doc", text, min_chunk_size=10, max_chunk_size=500, promote_headings=True,
+            "doc",
+            text,
+            min_chunk_size=10,
+            max_chunk_size=500,
+            promote_headings=True,
             promote_questions=False,
         )
         assert len(chunks_promoted) >= len(chunks_default)
@@ -675,6 +742,7 @@ class TestPromotePlainTextHeaders:
 # =============================================================================
 # promote_plain_text_headers — structural_levels
 # =============================================================================
+
 
 class TestStructuralLevels:
     # ── CHAPTER promotion ─────────────────────────────────────────────────────
@@ -761,15 +829,19 @@ class TestStructuralLevels:
 
     def test_custom_structural_levels(self):
         custom = [(r"SECTION\s+\d+", 1), (r"(?i:ARTICLE)\s+\d+", 2)]
-        text = "SECTION 1 GENERAL PROVISIONS This section governs. ARTICLE 1 Definitions Terms are defined here."
+        text = (
+            "SECTION 1 GENERAL PROVISIONS This section governs. "
+            "ARTICLE 1 Definitions Terms are defined here."
+        )
         result = promote_plain_text_headers(text, structural_levels=custom)
         assert "# SECTION 1" in result
         assert "## ARTICLE 1" in result
 
     def test_structural_levels_none_disabled(self):
         text = "CHAPTER I CANADIANS, OLD AND NEW The conquest was decisive."
-        result = promote_plain_text_headers(text, structural_levels=None,
-                                            promote_questions=False, promote_short_phrases=False)
+        result = promote_plain_text_headers(
+            text, structural_levels=None, promote_questions=False, promote_short_phrases=False
+        )
         assert "#" not in result
 
     # ── chunk_document integration ────────────────────────────────────────────
@@ -780,9 +852,14 @@ class TestStructuralLevels:
             "CHAPTER I INGLIS OF KINGSMILLS It was a cold winter morning in Inverness."
         )
         chunks = chunk_document(
-            "novel", text, min_chunk_size=10, max_chunk_size=500,
-            promote_headings=True, structural_levels=NOVEL_STRUCTURAL_LEVELS,
-            promote_questions=False, promote_short_phrases=False,
+            "novel",
+            text,
+            min_chunk_size=10,
+            max_chunk_size=500,
+            promote_headings=True,
+            structural_levels=NOVEL_STRUCTURAL_LEVELS,
+            promote_questions=False,
+            promote_short_phrases=False,
         )
         all_content = " ".join(c.content for c in chunks)
         assert "PART I" in all_content

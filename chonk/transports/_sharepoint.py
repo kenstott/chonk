@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 2a9f4c1e-8b3d-4e7f-a5c2-9d6e0f1b3a8c
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """SharePointCrawler — index SharePoint document libraries, lists, calendars, and pages.
 

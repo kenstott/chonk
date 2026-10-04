@@ -1,7 +1,6 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 8f42c1d7-6b09-4e35-a7c2-19d8e05b3f6a
 
-"""Cascade-delete tests for the incremental update path (fixed.md phase 2)."""
+"""Cascade-delete tests for the incremental update path."""
 
 from __future__ import annotations
 

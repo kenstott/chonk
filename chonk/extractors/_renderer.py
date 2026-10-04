@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 6d8e852b-9449-4596-9699-ce55da6d65a6
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Renderer protocol — domain-specific object-to-markdown converters."""
 

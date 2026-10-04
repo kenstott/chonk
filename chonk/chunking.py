@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: eb796e37-fb9a-4f42-9af2-18cda35e6338
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Pure chunking functions — table/list detection, block merging, section extraction."""
 

@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 22cd69fa-8fd4-4e35-aa3a-3224ecc7315b
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """IMAP transport — fetches email messages from a mailbox using stdlib imaplib.
 

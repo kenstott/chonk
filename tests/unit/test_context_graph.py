@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 2f439274-5fa9-4984-8889-b577da547f20
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Unit tests for chunk-level context graph: build_chunk_clusters and build_context_graph_edges."""
 
@@ -138,7 +133,7 @@ class TestBuildChunkClusters:
 
         result = build_chunk_clusters(conn, namespace="global", min_chunks=10, force=True)
         assert len(result) == 12
-        for chunk_id, cluster_id in result.items():
+        for _chunk_id, cluster_id in result.items():
             assert isinstance(cluster_id, int)
 
     def test_cache_hit_skips_rebuild(self):
@@ -196,7 +191,7 @@ class TestBuildContextGraphEdges:
         _setup_schema(conn)
         self._setup_two_entity_pair(conn, n_shared_chunks=3)
 
-        stats = build_context_graph_edges(conn, namespace="global", min_weight=0.0, force=True)
+        build_context_graph_edges(conn, namespace="global", min_weight=0.0, force=True)
         rows = conn.execute(
             "SELECT svo_signal FROM context_graph_edges WHERE namespace = 'global'"
         ).fetchall()
@@ -338,10 +333,12 @@ class TestBuildContextGraphEdges:
             "VALUES ('c99', 'doc.txt', 99, 'extra', 'global')"
         )
         conn.execute(
-            "INSERT INTO chunk_entities (chunk_id, entity_id, namespace) VALUES ('c99', 'e1', 'global')"
+            "INSERT INTO chunk_entities (chunk_id, entity_id, namespace) "
+            "VALUES ('c99', 'e1', 'global')"
         )
         conn.execute(
-            "INSERT INTO chunk_entities (chunk_id, entity_id, namespace) VALUES ('c99', 'e2', 'global')"
+            "INSERT INTO chunk_entities (chunk_id, entity_id, namespace) "
+            "VALUES ('c99', 'e2', 'global')"
         )
         # force=True must rebuild (should not raise)
         stats = build_context_graph_edges(conn, namespace="global", min_weight=0.0, force=True)
@@ -367,19 +364,22 @@ class TestGetContextGraph:
     def _build_graph(self, conn):
         conn.execute(
             "INSERT INTO context_graph_edges "
-            "(source_entity_id, target_entity_id, namespace, weight, svo_signal, cooccur_signal, cluster_signal) "
+            "(source_entity_id, target_entity_id, namespace, weight, "
+            "svo_signal, cooccur_signal, cluster_signal) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             ["e1", "e2", "global", 0.9, 1.0, 0.8, 0.2],
         )
         conn.execute(
             "INSERT INTO context_graph_edges "
-            "(source_entity_id, target_entity_id, namespace, weight, svo_signal, cooccur_signal, cluster_signal) "
+            "(source_entity_id, target_entity_id, namespace, weight, "
+            "svo_signal, cooccur_signal, cluster_signal) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             ["e1", "e3", "global", 0.5, 0.0, 0.5, 0.1],
         )
         conn.execute(
             "INSERT INTO context_graph_edges "
-            "(source_entity_id, target_entity_id, namespace, weight, svo_signal, cooccur_signal, cluster_signal) "
+            "(source_entity_id, target_entity_id, namespace, weight, "
+            "svo_signal, cooccur_signal, cluster_signal) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             ["e2", "e1", "global", 0.9, 1.0, 0.8, 0.2],
         )
@@ -469,6 +469,7 @@ class TestStoreContextGraph:
 
             stats = store.build_context_graph(namespace="global", min_weight=0.0, force=True)
             from chonk.graph._context_graph import ContextGraphStats
+
             assert isinstance(stats, ContextGraphStats)
 
             edges = store.get_context_graph("e1", namespace="global", min_weight=0.0)

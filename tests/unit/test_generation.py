@@ -1,15 +1,8 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 0de403a8-1b30-435c-999f-33da743835a5
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Tests for chonk.generation — AnswerContext, PromptBuilder, Answer, AnswerGenerator."""
 
-import pytest
-
-from chonk.generation import AnswerContext, PromptBuilder, Answer, AnswerGenerator
+from chonk.generation import Answer, AnswerContext, AnswerGenerator, PromptBuilder
 from chonk.models import DocumentChunk, ScoredChunk
 
 
@@ -104,12 +97,17 @@ class TestPromptBuilder:
             "entity": prompt.index("entity"),
             "cluster": prompt.index("cluster"),
         }
-        assert positions["seed"] < positions["structural"] < positions["entity"] < positions["cluster"]
+        assert (
+            positions["seed"] < positions["structural"] < positions["entity"] < positions["cluster"]
+        )
 
     def test_token_budget_excludes_oversized_chunks(self):
         # 400-char content ≈ 100 tokens each
         big_content = "x" * 400
-        chunks = [_make_scored_chunk(f"doc{i}", big_content, provenance="seed", chunk_index=i) for i in range(10)]
+        chunks = [
+            _make_scored_chunk(f"doc{i}", big_content, provenance="seed", chunk_index=i)
+            for i in range(10)
+        ]
         ctx = AnswerContext(chunks=chunks, query="Q")
         # Budget of 150 tokens: header ~2 tokens + 1 chunk (100 tokens) fits, 2nd would exceed
         selected = PromptBuilder().select_chunks(ctx, token_budget=150)
@@ -157,7 +155,7 @@ class TestAnswerGenerator:
         sc = _make_scored_chunk("doc1", "content about X")
         ctx = AnswerContext(chunks=[sc], query="what is X?")
         gen = AnswerGenerator(llm_fn=fake_llm)
-        answer = gen.generate(ctx)
+        gen.generate(ctx)
 
         assert len(calls) == 1
         assert "what is X?" in calls[0]

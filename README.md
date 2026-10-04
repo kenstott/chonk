@@ -159,6 +159,7 @@ pip install "chonk-rag[xlsx]"       # XLSX extraction
 pip install "chonk-rag[pptx]"       # PPTX extraction
 pip install "chonk-rag[yaml]"       # YAML file extraction
 pip install "chonk-rag[odf]"        # ODF/ODS/ODT extraction
+pip install "chonk-rag[ner]"        # Entity normalisation (inflect, nltk); then: python -m nltk.downloader wordnet
 pip install "chonk-rag[storage]"    # DuckDB vector store
 pip install "chonk-rag[pgvector]"  # PostgreSQL + pgvector vector store
 pip install "chonk-rag[cluster]"    # Entity clustering (scikit-learn)
@@ -454,9 +455,15 @@ Default extensions: `.md`, `.txt`, `.rst`, `.html`, `.htm`, `.pdf`, `.docx`, `.x
 
 ### `DatabaseSchemaCrawler`
 
-`DatabaseSchemaCrawler` indexes stored procedures, functions, views, and triggers from a live database as searchable document chunks. Each object's SQL definition becomes its own chunk, with a `dbschema://` URI as the document name.
+`DatabaseSchemaCrawler` indexes tables, stored procedures, functions, views, and triggers from a live database as searchable document chunks, with a `dbschema://` URI as each document name.
 
-Unlike `load_schema()` — which describes table structure (column names, types, relationships) — `DatabaseSchemaCrawler` captures the actual SQL logic: the `CREATE VIEW` body, the procedure parameter list and code, trigger firing conditions. Together they cover the full picture of what a database does and how.
+- **Tables:** each table becomes a document with its comment and one line per column (type, primary or foreign key, comment). `get_table_meta()` returns the same tables as `TableMeta`: pass them to `load_schema()` for one chunk per table and per column, or to `SchemaVocabBuilder.add_tables()` / `NerPipeline.add_tables()` to make column names entities.
+- **Views, procedures, functions, triggers:** each object's SQL definition becomes its own chunk: the `CREATE VIEW` body, the procedure parameter list and code, trigger firing conditions.
+
+```python
+crawler.crawl()
+schema_chunks = loader.load_schema(crawler.get_table_meta())
+```
 
 The class implements both the `Crawler` and `Transport` protocols. Pass the same instance as both `crawler=` and in `extra_transports=`:
 
@@ -473,14 +480,14 @@ chunks = loader.load_crawl("postgresql://user:pass@host/db", crawler=crawler)
 
 #### Supported dialects
 
-| Dialect | Views | Procedures / Functions | Triggers |
-|---------|-------|----------------------|---------|
-| PostgreSQL | Yes | Yes | Yes |
-| MySQL / MariaDB | Yes | Yes | Yes |
-| SQL Server | Yes | Yes (`P`, `FN`, `IF`, `TF`) | Yes |
-| SQLite | Yes | No (SQLite has no stored procedures) | Yes |
+| Dialect | Tables | Views | Procedures / Functions | Triggers |
+|---------|--------|-------|----------------------|---------|
+| PostgreSQL | Yes | Yes | Yes | Yes |
+| MySQL / MariaDB | Yes | Yes | Yes | Yes |
+| SQL Server | Yes | Yes | Yes (`P`, `FN`, `IF`, `TF`) | Yes |
+| SQLite | Yes (no comments) | Yes | No (SQLite has no stored procedures) | Yes |
 
-For dialects not in this list, `crawl()` logs a warning and indexes views only (via SQLAlchemy inspection, which works across all dialects).
+Tables and views come from SQLAlchemy inspection, which works across all dialects. For dialects not in this list, `crawl()` logs a warning and indexes tables and views only.
 
 #### Constructor parameters
 
@@ -490,6 +497,7 @@ For dialects not in this list, `crawl()` logs a warning and indexes views only (
 | `include_procs` | `bool` | `True` | Include stored procedures and functions |
 | `include_views` | `bool` | `True` | Include views |
 | `include_triggers` | `bool` | `True` | Include triggers |
+| `include_tables` | `bool` | `True` | Include tables, with columns, keys, and comments |
 | `schemas` | `list[str] \| None` | `None` | Restrict to these schema names. `None` indexes all non-system schemas. |
 
 #### Basic usage — index everything from a PostgreSQL database
@@ -2329,8 +2337,13 @@ CVE records, Federal Register notices, and patents. Queries are decomposed into
 atomic sub-queries matching the vocabulary of a specific document type, then evaluated
 across all four simultaneously to measure cross-domain retrieval accuracy.
 
-See [`work/fang2026/benchmark-design.md`](work/fang2026/benchmark-design.md) for the
+See [`benchmark-design.md`](benchmark-design.md) for the
 full benchmark design, corpus construction methodology, and evaluation protocol.
+
+### Reproducing the results
+
+See [docs/reproducing-benchmarks.md](docs/reproducing-benchmarks.md) for how to check the
+reported numbers and re-run any configuration.
 
 ### Replication notes
 
@@ -2374,6 +2387,13 @@ python demo/python_docs_demo.py
 - **Conflict-free text extraction** — no third-party cloud APIs consulted without consent
 - **Non-GMO transport layer** — no monkey-patching of built-ins
 - **Fair trade** — MIT licensed, attribution appreciated
+
+---
+
+## Contributing and support
+
+See [CONTRIBUTING.md](CONTRIBUTING.md), [SUPPORT.md](SUPPORT.md), and
+[GOVERNANCE.md](GOVERNANCE.md). Release history is in [CHANGELOG.md](CHANGELOG.md).
 
 ---
 

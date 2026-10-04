@@ -1,5 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 238c4a97-19e7-4787-a721-d4e243a4d576
 
 """Unit tests for NER vocabulary matching and entity index."""
 

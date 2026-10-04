@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: c6e6f39a-21cf-41db-9f15-31db54400863
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """EntityGraphPipeline — on-demand entity graph build with progress feedback."""
 

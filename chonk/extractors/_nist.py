@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: b2c3d4e5-f6a7-8901-bcde-f01234567890
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """NistRenderer — renders NIST OSCAL SP 800-53 catalog JSON into per-control markdown."""
 

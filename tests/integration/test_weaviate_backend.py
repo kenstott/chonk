@@ -1,5 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: f1e2d3c4-b5a6-9788-c1d2-e3f4a5b6c7d8
 """Integration smoke tests for WeaviateVectorBackend — requires Weaviate Cloud creds."""
 
 from __future__ import annotations

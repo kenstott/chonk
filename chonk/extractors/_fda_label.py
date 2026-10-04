@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: d4e5f6a7-b8c9-0123-def0-123456789012
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """FdaLabelRenderer — renders openFDA drug label JSON into per-label markdown."""
 

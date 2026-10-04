@@ -1,16 +1,14 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 52eecf39-e8b3-4e0a-acc5-845aadff44ac
 
 """Unit tests for EnhancedSearch cohort assembly."""
 
-import pytest
 import numpy as np
+import pytest
 
 from chonk.models import DocumentChunk, ScoredChunk
-from chonk.ner._vocabulary import VocabularyMatcher
 from chonk.ner._index import EntityIndex
+from chonk.ner._vocabulary import VocabularyMatcher
 from chonk.search._enhanced import EnhancedSearch
-
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -21,10 +19,20 @@ np_mod = pytest.importorskip("numpy")
 
 
 VOCAB = [
-    {"id": "ent_alpha", "name": "alpha protocol", "display_name": "Alpha Protocol",
-     "type": "concept", "aliases": ["alpha"]},
-    {"id": "ent_beta", "name": "beta process", "display_name": "Beta Process",
-     "type": "concept", "aliases": ["beta"]},
+    {
+        "id": "ent_alpha",
+        "name": "alpha protocol",
+        "display_name": "Alpha Protocol",
+        "type": "concept",
+        "aliases": ["alpha"],
+    },
+    {
+        "id": "ent_beta",
+        "name": "beta process",
+        "display_name": "Beta Process",
+        "type": "concept",
+        "aliases": ["beta"],
+    },
 ]
 
 DIM = 8  # small embedding dim for tests
@@ -38,6 +46,7 @@ def _random_emb() -> np.ndarray:
 def _make_store_with_chunks():
     """Return a Store loaded with 5 small chunks."""
     from chonk.storage._store import Store
+
     store = Store(":memory:", embedding_dim=DIM)
 
     chunks = [
@@ -74,6 +83,7 @@ class FakeStore:
 
     def __init__(self, results, all_chunks):
         import duckdb as ddb
+
         conn = ddb.connect(":memory:")
         conn.execute(
             f"CREATE TABLE embeddings ("
@@ -88,14 +98,16 @@ class FakeStore:
         results = self._results
         if chunk_types is not None:
             ct_set = set(chunk_types)
-            results = [(cid, score, chunk) for cid, score, chunk in results
-                       if chunk.chunk_type in ct_set]
+            results = [
+                (cid, score, chunk) for cid, score, chunk in results if chunk.chunk_type in ct_set
+            ]
         return results[:limit]
 
 
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class TestEnhancedSearchSeedOnly:
     """Seed-only mode (structural/entity/cluster all disabled)."""
@@ -126,18 +138,21 @@ class TestEnhancedSearchSeedOnly:
 
     def test_k_limits_results(self):
         store, _, _ = _make_store_with_chunks()
-        search = EnhancedSearch(store, structural_expansion=False,
-                                entity_expansion=False, cluster_expansion=False)
+        search = EnhancedSearch(
+            store, structural_expansion=False, entity_expansion=False, cluster_expansion=False
+        )
         for k in (1, 2, 5):
             results = search.search(_random_emb(), k=k)
             assert len(results) <= k
 
     def test_scores_are_finite(self):
         store, _, _ = _make_store_with_chunks()
-        search = EnhancedSearch(store, structural_expansion=False,
-                                entity_expansion=False, cluster_expansion=False)
+        search = EnhancedSearch(
+            store, structural_expansion=False, entity_expansion=False, cluster_expansion=False
+        )
         results = search.search(_random_emb(), k=5)
         import math
+
         assert all(math.isfinite(r.score) for r in results)
 
 
@@ -150,10 +165,10 @@ class TestEnhancedSearchEntityExpansion:
         # Index all chunks via NER
         all_db_chunks = store.vector.get_all_chunks()
         from chonk.storage._vector import DuckDBVectorBackend
+
         for c in all_db_chunks:
             cid = DuckDBVectorBackend._generate_chunk_id(
-                c.document_name, c.chunk_index,
-                c.embedding_content or c.content
+                c.document_name, c.chunk_index, c.embedding_content or c.content
             )
             entity_index.run_ner(cid, c.content, matcher)
 
@@ -174,15 +189,16 @@ class TestEnhancedSearchEntityExpansion:
         entity_index = EntityIndex()
         all_db_chunks = store.vector.get_all_chunks()
         from chonk.storage._vector import DuckDBVectorBackend
+
         for c in all_db_chunks:
             cid = DuckDBVectorBackend._generate_chunk_id(
-                c.document_name, c.chunk_index,
-                c.embedding_content or c.content
+                c.document_name, c.chunk_index, c.embedding_content or c.content
             )
             entity_index.run_ner(cid, c.content, matcher)
 
-        search = EnhancedSearch(store, entity_index=entity_index,
-                                structural_expansion=False, cluster_expansion=False)
+        search = EnhancedSearch(
+            store, entity_index=entity_index, structural_expansion=False, cluster_expansion=False
+        )
         results = search.search(_random_emb(), k=5)
         ids = [r.chunk_id for r in results]
         assert len(ids) == len(set(ids)), "Duplicate chunk_ids in results"
@@ -197,12 +213,18 @@ class TestEnhancedSearchMMR:
         query = _random_emb()
 
         search_uniform = EnhancedSearch(
-            store, lambda_diversity=0.0,
-            structural_expansion=False, entity_expansion=False, cluster_expansion=False,
+            store,
+            lambda_diversity=0.0,
+            structural_expansion=False,
+            entity_expansion=False,
+            cluster_expansion=False,
         )
         search_diverse = EnhancedSearch(
-            store, lambda_diversity=1.0,
-            structural_expansion=False, entity_expansion=False, cluster_expansion=False,
+            store,
+            lambda_diversity=1.0,
+            structural_expansion=False,
+            entity_expansion=False,
+            cluster_expansion=False,
         )
         r_uniform = search_uniform.search(query, k=3)
         r_diverse = search_diverse.search(query, k=3)
@@ -225,13 +247,16 @@ class TestEnhancedSearchStructural:
         provenances = {r.provenance for r in results}
         assert provenances.issubset({"seed", "structural"})
 
+
 # ---------------------------------------------------------------------------
 # Phase 4.3 — Retrieval modes
 # ---------------------------------------------------------------------------
 
+
 def _make_community_store():
     """Store with 3 regular + 2 community_summary chunks."""
     from chonk.storage._store import Store
+
     store = Store(":memory:", embedding_dim=DIM)
 
     regular = [
@@ -240,8 +265,12 @@ def _make_community_store():
         DocumentChunk("doc2", "Gamma content.", chunk_index=0, chunk_type="document"),
     ]
     summaries = [
-        DocumentChunk("community:0", "Community zero covers alpha topics.", chunk_type="community_summary"),
-        DocumentChunk("community:1", "Community one covers beta topics.", chunk_type="community_summary"),
+        DocumentChunk(
+            "community:0", "Community zero covers alpha topics.", chunk_type="community_summary"
+        ),
+        DocumentChunk(
+            "community:1", "Community one covers beta topics.", chunk_type="community_summary"
+        ),
     ]
     all_chunks = regular + summaries
     embeddings = np.stack([_random_emb() for _ in all_chunks])
@@ -252,7 +281,9 @@ def _make_community_store():
 class TestSearchModeVectorFirst:
     def test_mode_vector_first_is_default(self):
         store, _, _ = _make_store_with_chunks()
-        s = EnhancedSearch(store, structural_expansion=False, entity_expansion=False, cluster_expansion=False)
+        s = EnhancedSearch(
+            store, structural_expansion=False, entity_expansion=False, cluster_expansion=False
+        )
         results_default = s.search(_random_emb(), k=3)
         results_explicit = s.search(_random_emb(), k=3, mode="vector_first")
         assert len(results_default) == len(results_explicit)
@@ -267,7 +298,9 @@ class TestSearchModeVectorFirst:
 class TestSearchModeGlobal:
     def test_global_returns_only_community_summary_chunks(self):
         store = _make_community_store()
-        s = EnhancedSearch(store, structural_expansion=False, entity_expansion=False, cluster_expansion=False)
+        s = EnhancedSearch(
+            store, structural_expansion=False, entity_expansion=False, cluster_expansion=False
+        )
         results = s.search(_random_emb(), k=5, mode="global")
         assert len(results) > 0
         for r in results:
@@ -275,20 +308,26 @@ class TestSearchModeGlobal:
 
     def test_global_excludes_regular_chunks(self):
         store = _make_community_store()
-        s = EnhancedSearch(store, structural_expansion=False, entity_expansion=False, cluster_expansion=False)
+        s = EnhancedSearch(
+            store, structural_expansion=False, entity_expansion=False, cluster_expansion=False
+        )
         results = s.search(_random_emb(), k=5, mode="global")
         for r in results:
             assert r.chunk.document_name.startswith("community:")
 
     def test_global_respects_k(self):
         store = _make_community_store()
-        s = EnhancedSearch(store, structural_expansion=False, entity_expansion=False, cluster_expansion=False)
+        s = EnhancedSearch(
+            store, structural_expansion=False, entity_expansion=False, cluster_expansion=False
+        )
         results = s.search(_random_emb(), k=1, mode="global")
         assert len(results) <= 1
 
     def test_global_empty_when_no_summaries(self):
         store, _, _ = _make_store_with_chunks()  # no community_summary chunks
-        s = EnhancedSearch(store, structural_expansion=False, entity_expansion=False, cluster_expansion=False)
+        s = EnhancedSearch(
+            store, structural_expansion=False, entity_expansion=False, cluster_expansion=False
+        )
         results = s.search(_random_emb(), k=5, mode="global")
         assert results == []
 
@@ -296,13 +335,16 @@ class TestSearchModeGlobal:
 class TestSearchModeGraphFirst:
     def _make_relationship_index(self):
         from chonk.graph import RelationshipIndex, SVOTriple
+
         idx = RelationshipIndex()
         idx.add(SVOTriple("ent_alpha", "governs", "ent_beta", 0.9))
         return idx
 
     def test_graph_first_falls_back_without_relationship_index(self):
         store, _, _ = _make_store_with_chunks()
-        s = EnhancedSearch(store, structural_expansion=False, entity_expansion=False, cluster_expansion=False)
+        s = EnhancedSearch(
+            store, structural_expansion=False, entity_expansion=False, cluster_expansion=False
+        )
         # No relationship_index — should fall back to vector_first and return results
         results = s.search(_random_emb(), k=3, query_text="alpha beta", mode="graph_first")
         assert isinstance(results, list)
@@ -310,8 +352,13 @@ class TestSearchModeGraphFirst:
     def test_graph_first_falls_back_without_query_text(self):
         store, _, _ = _make_store_with_chunks()
         ri = self._make_relationship_index()
-        s = EnhancedSearch(store, relationship_index=ri,
-                           structural_expansion=False, entity_expansion=False, cluster_expansion=False)
+        s = EnhancedSearch(
+            store,
+            relationship_index=ri,
+            structural_expansion=False,
+            entity_expansion=False,
+            cluster_expansion=False,
+        )
         # No query_text and no query_entities — falls back to vector_first
         results = s.search(_random_emb(), k=3, mode="graph_first")
         assert isinstance(results, list)
@@ -327,11 +374,17 @@ class TestSearchModeGraphFirst:
 
         ri = self._make_relationship_index()
         s = EnhancedSearch(
-            store, entity_index=entity_index, relationship_index=ri,
-            structural_expansion=False, cluster_expansion=False,
+            store,
+            entity_index=entity_index,
+            relationship_index=ri,
+            structural_expansion=False,
+            cluster_expansion=False,
         )
         results = s.search(
-            _random_emb(), k=3, query_text="alpha", mode="graph_first",
+            _random_emb(),
+            k=3,
+            query_text="alpha",
+            mode="graph_first",
             query_entities=["ent_alpha"],
         )
         assert isinstance(results, list)
@@ -341,12 +394,18 @@ class TestSearchModeGraphFirst:
         store, chunks, embeddings = _make_store_with_chunks()
         ri = self._make_relationship_index()
         s = EnhancedSearch(
-            store, relationship_index=ri,
-            structural_expansion=False, entity_expansion=False, cluster_expansion=False,
+            store,
+            relationship_index=ri,
+            structural_expansion=False,
+            entity_expansion=False,
+            cluster_expansion=False,
         )
         results = s.search(
-            _random_emb(), k=3, query_text="alpha",
-            query_entities=["ent_alpha"], mode="graph_first",
+            _random_emb(),
+            k=3,
+            query_text="alpha",
+            query_entities=["ent_alpha"],
+            mode="graph_first",
         )
         for r in results:
             assert isinstance(r, ScoredChunk)

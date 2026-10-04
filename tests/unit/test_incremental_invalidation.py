@@ -1,7 +1,6 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 4d17b5e2-9a63-40c8-b1f7-c62e83a09d45
 
-"""Cache-invalidation tests for the incremental update path (fixed.md phase 4)."""
+"""Cache-invalidation tests for the incremental update path."""
 
 from __future__ import annotations
 

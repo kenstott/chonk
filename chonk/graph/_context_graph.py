@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: cd458f18-a532-4ffc-a977-9ae5ba6b047d
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Chunk-level co-occurrence clustering and context graph edge computation."""
 

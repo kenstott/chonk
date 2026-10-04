@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: d4a6b9c3-5e8f-4d0a-c7e4-3f2b8a1d6e9c
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """DynamoDBCrawler — index items from AWS DynamoDB tables via boto3.
 

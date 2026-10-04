@@ -9,7 +9,6 @@ build/
 .mypy_cache/
 htmlcov/
 .coverage
-.canary_registry.json
 /.env
 .DS_Store
 ._*
@@ -53,3 +52,13 @@ training/run_metadata.json
 # the logs contain raw prompt/response traffic.
 /training/mlx_output/
 /training/proxy_logs/
+
+# Local working material — not part of the published library
+/training/
+/generate-training/
+/go_migration/
+/migration_planning/
+/CLAUDE_MEMORY.md
+/defect-clear-parity.md
+/fixed.md
+/type-audit.md

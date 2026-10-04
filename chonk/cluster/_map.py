@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 07010f5b-450d-4440-8c74-8cbeb3540572
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """ClusterMap: entity -> cluster assignment and cluster neighbour lookup.
 

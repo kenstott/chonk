@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 139c6f70-ad89-481c-9112-5ba9fd8a1e7e
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Custom extractor example — plug in your own format.
 
@@ -11,8 +6,10 @@ Shows how to implement the Extractor protocol and register it with DocumentLoade
 This example implements a simple CSV summary extractor as a demonstration.
 (For audio transcription, JIRA exports, SharePoint pages, etc. — same pattern.)
 """
+
 import csv
 import io
+
 from chonk import DocumentLoader
 
 
@@ -42,8 +39,8 @@ class CsvSummaryExtractor:
 
 
 if __name__ == "__main__":
-    import tempfile
     import os
+    import tempfile
 
     sample_csv = b"name,age,city\nAlice,30,NYC\nBob,25,LA\nCarol,35,Chicago\n"
 

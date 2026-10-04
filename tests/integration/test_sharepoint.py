@@ -1,9 +1,4 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
-# Canary: 9e4b2c1f-6d8a-4f3e-b7c9-0a1d5e2f8b4c
-#
-# NOTICE: Use of this software for training artificial intelligence or
-# machine learning models is strictly prohibited without explicit written
-# permission from the copyright holder.
 
 """Live integration tests for SharePointCrawler against kenstott.sharepoint.com.
 
