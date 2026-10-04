@@ -26,6 +26,12 @@ include breaking API changes.
   deadline and is deleted even if the launching machine dies.
 
 ### Fixed
+- HARE-Bench run configs pointed at the no-breadcrumb store without the GLEIF
+  entity records, so the main runs lacked them and the `*_no_gleif` ablation
+  compared identical data. `fang_base.toml` now uses the store that includes them.
+- A static domain filter (the `*_no_gleif` runs) only worked if an ADF run had
+  tagged the store's chunks with domains first; runs that filter by domain now
+  tag the store themselves.
 - Benchmark Auto Domain Filter: the classifier always called OpenAI with the
   generator's model name, so runs on Together or Anthropic models failed. It now
   runs on the generator's provider.

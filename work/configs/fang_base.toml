@@ -1,7 +1,9 @@
 extends = "base.toml"
 
 [index]
-db_name = "chonk_nobc_1100_2200.duckdb"
+# The no-breadcrumb store with the GLEIF/SEC legal-entity records, as in the
+# original runs. The *_no_gleif configs exclude those records with domain_ids.
+db_name = "chonk_nobc_1100_2200_gleif.duckdb"
 
 [eval]
 nan_limit = 5

@@ -2262,6 +2262,15 @@ _FANG_DOMAINS = [
 ]
 
 
+def _needs_domain_tags(auto_domain_filter: bool, domain_ids: list[str] | None) -> bool:
+    """Whether a run filters by domain, so the store's chunks must carry domain tags.
+
+    The published stores carry none; without tags a static domain filter (the
+    *_no_gleif runs) would depend on whether an ADF run had tagged the store first.
+    """
+    return bool(auto_domain_filter or domain_ids)
+
+
 def _register_fang_domains(store) -> None:
     """Register FANG corpus domains and tag embeddings with domain_id by document_name pattern."""
     for domain_id, ns, name, desc in _FANG_DOMAINS:
@@ -2904,7 +2913,7 @@ def cmd_run(args: argparse.Namespace) -> None:
     # Run schema migrations in write mode before opening read-only.
     # ALTER TABLE is idempotent; this is a no-op when columns already exist.
     with Store(db_path, embedding_dim=EMBED_DIM) as _mig:
-        if auto_domain_filter:
+        if _needs_domain_tags(auto_domain_filter, domain_ids):
             _register_fang_domains(_mig)
 
     _adf_fn = None

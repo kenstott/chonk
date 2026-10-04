@@ -837,3 +837,24 @@ class TestDomainFilterClient:
     def test_unknown_provider_raises(self):
         with pytest.raises(ValueError, match="cohere"):
             _bench._llm_client("cohere", timeout=30.0)
+
+
+# ---------------------------------------------------------------------------
+# Domain tags
+# ---------------------------------------------------------------------------
+
+
+class TestDomainTags:
+    """A run that filters by domain needs the store's chunks tagged with domains."""
+
+    @pytest.mark.parametrize(
+        ("auto_domain_filter", "domain_ids", "expected"),
+        [
+            (False, None, False),
+            (True, None, True),
+            # e.g. the *_no_gleif runs: a static domain filter without ADF
+            (False, ["patents", "sec_10k", "cve", "fed_reg"], True),
+        ],
+    )
+    def test_needs_domain_tags(self, auto_domain_filter, domain_ids, expected):
+        assert _bench._needs_domain_tags(auto_domain_filter, domain_ids) is expected
