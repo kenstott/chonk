@@ -1,6 +1,6 @@
 # Copyright (c) 2025 Kenneth Stott. MIT License.
 
-"""DatabaseSchemaCrawler — index stored procedures, views, and triggers via SQLAlchemy.
+"""DatabaseSchemaCrawler — index tables, views, stored procedures, and triggers via SQLAlchemy.
 
 Implements both the ``Crawler`` and ``Transport`` protocols. Pass the same
 instance as both ``crawler=`` and in ``extra_transports=``.
@@ -15,6 +15,15 @@ Usage::
     crawler = DatabaseSchemaCrawler("postgresql://user:pass@host/db")
     loader = DocumentLoader(extra_transports=[crawler])
     chunks = loader.load_crawl("postgresql://user:pass@host/db", crawler=crawler)
+
+Each table becomes a document listing its comment and its columns (type, key
+role, comment). ``get_table_meta()`` returns the same tables as ``TableMeta``, for
+``DocumentLoader.load_schema`` (one chunk per table and per column) and
+``SchemaVocabBuilder.add_tables`` / ``NerPipeline.add_tables`` (column names as
+entities)::
+
+    crawler.crawl()
+    schema_chunks = loader.load_schema(crawler.get_table_meta())
 
 Filter to specific object types::
 
@@ -34,6 +43,7 @@ import logging
 import textwrap
 from typing import Any
 
+from ..schema import ColumnMeta, TableMeta
 from ._protocol import FetchOptions, FetchResult  # noqa: F401
 
 _log = logging.getLogger(__name__)
@@ -87,8 +97,14 @@ WHERE o.type IN ('P', 'FN', 'IF', 'TF', 'V', 'TR')
 """
 
 
+# Schemas that hold the database's own catalog, not user tables.
+_SYSTEM_SCHEMAS = frozenset(
+    {"information_schema", "pg_catalog", "pg_toast", "sys", "mysql", "performance_schema"}
+)
+
+
 class DatabaseSchemaCrawler:
-    """Crawl database schema objects (procs, views, triggers) as indexed documents.
+    """Crawl database schema objects (tables, views, procs, triggers) as indexed documents.
 
     Implements both ``Crawler`` and ``Transport`` — pass the same instance to both::
 
@@ -101,6 +117,7 @@ class DatabaseSchemaCrawler:
         include_procs:     Include stored procedures and functions (default True).
         include_views:     Include views (default True).
         include_triggers:  Include triggers (default True).
+        include_tables:    Include tables, with columns, keys, and comments (default True).
         schemas:           Restrict to these schema names. None = all non-system schemas.
     """
 
@@ -111,11 +128,14 @@ class DatabaseSchemaCrawler:
         include_views: bool = True,
         include_triggers: bool = True,
         schemas: list[str] | None = None,
+        include_tables: bool = True,
     ) -> None:
         self._url = connection_url
         self.include_procs = include_procs
         self.include_views = include_views
         self.include_triggers = include_triggers
+        self.include_tables = include_tables
+        self._table_meta: list[TableMeta] = []
         self._schemas = set(schemas) if schemas else None
         self._cache: dict[str, FetchResult] = {}
         self._url_key = hashlib.md5(connection_url.encode(), usedforsecurity=False).hexdigest()[:8]
@@ -154,6 +174,9 @@ class DatabaseSchemaCrawler:
         dialect = engine.dialect.name  # 'postgresql', 'mysql', 'mssql', 'sqlite', ...
 
         self._cache.clear()
+        self._table_meta.clear()
+        if self.include_tables:
+            self._index_tables(sa.inspect(engine))
         with engine.connect() as conn:
             if self.include_views:
                 self._index_views(conn, engine, sa)
@@ -185,7 +208,64 @@ class DatabaseSchemaCrawler:
         _log.info("DatabaseSchemaCrawler: indexed %d object(s)", len(self._cache))
         return list(self._cache.keys())
 
+    def get_table_meta(self) -> list[TableMeta]:
+        """Return the crawled tables as ``TableMeta``. Call after ``crawl()``.
+
+        Pass to ``DocumentLoader.load_schema`` for one chunk per table and per
+        column, or to ``SchemaVocabBuilder.add_tables`` / ``NerPipeline.add_tables``
+        to make column names entities.
+        """
+        return list(self._table_meta)
+
     # ── Indexing helpers ─────────────────────────────────────────────────────
+
+    def _index_tables(self, insp: Any) -> None:  # noqa: ANN401
+        """Index every table with its comment, columns, and keys."""
+        schemas: list[str] = (
+            sorted(self._schemas)
+            if self._schemas
+            else [s for s in insp.get_schema_names() if s not in _SYSTEM_SCHEMAS]
+        )
+        for schema in schemas:
+            for name in insp.get_table_names(schema=schema):
+                table = self._table(insp, schema, name)
+                self._table_meta.append(table)
+                self._store(table.schema_name or "", name, "TABLE", _table_text(table))
+
+    @staticmethod
+    def _table(insp: Any, schema: str, name: str) -> TableMeta:  # noqa: ANN401
+        try:
+            comment = insp.get_table_comment(name, schema=schema).get("text")
+        except NotImplementedError:  # the dialect stores no table comments (e.g. SQLite)
+            comment = None
+        primary = set(insp.get_pk_constraint(name, schema=schema).get("constrained_columns") or [])
+        foreign: dict[str, str] = {}
+        for fk in insp.get_foreign_keys(name, schema=schema):
+            # "table.column" within the schema; "schema.table.column" across schemas
+            ref_schema = fk.get("referred_schema")
+            if ref_schema in (schema, "main"):
+                ref_schema = None
+            target = ".".join(p for p in (ref_schema, fk["referred_table"]) if p)
+            for col, ref in zip(fk["constrained_columns"], fk["referred_columns"], strict=True):
+                foreign[col] = f"{target}.{ref}"
+        columns = [
+            ColumnMeta(
+                name=c["name"],
+                data_type=str(c["type"]),
+                description=c.get("comment") or None,
+                nullable=bool(c.get("nullable", True)),
+                is_primary_key=c["name"] in primary,
+                is_foreign_key=c["name"] in foreign,
+                foreign_key_ref=foreign.get(c["name"]),
+            )
+            for c in insp.get_columns(name, schema=schema)
+        ]
+        return TableMeta(
+            name=name,
+            schema_name=schema,
+            description=comment or None,
+            columns=columns,
+        )
 
     def _store(self, schema: str, name: str, obj_type: str, definition: str) -> None:
         if self._schemas and schema not in self._schemas:
@@ -324,3 +404,22 @@ class DatabaseSchemaCrawler:
                 "mariadb://",
             )
         )
+
+
+def _table_text(table: TableMeta) -> str:
+    """A table as a document: its comment, then one line per column."""
+    lines = [f"Comment: {table.description}"] if table.description else []
+    lines.append("Columns:")
+    for col in table.columns:
+        role = []
+        if col.is_primary_key:
+            role.append("primary key")
+        if col.foreign_key_ref:
+            role.append(f"references {col.foreign_key_ref}")
+        line = f"  {col.name} {col.data_type}"
+        if role:
+            line += f" [{', '.join(role)}]"
+        if col.description:
+            line += f" -- {col.description}"
+        lines.append(line)
+    return "\n".join(lines)

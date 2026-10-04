@@ -8,6 +8,11 @@ include breaking API changes.
 ## [Unreleased]
 
 ### Added
+- `DatabaseSchemaCrawler` indexes tables: each becomes a document with its
+  comment and its columns (type, primary and foreign keys, comment), and
+  `get_table_meta()` returns them as `TableMeta` for `load_schema()` and
+  `SchemaVocabBuilder.add_tables()`. On by default; `include_tables=False` turns
+  it off. Until now the crawler indexed only views, procedures, and triggers.
 - `SchemaVocabBuilder` no longer makes generic table and column names
   (`id`, `name`, `status`, `created_at`, …) into entities: they link nearly every
   chunk to every other and carry no signal. A name that only contains one

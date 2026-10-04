@@ -455,9 +455,15 @@ Default extensions: `.md`, `.txt`, `.rst`, `.html`, `.htm`, `.pdf`, `.docx`, `.x
 
 ### `DatabaseSchemaCrawler`
 
-`DatabaseSchemaCrawler` indexes stored procedures, functions, views, and triggers from a live database as searchable document chunks. Each object's SQL definition becomes its own chunk, with a `dbschema://` URI as the document name.
+`DatabaseSchemaCrawler` indexes tables, stored procedures, functions, views, and triggers from a live database as searchable document chunks, with a `dbschema://` URI as each document name.
 
-Unlike `load_schema()` — which describes table structure (column names, types, relationships) — `DatabaseSchemaCrawler` captures the actual SQL logic: the `CREATE VIEW` body, the procedure parameter list and code, trigger firing conditions. Together they cover the full picture of what a database does and how.
+- **Tables:** each table becomes a document with its comment and one line per column (type, primary or foreign key, comment). `get_table_meta()` returns the same tables as `TableMeta`: pass them to `load_schema()` for one chunk per table and per column, or to `SchemaVocabBuilder.add_tables()` / `NerPipeline.add_tables()` to make column names entities.
+- **Views, procedures, functions, triggers:** each object's SQL definition becomes its own chunk: the `CREATE VIEW` body, the procedure parameter list and code, trigger firing conditions.
+
+```python
+crawler.crawl()
+schema_chunks = loader.load_schema(crawler.get_table_meta())
+```
 
 The class implements both the `Crawler` and `Transport` protocols. Pass the same instance as both `crawler=` and in `extra_transports=`:
 
@@ -474,14 +480,14 @@ chunks = loader.load_crawl("postgresql://user:pass@host/db", crawler=crawler)
 
 #### Supported dialects
 
-| Dialect | Views | Procedures / Functions | Triggers |
-|---------|-------|----------------------|---------|
-| PostgreSQL | Yes | Yes | Yes |
-| MySQL / MariaDB | Yes | Yes | Yes |
-| SQL Server | Yes | Yes (`P`, `FN`, `IF`, `TF`) | Yes |
-| SQLite | Yes | No (SQLite has no stored procedures) | Yes |
+| Dialect | Tables | Views | Procedures / Functions | Triggers |
+|---------|--------|-------|----------------------|---------|
+| PostgreSQL | Yes | Yes | Yes | Yes |
+| MySQL / MariaDB | Yes | Yes | Yes | Yes |
+| SQL Server | Yes | Yes | Yes (`P`, `FN`, `IF`, `TF`) | Yes |
+| SQLite | Yes (no comments) | Yes | No (SQLite has no stored procedures) | Yes |
 
-For dialects not in this list, `crawl()` logs a warning and indexes views only (via SQLAlchemy inspection, which works across all dialects).
+Tables and views come from SQLAlchemy inspection, which works across all dialects. For dialects not in this list, `crawl()` logs a warning and indexes tables and views only.
 
 #### Constructor parameters
 
@@ -491,6 +497,7 @@ For dialects not in this list, `crawl()` logs a warning and indexes views only (
 | `include_procs` | `bool` | `True` | Include stored procedures and functions |
 | `include_views` | `bool` | `True` | Include views |
 | `include_triggers` | `bool` | `True` | Include triggers |
+| `include_tables` | `bool` | `True` | Include tables, with columns, keys, and comments |
 | `schemas` | `list[str] \| None` | `None` | Restrict to these schema names. `None` indexes all non-system schemas. |
 
 #### Basic usage — index everything from a PostgreSQL database
