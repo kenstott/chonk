@@ -226,7 +226,9 @@ class TestNerPipelineDbEnrich:
 
     def test_schema_term_counts(self):
         p = NerPipeline(db_enrich=True)
-        p.add_tables([_FakeTable("orders", ["order_id", "amount"])])
+        # "amount" alone is a generic column name and is not counted; see
+        # test_schema_vocab_generic_terms.py
+        p.add_tables([_FakeTable("orders", ["order_id", "order_total", "amount"])])
         counts = p.schema_term_counts()
         assert counts["tables"] == 1
         assert counts["columns"] == 2

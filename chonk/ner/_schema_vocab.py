@@ -30,6 +30,7 @@ Typical two-pass usage::
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 from ._schema import SchemaMatcher, normalize_schema_term
@@ -220,6 +221,27 @@ def _extract_sql_terms(sql: str) -> tuple[list[str], list[str]]:
     return tables, columns
 
 
+# Table and column names too common to identify anything: a column called ``id``
+# or ``created_at`` appears in nearly every table and much of the text, so as an
+# entity it would link almost every chunk to every other. Compared against the
+# normalised, singular form ("created_at", "createdAt" -> "created at"). A name
+# that only contains one of these ("customer_id") is kept.
+DEFAULT_GENERIC_SCHEMA_TERMS: frozenset[str] = frozenset(
+    {
+        "id", "uuid", "guid", "key", "pk", "row id", "record id", "row number",
+        "name", "title", "label", "description", "desc", "note", "comment", "text",
+        "type", "kind", "category", "class", "status", "state", "flag", "active",
+        "enabled", "deleted", "is active", "is deleted",
+        "value", "amount", "count", "number", "num", "total", "quantity", "qty",
+        "code", "version", "source", "url", "uri", "link", "path", "data",
+        "date", "time", "datetime", "timestamp", "year", "month", "day", "quarter",
+        "period", "created", "updated", "modified", "deleted at", "created at",
+        "updated at", "modified at", "created on", "updated on", "created by",
+        "updated by", "modified by", "start date", "end date", "effective date",
+    }
+)  # fmt: skip
+
+
 # ---------------------------------------------------------------------------
 # SchemaVocabBuilder
 # ---------------------------------------------------------------------------
@@ -234,10 +256,21 @@ class SchemaVocabBuilder:
     Args:
         min_term_length: Raw identifier length below which terms are ignored
             (default 2 — filters out single-letter columns like ``i`` or ``n``).
+        generic_terms: Normalised table and column names that are never made
+            entities, because they name nothing in particular (``id``,
+            ``created_at``). Default :data:`DEFAULT_GENERIC_SCHEMA_TERMS`; pass a
+            different set to replace it, or ``frozenset()`` to keep every name.
+            Glossary terms and data values are not filtered: adding those is a
+            deliberate choice.
     """
 
-    def __init__(self, min_term_length: int = 2) -> None:
+    def __init__(
+        self,
+        min_term_length: int = 2,
+        generic_terms: frozenset[str] = DEFAULT_GENERIC_SCHEMA_TERMS,
+    ) -> None:
         self._min = min_term_length
+        self._generic = generic_terms
         # Schema-shaped vocab: term -> {namespace, ...}. A term may be contributed
         # by more than one namespace, so the value is a set rather than a scalar.
         # These go through SchemaMatcher (camelCase/snake_case normalisation,
@@ -263,7 +296,20 @@ class SchemaVocabBuilder:
             namespace if namespace is not None else DEFAULT_NAMESPACE
         )
 
-    def add_tables(self, tables: list[object], namespace: str | None = None) -> SchemaVocabBuilder:
+    def _record_name(self, bucket: dict[str, set[str]], term: str, namespace: str | None) -> None:
+        """Record a table or column name unless it is too short or generic."""
+        if len(term) < self._min:
+            return
+        if {
+            normalize_schema_term(term),
+            normalize_schema_term(term, to_singular=True),
+        } & self._generic:
+            return
+        self._record(bucket, term, namespace)
+
+    def add_tables(
+        self, tables: Sequence[object], namespace: str | None = None
+    ) -> SchemaVocabBuilder:
         """Add terms from a list of TableMeta objects (and their ColumnMeta).
 
         Accepts any object with a ``.name`` attribute and an optional
@@ -271,16 +317,16 @@ class SchemaVocabBuilder:
         """
         for table in tables:
             name = getattr(table, "name", None)
-            if name and len(name) >= self._min:
-                self._record(self._tables, name, namespace)
+            if name:
+                self._record_name(self._tables, name, namespace)
             for col in getattr(table, "columns", None) or []:
                 col_name = getattr(col, "name", None)
-                if col_name and len(col_name) >= self._min:
-                    self._record(self._columns, col_name, namespace)
+                if col_name:
+                    self._record_name(self._columns, col_name, namespace)
         return self
 
     def add_endpoints(
-        self, endpoints: list[object], namespace: str | None = None
+        self, endpoints: Sequence[object], namespace: str | None = None
     ) -> SchemaVocabBuilder:
         """Add terms from a list of EndpointMeta / FieldMeta objects."""
         for ep in endpoints:
@@ -289,19 +335,17 @@ class SchemaVocabBuilder:
                 self._record(self._api_terms, path, namespace)
             for field in getattr(ep, "fields", None) or []:
                 name = getattr(field, "name", None)
-                if name and len(name) >= self._min:
-                    self._record(self._columns, name, namespace)
+                if name:
+                    self._record_name(self._columns, name, namespace)
         return self
 
     def add_sql(self, ddl: str, namespace: str | None = None) -> SchemaVocabBuilder:
         """Extract and add table/column names from raw SQL DDL text."""
         tables, columns = _extract_sql_terms(ddl)
         for t in tables:
-            if len(t) >= self._min:
-                self._record(self._tables, t, namespace)
+            self._record_name(self._tables, t, namespace)
         for c in columns:
-            if len(c) >= self._min:
-                self._record(self._columns, c, namespace)
+            self._record_name(self._columns, c, namespace)
         return self
 
     def add_chunks(self, chunks: list[Any], namespace: str | None = None) -> SchemaVocabBuilder:  # noqa: ANN401
@@ -322,13 +366,9 @@ class SchemaVocabBuilder:
                 parts = doc_name[len("schema:") :].split(".")
                 # parts: [db, table] or [db, table, column]
                 if len(parts) >= 2:
-                    table = parts[1]
-                    if len(table) >= self._min:
-                        self._record(self._tables, table, namespace)
+                    self._record_name(self._tables, parts[1], namespace)
                 if len(parts) >= 3:
-                    col = parts[2]
-                    if len(col) >= self._min:
-                        self._record(self._columns, col, namespace)
+                    self._record_name(self._columns, parts[2], namespace)
 
             elif chunk_type in (
                 "api_endpoint",
@@ -346,9 +386,7 @@ class SchemaVocabBuilder:
             elif chunk_type == "api_field" and doc_name.startswith("api:"):
                 parts = doc_name[len("api:") :].split(".")
                 if len(parts) >= 3:
-                    field = parts[-1]
-                    if len(field) >= self._min:
-                        self._record(self._columns, field, namespace)
+                    self._record_name(self._columns, parts[-1], namespace)
 
         return self
 

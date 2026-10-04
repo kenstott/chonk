@@ -8,6 +8,12 @@ include breaking API changes.
 ## [Unreleased]
 
 ### Added
+- `SchemaVocabBuilder` no longer makes generic table and column names
+  (`id`, `name`, `status`, `created_at`, …) into entities: they link nearly every
+  chunk to every other and carry no signal. A name that only contains one
+  (`customer_id`) is kept. `generic_terms=` replaces the list
+  (`DEFAULT_GENERIC_SCHEMA_TERMS`); `frozenset()` keeps every name. Glossary terms
+  and data values are not filtered.
 - `chonk build <config.yaml> [--store PATH] [--force]` command (also
   `python -m chonk build`).
 - HARE-Bench reproduction pipeline under `scripts/hare/`: publish the corpus
