@@ -139,6 +139,7 @@ export PATH="\$HOME/.local/bin:\$PATH"
 cd $REMOTE_DIR
 uv sync --all-extras --group dev --frozen
 uv run python -m spacy download en_core_web_sm
+uv run python -m nltk.downloader -q wordnet
 uv run python -c "import torch; assert torch.cuda.is_available(), 'no CUDA'; print('GPU:', torch.cuda.get_device_name(0))"
 $REMOTE_ENV
 mkdir -p $OUT
@@ -193,6 +194,11 @@ try:
     spacy.load("en_core_web_sm")
 except OSError:
     sys.exit("spaCy model missing -- run: uv run python -m spacy download en_core_web_sm")
+from nltk.corpus import wordnet
+try:
+    wordnet.ensure_loaded()
+except LookupError:
+    sys.exit("WordNet data missing -- run: uv run python -m nltk.downloader wordnet")
 print("ok")
 PYEOF
 

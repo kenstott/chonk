@@ -32,6 +32,15 @@ include breaking API changes.
   deadline and is deleted even if the launching machine dies.
 
 ### Fixed
+- Singular forms of entity and schema names came from suffix rules:
+  `normalize_schema_term` stripped any trailing "s" (`status` -> `statu`), and
+  the entity normaliser's `inflect` call assumed plural input (`address` ->
+  `addres`). Both now use `chonk.ner._singular.singularize`, which checks
+  WordNet first and handles irregular plurals (`indices` -> `index`). The `ner`
+  extra adds `nltk`; the WordNet data is a one-time download
+  (`python -m nltk.downloader wordnet`).
+- The entity normaliser skipped singularisation silently when `inflect` was
+  missing; it now raises with install instructions.
 - HARE-Bench run configs pointed at the no-breadcrumb store without the GLEIF
   entity records, so the main runs lacked them and the `*_no_gleif` ablation
   compared identical data. `fang_base.toml` now uses the store that includes them.

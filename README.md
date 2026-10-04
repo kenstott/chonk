@@ -159,6 +159,7 @@ pip install "chonk-rag[xlsx]"       # XLSX extraction
 pip install "chonk-rag[pptx]"       # PPTX extraction
 pip install "chonk-rag[yaml]"       # YAML file extraction
 pip install "chonk-rag[odf]"        # ODF/ODS/ODT extraction
+pip install "chonk-rag[ner]"        # Entity normalisation (inflect, nltk); then: python -m nltk.downloader wordnet
 pip install "chonk-rag[storage]"    # DuckDB vector store
 pip install "chonk-rag[pgvector]"  # PostgreSQL + pgvector vector store
 pip install "chonk-rag[cluster]"    # Entity clustering (scikit-learn)

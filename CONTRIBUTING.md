@@ -21,6 +21,7 @@ git clone https://github.com/kenstott/chonk.git
 cd chonk
 uv sync --all-extras --group dev
 uv run python -m spacy download en_core_web_sm
+uv run python -m nltk.downloader -q wordnet
 ```
 
 ## Checks

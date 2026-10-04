@@ -74,7 +74,7 @@ cluster = ["scikit-learn>=1.9,<2", "numpy>=2.4.6,<3"]
 leiden  = ["igraph>=1.0.0,<2", "leidenalg>=0.12.0,<2"]
 parquet = ["pyarrow>=24.0,<30"]
 code       = []  # Python/TS/JS/Java via stdlib ast + regex; no additional packages required
-ner        = ["inflect>=7.5,<8"]
+ner        = ["inflect>=7.5,<8", "nltk>=3.9.4,<4"]  # nltk: WordNet singular forms
 spacy      = ["spacy>=3.8.14,<3.9", "thinc>=8.3.13,<9"]
 csv        = ["pandas>=2.3.3,<3"]
 gmail      = ["google-api-python-client>=2.197,<3", "google-auth-oauthlib>=1.4,<2", "google-auth-httplib2>=0.4,<1"]

@@ -59,6 +59,7 @@ export PATH="\$HOME/.local/bin:\$PATH"
 cd $REMOTE_DIR
 uv sync --all-extras --group dev --frozen
 uv run python -m spacy download en_core_web_sm
+uv run python -m nltk.downloader -q wordnet
 uv run python -c "import torch; assert torch.cuda.is_available(), 'no CUDA'; print('GPU:', torch.cuda.get_device_name(0))"
 HARE_PUBLIC_URL="$HARE_PUBLIC_URL" uv run python scripts/hare/artifacts.py download corpus
 scripts/hare/build_index.sh $OUT

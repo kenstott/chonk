@@ -51,6 +51,9 @@ jobs:
       - name: Download spaCy model
         run: uv run python -m spacy download en_core_web_sm
 
+      - name: Download WordNet (singular forms)
+        run: uv run python -m nltk.downloader -q wordnet
+
       - name: Run tests
         env:
           CHONK_TEST_PG_DSN: postgresql://postgres:postgres@localhost:5432/chonk_test

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 
+from ._singular import singularize
 from ._vocabulary import EntityMatch, _typed_id, normalize_separators, normalize_surface
 
 # ---------------------------------------------------------------------------
@@ -30,7 +31,8 @@ def normalize_schema_term(term: str, to_singular: bool = False) -> str:
 
     Args:
         term: Raw schema term (table name, column name, endpoint, etc.).
-        to_singular: If True, strip a trailing "s" from the result.
+        to_singular: If True, put the last word (the head noun) in its singular
+            form, using a dictionary (see :func:`chonk.ner._singular.singularize`).
 
     Returns:
         Lowercase, space-separated string.
@@ -43,8 +45,9 @@ def normalize_schema_term(term: str, to_singular: bool = False) -> str:
     s = s.replace("_", " ").replace("-", " ")
     # Collapse whitespace and lowercase
     s = " ".join(s.split()).lower()
-    if to_singular and s.endswith("s"):
-        s = s[:-1]
+    if to_singular and s:
+        *head, last = s.split(" ")
+        s = " ".join([*head, singularize(last)])
     return s
 
 

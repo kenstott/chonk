@@ -661,6 +661,7 @@ leiden = [
 ]
 ner = [
     { name = "inflect" },
+    { name = "nltk" },
 ]
 odf = [
     { name = "odfpy" },
@@ -776,6 +777,7 @@ requires-dist = [
     { name = "igraph", marker = "extra == 'leiden'", specifier = ">=1.0.0,<2" },
     { name = "inflect", marker = "extra == 'ner'", specifier = ">=7.5,<8" },
     { name = "leidenalg", marker = "extra == 'leiden'", specifier = ">=0.12.0,<2" },
+    { name = "nltk", marker = "extra == 'ner'", specifier = ">=3.9.4,<4" },
     { name = "numpy", marker = "extra == 'cluster'", specifier = ">=2.4.6,<3" },
     { name = "numpy", marker = "extra == 'full'", specifier = ">=2.4.6,<3" },
     { name = "numpy", marker = "extra == 'pinecone'", specifier = ">=2.4.6,<3" },

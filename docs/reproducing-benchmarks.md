@@ -32,6 +32,7 @@ The corpus is not regenerated at all: its source APIs change over time.
 ```bash
 uv sync --all-extras              # includes the dev and bench dependency groups
 uv run python -m spacy download en_core_web_sm
+uv run python -m nltk.downloader -q wordnet
 cp .env.example .env              # set OPENAI_API_KEY (generator and ADF classifier);
                                   # HARE_PUBLIC_URL already points at the published artifacts
 
